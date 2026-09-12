@@ -67,6 +67,14 @@ local function C(c)
     return c.r, c.g, c.b, 1
 end
 
+-- Una sola linea. Se lo presta Widgets, que se carga antes; con respaldo por
+-- si el orden del TOC cambiara.
+local NoWrap = (MitzuMPlus.Widgets and MitzuMPlus.Widgets._NoWrap) or function(fs)
+    if not fs then return end
+    if fs.SetWordWrap then pcall(fs.SetWordWrap, fs, false) end
+    if fs.SetMaxLines then pcall(fs.SetMaxLines, fs, 1) end
+end
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DROPDOWN PERSONALIZADO — sin UIDropDownMenu (eliminado en 120000)
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -105,11 +113,16 @@ function MitzuMPlus:CreateDropdown(parent, width, defaultText, items, onSelect)
         _G.MitzuMPlusColors.stone4.b, 1)
     btn:SetBackdropBorderColor(C(_G.MitzuMPlusColors.gold0))
 
+    -- NOTA: hoy nadie llama a este CreateDropdown (los paneles usan
+    -- Widgets:CreateDropdown o CreateSimpleDropdown). Se le aplica de todas
+    -- formas la regla de una sola linea: si alguien lo reutiliza manana, no
+    -- debe heredar el mismo fallo que tenian los otros dos.
     local labelFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if Theme and Theme.ApplyFont then Theme:ApplyFont(labelFS,"normal",13) end
     labelFS:SetPoint("LEFT", 6, 0)
     labelFS:SetWidth(width - 22)
     labelFS:SetJustifyH("LEFT")
+    NoWrap(labelFS)
     labelFS:SetText(defaultText or "")
     labelFS:SetTextColor(C(_G.MitzuMPlusColors.t1))
     btn._labelFS = labelFS
@@ -181,6 +194,7 @@ function MitzuMPlus:CreateDropdown(parent, width, defaultText, items, onSelect)
             fs:SetPoint("LEFT", 6, 0)
             fs:SetWidth(width - 14)
             fs:SetJustifyH("LEFT")
+            NoWrap(fs)
             fs:SetText(item.text or "")
             fs:SetTextColor(C(_G.MitzuMPlusColors.t2))
 

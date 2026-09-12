@@ -29,6 +29,40 @@ local COL_DPS_ICON  = MEDIA .. "6a_col_dps"
 local COL_TANK_ICON = MEDIA .. "6b_col_tank"
 local COL_HEAL_ICON = MEDIA .. "6c_col_heal"
 
+-- Iconos de rol oficiales del cliente. SetAtlas es la vía preferida; el
+-- recorte de UI-LFG-ICON-PORTRAITROLES mantiene compatibilidad con clientes
+-- donde alguno de los atlas cambie de nombre.
+local ROLE_ATLAS = {
+    TANK    = "groupfinder-icon-role-large-tank",
+    HEALER  = "groupfinder-icon-role-large-heal",
+    DAMAGER = "groupfinder-icon-role-large-dps",
+}
+local ROLE_TEXCOORD = {
+    TANK    = { 0/64, 19/64, 22/64, 41/64 },
+    HEALER  = { 20/64, 39/64, 1/64, 20/64 },
+    DAMAGER = { 20/64, 39/64, 22/64, 41/64 },
+}
+local ROLE_LABEL = { TANK = "Tanque", HEALER = "Sanador", DAMAGER = "DPS" }
+
+local function SetNativeRoleIcon(texture, role)
+    role = (role == "TANK" or role == "HEALER") and role or "DAMAGER"
+    local atlasOK = texture.SetAtlas and pcall(texture.SetAtlas, texture, ROLE_ATLAS[role], false)
+    if not atlasOK then
+        local c=ROLE_TEXCOORD[role]
+        texture:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+        texture:SetTexCoord(c[1],c[2],c[3],c[4])
+    end
+end
+
+local function IsMidnightRun(run)
+    if not MitzuMPlus.RunMetrics then return false end
+    local key,label=MitzuMPlus.RunMetrics:GetSeason(run)
+    key=tostring(key or ""):lower();label=tostring(label or ""):lower()
+    return key:match("^exp11_s%d+")~=nil
+        or key:find("midnight",1,true)~=nil
+        or label:find("midnight",1,true)~=nil
+end
+
 local PanelHistorial = {}
 MitzuMPlus.PanelHistorial = PanelHistorial
 
@@ -444,21 +478,39 @@ function PanelHistorial:CreateArchiveBar(parent)
     local bar=CreateFrame("Frame",nil,parent,BackdropTemplateMixin and "BackdropTemplate")
     bar:SetPoint("TOPLEFT",self.infoBar or self.filterBar,"BOTTOMLEFT",0,0)
     bar:SetPoint("TOPRIGHT",self.infoBar or self.filterBar,"BOTTOMRIGHT",0,0)
-    bar:SetHeight(66);bar:SetBackdrop(Theme.BACKDROPS.simple);Theme:SetBackdropColor(bar,Theme.BG.titlebar)
+    bar:SetHeight(44);bar:SetBackdrop(Theme.BACKDROPS.simple);Theme:SetBackdropColor(bar,Theme.BG.titlebar)
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- BUG UI-BTN1 — "EXPORTAR", "COMPARAR" y "ELIMINAR" se salían del botón
+    -- y ELIMINAR se salía de la ventana entera.
+    --
+    -- Los anchos eran fijos (86, 88, 72) y estaban calculados a ojo para la
+    -- fuente de Blizzard. Con la del tema a tamaño 13, el texto pinta más
+    -- largo. Ahora cada botón se mide y se ajusta a su propio texto, con la
+    -- fuente un punto más pequeña: cinco botones en una barra son etiquetas,
+    -- no titulares. El ancho mínimo mantiene la fila pareja.
+    --
+    -- Y el hueco del texto de la izquierda ya no es un "-535" a ojo: se ata
+    -- al primer botón, así que sigue siendo correcto aunque los botones
+    -- cambien de tamaño, de idioma o de fuente.
+    -- ═══════════════════════════════════════════════════════════════════
+    local ACTION_FONT, ACTION_MIN, ACTION_MAX, ACTION_PAD = 12, 70, 110, 11
 
     local status=bar:CreateFontString(nil,"OVERLAY")
-    status:SetPoint("TOPLEFT",bar,"TOPLEFT",12,-9);status:SetPoint("TOPRIGHT",bar,"TOPRIGHT",-12,-9);status:SetJustifyH("LEFT");Theme:ApplyFont(status,"mono",11);Theme:SetTextColor(status,Theme.TEXT.dim)
-    status:SetText("0 runs encontradas · ninguna seleccionada")
+    status:SetPoint("LEFT",bar,"LEFT",12,0);status:SetJustifyH("LEFT");Theme:ApplyFont(status,"mono",11);Theme:SetTextColor(status,Theme.TEXT.tertiary)
+    if status.SetWordWrap then status:SetWordWrap(false) end
+    if status.SetMaxLines then status:SetMaxLines(1) end
+    status:SetText("0 partidas · ninguna seleccionada")
     self.archiveStatusText=status
 
-    local deleteBtn=Widgets:CreateButton(bar,"ELIMINAR",78,24,"bad")
-    deleteBtn:SetPoint("BOTTOMRIGHT",bar,"BOTTOMRIGHT",-10,7)
+    local deleteBtn=Widgets:CreateButton(bar,"ELIMINAR",86,26,"normal",ACTION_FONT)
+    deleteBtn:SetPoint("RIGHT",bar,"RIGHT",-10,0)
     deleteBtn:SetScript("OnClick",function()
         local id=self.selectedRunID
         if not id then return end
         if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_DELETE",id,nil,id) end
     end)
-    local favoriteBtn=Widgets:CreateButton(bar,"FAVORITA",82,24,"normal")
+    local favoriteBtn=Widgets:CreateButton(bar,"FAVORITA",88,26,"normal",ACTION_FONT)
     favoriteBtn:SetPoint("RIGHT",deleteBtn,"LEFT",-7,0)
     favoriteBtn:SetScript("OnClick",function()
         local id=self.selectedRunID;if not id then return end
@@ -469,17 +521,42 @@ function PanelHistorial:CreateArchiveBar(parent)
         else run.isFavorite=not run.isFavorite end
         self:Refresh()
     end)
-    local editBtn=Widgets:CreateButton(bar,"EDITAR",68,24,"normal")
+    local editBtn=Widgets:CreateButton(bar,"EDITAR",72,26,"normal",ACTION_FONT)
     editBtn:SetPoint("RIGHT",favoriteBtn,"LEFT",-7,0)
     editBtn:SetScript("OnClick",function() self:OpenMetadataEditor() end)
-    local compareBtn=Widgets:CreateButton(bar,"COMPARAR",82,24,"normal")
+    local compareBtn=Widgets:CreateButton(bar,"COMPARAR",88,26,"normal",ACTION_FONT)
     compareBtn:SetPoint("RIGHT",editBtn,"LEFT",-7,0)
     compareBtn:SetScript("OnClick",function() self:CompareSelection() end)
-    local exportBtn=Widgets:CreateButton(bar,"EXPORTAR",78,24,"normal")
+    local exportBtn=Widgets:CreateButton(bar,"EXPORTAR",88,26,"primary",ACTION_FONT)
     exportBtn:SetPoint("RIGHT",compareBtn,"LEFT",-7,0)
     exportBtn:SetScript("OnClick",function() self:ExportSelection() end)
-    self.archiveBar=bar;self.archiveButtons={favoriteBtn,deleteBtn,editBtn}
-    self.multiButtons={compareBtn,exportBtn}
+    -- Cada uno al ancho de SU texto. Se hace despues de crearlos todos: los
+    -- puntos de anclaje son relativos de derecha a izquierda, asi que la fila
+    -- se recoloca sola en cuanto cambian los anchos.
+    for _,b in ipairs({deleteBtn,favoriteBtn,editBtn,compareBtn,exportBtn}) do
+        if b.FitToText then b:FitToText(ACTION_MIN,ACTION_MAX,ACTION_PAD) end
+    end
+    -- El texto de estado termina donde empieza el primer boton, no en un
+    -- margen fijo inventado.
+    status:SetPoint("RIGHT",exportBtn,"LEFT",-12,0)
+
+    self.archiveBar=bar;self.singleButtons={favoriteBtn,deleteBtn,editBtn}
+    self.compareBtn=compareBtn;self.exportBtn=exportBtn;self.deleteBtn=deleteBtn
+    local function ActionTip(btn,titleText,description)
+        btn:SetScript("OnEnter",function(self)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(self,"ANCHOR_TOP")
+            GameTooltip:SetText(titleText,1,.8,.2)
+            GameTooltip:AddLine(description,.78,.78,.78,true)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
+    end
+    ActionTip(exportBtn,"Exportar selección","Crea un CSV con la partida seleccionada o con la selección múltiple.")
+    ActionTip(compareBtn,"Comparar partidas","Requiere al menos dos partidas seleccionadas con Ctrl+clic.")
+    ActionTip(editBtn,"Editar partida","Edita la nota y las etiquetas de una sola partida.")
+    ActionTip(favoriteBtn,"Favorita","Marca o desmarca una sola partida como favorita.")
+    ActionTip(deleteBtn,"Eliminar partida","Elimina una sola partida después de pedir confirmación.")
     self.selectedRunIDs=self.selectedRunIDs or {}
     return bar
 end
@@ -490,13 +567,28 @@ function PanelHistorial:UpdateArchiveBar()
     local run=self.selectedRunID and MitzuMPlus.RunMetrics and MitzuMPlus.RunMetrics:FindRunByID(self.selectedRunID) or nil
     if self.selectedRunID and not run then self.selectedRunID=nil end
     local selectedCount=0;for id in pairs(self.selectedRunIDs or {}) do if MitzuMPlus.RunMetrics:FindRunByID(id) then selectedCount=selectedCount+1 else self.selectedRunIDs[id]=nil end end
-    if run then
+    local singleRun=(selectedCount==1) and run or nil
+    if selectedCount>1 then
+        self.archiveStatusText:SetText(string.format("%d partidas · %d seleccionadas",total,selectedCount))
+    elseif singleRun then
         local qualityLabel="Sin evaluar"
-        if MitzuMPlus.RunMetrics then local _,label=MitzuMPlus.RunMetrics:GetQuality(run);qualityLabel=label end
-        self.archiveStatusText:SetText(string.format("%d runs · %d seleccionadas · #%d %s +%d · %s",total,selectedCount,tonumber(run.runID) or 0,run.dungeonName or "?",tonumber(run.keyLevel) or 0,qualityLabel))
-    else self.archiveStatusText:SetText(string.format("%d runs · ninguna seleccionada (Ctrl+clic: varias)",total)) end
-    for _,btn in ipairs(self.archiveButtons or {}) do btn:SetEnabled(run~=nil);btn:SetAlpha(run and 1 or .45) end
-    for _,btn in ipairs(self.multiButtons or {}) do btn:SetEnabled(selectedCount>=2);btn:SetAlpha(selectedCount>=2 and 1 or .45) end
+        if MitzuMPlus.RunMetrics then local _,label=MitzuMPlus.RunMetrics:GetQuality(singleRun);qualityLabel=label end
+        self.archiveStatusText:SetText(string.format("%d partidas · %s +%d · %s",total,singleRun.dungeonName or "?",tonumber(singleRun.keyLevel) or 0,qualityLabel))
+    else self.archiveStatusText:SetText(string.format("%d partidas · selecciona una fila (Ctrl+clic: varias)",total)) end
+
+    local function SetEnabled(btn,enabled,r,g,b)
+        btn:SetEnabled(enabled);btn:SetAlpha(enabled and 1 or .32)
+        local fs=btn.GetFontString and btn:GetFontString()
+        if fs then
+            if enabled and r then fs:SetTextColor(r,g,b,1)
+            elseif enabled then fs:SetTextColor(.9,.9,.9,1)
+            else fs:SetTextColor(.42,.42,.42,1) end
+        end
+    end
+    for _,btn in ipairs(self.singleButtons or {}) do SetEnabled(btn,singleRun~=nil) end
+    SetEnabled(self.compareBtn,selectedCount>=2)
+    SetEnabled(self.exportBtn,selectedCount>=1,1,.82,0)
+    SetEnabled(self.deleteBtn,singleRun~=nil,.93,.30,.30)
 end
 
 function PanelHistorial:GetSelectedRuns()
@@ -547,7 +639,7 @@ function PanelHistorial:CompareSelection()
 end
 
 function PanelHistorial:ExportSelection()
-    local runs=self:GetSelectedRuns();if #runs<2 then return end
+    local runs=self:GetSelectedRuns();if #runs<1 then return end
     if MitzuMPlus.Export and MitzuMPlus.Export.ExportToCSV then MitzuMPlus.Export:ExportToCSV(runs) end
 end
 
@@ -561,7 +653,7 @@ function PanelHistorial:CreateTableEmptyState(parent)
     -- NO usar parent completo (incluye sidebar) — eso desplaza el centro visualmente
     local es = CreateFrame("Frame", nil, parent)
     es:SetPoint("TOPLEFT",     self.archiveBar, "BOTTOMLEFT",  0,  0)
-    es:SetPoint("BOTTOMRIGHT", parent,          "BOTTOMRIGHT", 0, 36)
+    es:SetPoint("BOTTOMRIGHT", parent,          "BOTTOMRIGHT", 0, 42)
     es:Hide()
 
     -- Icono central (textura de llave de M+)
@@ -626,7 +718,7 @@ function PanelHistorial:CreateFilterBar(parent)
     local filterBar = CreateFrame("Frame", nil, parent, BackdropTemplateMixin and "BackdropTemplate")
     filterBar:SetPoint("TOPLEFT",  parent, "TOPLEFT",  0, 0)
     filterBar:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
-    filterBar:SetHeight(80)
+    filterBar:SetHeight(104)
     filterBar:SetBackdrop(Theme.BACKDROPS.simple)
     Theme:SetBackdropColor(filterBar, Theme.BG.titlebar)
 
@@ -638,8 +730,8 @@ function PanelHistorial:CreateFilterBar(parent)
     Theme:SetVertexColor(bottomBorder, Theme.GOLD.gold0)
 
     local midBorder = filterBar:CreateTexture(nil, "BORDER")
-    midBorder:SetPoint("BOTTOMLEFT",  filterBar, "BOTTOMLEFT",  0, 40)
-    midBorder:SetPoint("BOTTOMRIGHT", filterBar, "BOTTOMRIGHT", 0, 40)
+    midBorder:SetPoint("BOTTOMLEFT",  filterBar, "BOTTOMLEFT",  0, 48)
+    midBorder:SetPoint("BOTTOMRIGHT", filterBar, "BOTTOMRIGHT", 0, 48)
     midBorder:SetHeight(1)
     midBorder:SetTexture("Interface\\Buttons\\WHITE8X8")
     Theme:SetVertexColor(midBorder, Theme.BORDER.separator)
@@ -705,63 +797,33 @@ function PanelHistorial:CreateFilterBar(parent)
     end
 
     -- ═══════════════════════════════════════════════════════════════════
-    -- FILA 1: Buscar | MAZM ▼ | ─ | Fecha ▼ | Exportar CSV | + Nueva Run
-    -- FIX: margen derecho -20 para no solaparse con botones de titlebar
+    -- FILA 1: búsqueda y dimensiones principales. Las exportaciones globales
+    -- no pertenecen a esta franja; queda solo la acción contextual inferior.
     -- ═══════════════════════════════════════════════════════════════════
-    -- BUG FIX: "Nueva Run" placeholder replaced with Export Code shortcut
-    -- Manual run creation is not a valid use case (runs come from M+ completions).
-    local exportCodeBtn = Widgets:CreateButton(filterBar, "Exportar Code", 108, 26, "ok")
-    exportCodeBtn:SetPoint("RIGHT", filterBar, "RIGHT", -20, 20)
-    exportCodeBtn:SetScript("OnClick", function()
-        if MitzuMPlus.Export and MitzuMPlus.Export.ExportToCode then
-            MitzuMPlus.Export:ExportToCode()
-        else
-            MitzuMPlus:Print("Módulo de exportación no disponible.")
-        end
-    end)
-    exportCodeBtn:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(exportCodeBtn, "ANCHOR_TOP")
-        GameTooltip:SetText("Exportar Código", 1, 0.8, 0.2)
-        GameTooltip:AddLine("Genera un código JSON para el dashboard web", 0.7, 0.7, 0.7, true)
-        GameTooltip:Show()
-    end)
-    exportCodeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- Exportar CSV
-    local exportBtn = Widgets:CreateButton(filterBar, "Exportar CSV", 100, 26, "primary")
-    exportBtn:SetPoint("RIGHT", exportCodeBtn, "LEFT", -8, 0)
-    exportBtn:SetScript("OnClick", function()
-        if MitzuMPlus.Export and MitzuMPlus.Export.ExportToCSV then
-            MitzuMPlus.Export:ExportToCSV()
-        end
-    end)
-    exportBtn:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(exportBtn, "ANCHOR_TOP")
-        GameTooltip:SetText("Exportar a CSV", 1, 0.8, 0.2)
-        GameTooltip:AddLine("Genera un archivo CSV con todas tus runs", 0.7, 0.7, 0.7, true)
-        GameTooltip:Show()
-    end)
-    exportBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    local orderDropdown = Widgets:CreateDropdown(filterBar, 96, {
-        "Fecha |cFFaaaaaa(v)|r",
-        "Nivel |cFFaaaaaa(v)|r",
-        "Margen |cFFaaaaaa(v)|r",
-        "Mazmorra |cFFaaaaaa(a-z)|r",
+    local orderDropdown = Widgets:CreateDropdown(filterBar, 160, {
+        "Fecha: reciente",
+        "Nivel: mayor",
+        "Margen: mayor",
+        "Mazmorra: A-Z",
     }, 1, function(value, text)
         local cols = {"date","level","margin","dungeon"}
         self.sortColumn = cols[value] or "date"
         self.sortDescending = value ~= 4
         self:ApplyFilters()
     end)
-    orderDropdown:SetPoint("RIGHT", exportBtn, "LEFT", -10, 0)
+    orderDropdown:SetPoint("RIGHT", filterBar, "RIGHT", -12, 20)
     self.orderDropdown = orderDropdown
 
+    local orderLabel=filterBar:CreateFontString(nil,"OVERLAY")
+    orderLabel:SetPoint("RIGHT",orderDropdown,"LEFT",-8,0)
+    Theme:ApplyFont(orderLabel,"mono",11);orderLabel:SetText("ORDENAR")
+    Theme:SetTextColor(orderLabel,Theme.TEXT.dim)
+
     local sepR = self:CreateSeparator(filterBar)
-    sepR:SetPoint("RIGHT", orderDropdown, "LEFT", -8, 0)
+    sepR:SetPoint("RIGHT", orderLabel, "LEFT", -10, 0)
 
     -- Izquierda fila 1
-    local searchInput = Widgets:CreateInput(filterBar, 130, "Buscar mazmorra...")
+    local searchInput = Widgets:CreateInput(filterBar, 180, "Buscar mazmorra...")
     searchInput:SetPoint("LEFT", filterBar, "LEFT", 12, 20)
     self.searchInput = searchInput
 
@@ -786,7 +848,7 @@ function PanelHistorial:CreateFilterBar(parent)
     local dungeonLabel = filterBar:CreateFontString(nil, "OVERLAY")
     dungeonLabel:SetPoint("LEFT", sep1, "RIGHT", 8, 0)
     Theme:ApplyFont(dungeonLabel, "mono", 11)
-    dungeonLabel:SetText("MAZM.")
+    dungeonLabel:SetText("MAZMORRA")
     Theme:SetTextColor(dungeonLabel, Theme.TEXT.dim)
 
     local dungeonOptions = {"Todas"}
@@ -804,7 +866,11 @@ function PanelHistorial:CreateFilterBar(parent)
         return a:lower() < b:lower()
     end)
 
-    local dungeonDropdown = Widgets:CreateDropdown(filterBar, 130, dungeonOptions, 1, function(index, value)
+    -- El ancho definitivo lo pone AutoSizeToItems midiendo el nombre más
+    -- largo que de verdad haya en el historial de este jugador. 180 es solo
+    -- el punto de partida: fijarlo a ojo es lo que dejaba "El Frontal de la
+    -- Muerte" partido en dos renglones.
+    local dungeonDropdown = Widgets:CreateDropdown(filterBar, 180, dungeonOptions, 1, function(index, value)
         self.activeDungeon = (index > 1) and dungeonOptions[index] or ""
         -- BUG-L3 FIX: limpiar activeSearch al cambiar mazmorra para que la búsqueda
         -- de texto no persista cuando el usuario selecciona una mazmorra distinta.
@@ -815,6 +881,13 @@ function PanelHistorial:CreateFilterBar(parent)
         self:ApplyFilters()
     end)
     dungeonDropdown:SetPoint("LEFT", dungeonLabel, "RIGHT", 6, 0)
+    -- Entre 150 y 230: por debajo de 150 el botón queda ridículo y por encima
+    -- de 230 se come el sitio de PERSONAJE y TEMPORADA en la misma barra.
+    -- Lo que no quepa se recorta con puntos y sale entero en el tooltip; el
+    -- MENÚ, en cambio, se ensancha hasta el nombre más largo.
+    if dungeonDropdown.AutoSizeToItems then
+        dungeonDropdown:AutoSizeToItems(150, 230)
+    end
     self.dungeonDropdown = dungeonDropdown
 
     -- ── Character filter (alts) ───────────────────────────────────────────
@@ -824,7 +897,7 @@ function PanelHistorial:CreateFilterBar(parent)
     local charLabel = filterBar:CreateFontString(nil, "OVERLAY")
     charLabel:SetPoint("LEFT", charSep, "RIGHT", 8, 0)
     Theme:ApplyFont(charLabel, "mono", 11)
-    charLabel:SetText("PERSO.")
+    charLabel:SetText("PERSONAJE")
     Theme:SetTextColor(charLabel, Theme.TEXT.dim)
 
     local charOptions = {"Todos"}
@@ -845,7 +918,7 @@ function PanelHistorial:CreateFilterBar(parent)
         return a:lower() < b:lower()
     end)
 
-    local charDropdown = Widgets:CreateDropdown(filterBar, 120, charOptions, 1, function(index, value)
+    local charDropdown = Widgets:CreateDropdown(filterBar, 160, charOptions, 1, function(index, value)
         self.activeCharFilter = (index > 1) and charOptions[index] or nil
         self:ApplyFilters()
     end)
@@ -855,20 +928,18 @@ function PanelHistorial:CreateFilterBar(parent)
 
     local seasonLabel=filterBar:CreateFontString(nil,"OVERLAY")
     seasonLabel:SetPoint("LEFT",charDropdown,"RIGHT",10,0);Theme:ApplyFont(seasonLabel,"mono",11)
-    seasonLabel:SetText("TEMP.");Theme:SetTextColor(seasonLabel,Theme.TEXT.dim)
-    local seasonOptions={"Todas"};local seasonKeys={"ALL"};local seasonMap={}
-    for _,run in ipairs(runs) do
-        local key,label=MitzuMPlus.RunMetrics:GetSeason(run)
-        if not seasonMap[key] then seasonMap[key]=label end
-    end
-    local keys={};for key in pairs(seasonMap) do keys[#keys+1]=key end
-    table.sort(keys,function(a,b)return seasonMap[a]<seasonMap[b] end)
-    for _,key in ipairs(keys) do seasonOptions[#seasonOptions+1]=seasonMap[key];seasonKeys[#seasonKeys+1]=key end
-    self.seasonKeys=seasonKeys
-    local seasonDropdown=Widgets:CreateDropdown(filterBar,145,seasonOptions,1,function(index)
-        self.activeSeasonFilter=self.seasonKeys[index] or "ALL";self:ApplyFilters()
-    end)
-    seasonDropdown:SetPoint("LEFT",seasonLabel,"RIGHT",6,0);self.seasonDropdown=seasonDropdown;self.activeSeasonFilter="ALL"
+    seasonLabel:SetText("TEMPORADA");Theme:SetTextColor(seasonLabel,Theme.TEXT.dim)
+    -- La vista Historial está acotada a la expansión actual. Al ser una única
+    -- opción no se presenta un desplegable que sugiera alternativas inexistentes.
+    local seasonBadge=CreateFrame("Frame",nil,filterBar,BackdropTemplateMixin and "BackdropTemplate")
+    seasonBadge:SetPoint("LEFT",seasonLabel,"RIGHT",6,0);seasonBadge:SetSize(120,26)
+    seasonBadge:SetBackdrop(Theme.BACKDROPS.panel)
+    Theme:SetBackdropColor(seasonBadge,Theme.BG.btnPrim)
+    Theme:SetBackdropBorderColor(seasonBadge,Theme.GOLD.gold1)
+    local seasonText=seasonBadge:CreateFontString(nil,"OVERLAY")
+    seasonText:SetPoint("CENTER");Theme:ApplyFont(seasonText,"normal",13)
+    seasonText:SetText("Midnight");Theme:SetTextColor(seasonText,Theme.GOLD.gold4)
+    self.seasonBadge=seasonBadge;self.seasonDropdown=nil;self.activeSeasonFilter="MIDNIGHT"
 
     -- ═══════════════════════════════════════════════════════════════════
     -- FILA 2: RESULTADO pills | ─ | SEMANA pills
@@ -877,7 +948,7 @@ function PanelHistorial:CreateFilterBar(parent)
 
     -- RESULTADO
     local resLabel = filterBar:CreateFontString(nil, "OVERLAY")
-    resLabel:SetPoint("LEFT", filterBar, "LEFT", 12, -20)
+    resLabel:SetPoint("LEFT", filterBar, "LEFT", 12, -27)
     Theme:ApplyFont(resLabel, "mono", 11)
     resLabel:SetText("RESULTADO:")
     Theme:SetTextColor(resLabel, Theme.TEXT.dim)
@@ -938,7 +1009,7 @@ function PanelHistorial:CreateFilterBar(parent)
     roleLabel:SetPoint("LEFT",pillWkLast,"RIGHT",14,0);Theme:ApplyFont(roleLabel,"mono",11)
     roleLabel:SetText("ROL:");Theme:SetTextColor(roleLabel,Theme.TEXT.dim)
     local roleValues={"ALL","TANK","HEALER","DAMAGER"}
-    local roleDropdown=Widgets:CreateDropdown(filterBar,88,{"Todos","Tank","Healer","DPS"},1,function(index)
+    local roleDropdown=Widgets:CreateDropdown(filterBar,105,{"Todos","Tanque","Sanador","DPS"},1,function(index)
         self.activeRoleFilter=roleValues[index] or "ALL";self:ApplyFilters()
     end)
     roleDropdown:SetPoint("LEFT",roleLabel,"RIGHT",6,0);self.activeRoleFilter="ALL"
@@ -947,7 +1018,7 @@ function PanelHistorial:CreateFilterBar(parent)
     qualityLabel:SetPoint("LEFT",roleDropdown,"RIGHT",12,0);Theme:ApplyFont(qualityLabel,"mono",11)
     qualityLabel:SetText("DATOS:");Theme:SetTextColor(qualityLabel,Theme.TEXT.dim)
     local qualityValues={"ALL","COMPLETE","PARTIAL","STRUCTURAL","INVALID"}
-    local qualityDropdown=Widgets:CreateDropdown(filterBar,112,{"Todos","Completos","Parciales","Estructurales","Incompletos"},1,function(index)
+    local qualityDropdown=Widgets:CreateDropdown(filterBar,140,{"Todos","Completos","Parciales","Estructurales","Incompletos"},1,function(index)
         self.activeQualityFilter=qualityValues[index] or "ALL";self:ApplyFilters()
     end)
     qualityDropdown:SetPoint("LEFT",qualityLabel,"RIGHT",6,0);self.activeQualityFilter="ALL"
@@ -955,7 +1026,102 @@ function PanelHistorial:CreateFilterBar(parent)
     self.weekDropdown   = nil
     self.resultDropdown = nil
     self.filterBar = filterBar
+
+    -- ═══════════════════════════════════════════════════════════════════
+    -- BUG UI-FB1 — TEMPORADA y ORDENAR se pisaban
+    --
+    -- La fila 1 se monta en DOS cadenas que crecen la una hacia la otra:
+    --   izquierda: buscador → MAZMORRA → PERSONAJE → TEMPORADA
+    --   derecha:   ORDENAR, anclado al borde derecho de la barra
+    -- y nada impedía que se encontrasen en medio. Con la ventana estrecha,
+    -- o con la fuente un punto más grande, "Midnight" acababa debajo de
+    -- "ORDENAR" y de "Fecha: reciente" — que es justo lo que se ve en la
+    -- captura.
+    --
+    -- Sumar píxeles a mano no arregla esto: el ancho de "MAZMORRA" o de
+    -- "PERSONAJE" depende de la fuente del tema, y la barra cambia de tamaño
+    -- con la ventana. Así que el reparto se calcula, no se fija: se mide una
+    -- vez lo que ocupa cada cosa, se ve cuánto queda para los desplegables y
+    -- se reparte. Si no llega ni al mínimo, se van soltando piezas por orden
+    -- de menos valor. Se recalcula en cada cambio de tamaño.
+    -- ═══════════════════════════════════════════════════════════════════
+    self._row = {
+        bar        = filterBar,
+        dungeon    = { frame = dungeonDropdown, pref = dungeonDropdown:GetWidth(), min = 110 },
+        char       = { frame = charDropdown,    pref = charDropdown:GetWidth(),    min = 100 },
+        order      = { frame = orderDropdown,   pref = orderDropdown:GetWidth(),   min = 110 },
+        seasonLabel = seasonLabel,
+        seasonBadge = seasonBadge,
+        rightEdge   = sepR,
+    }
+    filterBar:SetScript("OnSizeChanged", function() self:LayoutFilterRow() end)
+    if C_Timer and C_Timer.After then
+        -- La primera pasada necesita que los marcos ya tengan coordenadas.
+        C_Timer.After(0, function() self:LayoutFilterRow() end)
+    end
+
     return filterBar
+end
+
+-- Reparte el ancho de la fila 1 de la barra de filtros. Idempotente: parte
+-- siempre de los anchos preferidos, así que llamarla mil veces da lo mismo
+-- que llamarla una.
+function PanelHistorial:LayoutFilterRow()
+    local r = self._row
+    if not r or not r.bar then return end
+    local barW = r.bar:GetWidth()
+    local barLeft = r.bar:GetLeft()
+    if not barW or barW < 80 or not barLeft then return end
+
+    -- MEDIR UNA VEZ. `base`, `temporadaW` y `ordenExtra` solo dependen del
+    -- ancho de las etiquetas y de los márgenes: no cambian al redimensionar
+    -- la ventana. Se calculan en la primera pasada —cuando los desplegables
+    -- aún están a su ancho preferido y la lectura es coherente— y se guardan.
+    -- Leerlos otra vez después de haber cambiado anchos sería pedir un valor
+    -- que el cliente quizá no haya recalculado todavía.
+    if not r.metrics then
+        local finSinTemporada = r.char.frame:GetRight()
+        local finConTemporada = r.seasonBadge:GetRight()
+        local iniDerecha      = r.rightEdge:GetLeft()
+        if not (finSinTemporada and finConTemporada and iniDerecha) then return end
+        r.metrics = {
+            -- buscador, separadores y las etiquetas MAZMORRA y PERSONAJE
+            base       = (finSinTemporada - barLeft)
+                         - (r.dungeon.frame:GetWidth() or r.dungeon.pref)
+                         - (r.char.frame:GetWidth()    or r.char.pref),
+            temporadaW = finConTemporada - finSinTemporada,
+            -- etiqueta ORDENAR, su separador y el margen derecho
+            ordenExtra = barW - (iniDerecha - barLeft)
+                         - (r.order.frame:GetWidth() or r.order.pref),
+        }
+    end
+
+    local m = r.metrics
+
+    -- El reparto en sí es aritmética pura y vive en Widgets:SplitRow, donde
+    -- se puede probar sin abrir el juego. Aquí solo se le dan los números y
+    -- se aplican los anchos que devuelve.
+    --
+    -- Orden de prioridad: MAZMORRA primero (los nombres largos viven ahí) y
+    -- PERSONAJE después. La TEMPORADA es lo primero que se suelta: en
+    -- Historial es una insignia fija que siempre pone "Midnight" y la
+    -- temporada ya tiene su propia columna en la tabla.
+    local anchos, oW, conTemporada = Widgets:SplitRow({
+        total     = barW,
+        base      = m.base,
+        optional  = m.temporadaW,
+        tailExtra = m.ordenExtra,
+        gap       = 14,
+        tail      = { pref = r.order.pref,   min = r.order.min },
+        flex      = { { pref = r.dungeon.pref, min = r.dungeon.min },
+                      { pref = r.char.pref,    min = r.char.min } },
+    })
+
+    r.dungeon.frame:SetWidth(math.floor(anchos[1] + 0.5))
+    r.char.frame:SetWidth(math.floor(anchos[2] + 0.5))
+    r.order.frame:SetWidth(math.floor(oW + 0.5))
+    r.seasonLabel:SetShown(conTemporada)
+    r.seasonBadge:SetShown(conTemporada)
 end
 
 function PanelHistorial:CreateSeparator(parent)
@@ -967,21 +1133,8 @@ function PanelHistorial:CreateSeparator(parent)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- INFO BAR (M+ Score + Help / Data Limitations)
+-- INFO BAR (M+ Score + key del personaje)
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local HELP_TITLE = "Datos disponibles"
-local HELP_LINES = {
-    "El addon usa únicamente datos que Blizzard expone de forma permitida en Midnight.",
-    " ",
-    "|cFF21de66Fuentes conservadas:|r",
-    " - Estado y tiempo de la llave desde Challenge Mode.",
-    " - Estadísticas disponibles mediante C_DamageMeter cuando el cliente las expone.",
-    " - Enemy Forces y progreso desde los criterios oficiales del escenario.",
-    " - Datos propios/grupales que llegan por eventos permitidos.",
-    " ",
-    "|cFFFF9922No se intenta reconstruir información bloqueada por Blizzard.|r",
-}
 
 function PanelHistorial:CreateInfoBar(parent)
     local infoBar = CreateFrame("Frame", nil, parent, BackdropTemplateMixin and "BackdropTemplate")
@@ -1012,80 +1165,13 @@ function PanelHistorial:CreateInfoBar(parent)
     Theme:SetTextColor(scoreValue, Theme.GOLD.gold4)
     self._mplusScoreText = scoreValue
 
-    local sourceText = infoBar:CreateFontString(nil, "OVERLAY")
-    sourceText:SetPoint("LEFT", scoreValue, "RIGHT", 8, 0)
-    Theme:ApplyFont(sourceText, "mono", 11)
-    sourceText:SetText("(API Blizzard)")
-    Theme:SetTextColor(sourceText, Theme.TEXT.tertiary)
-
     -- Key en mochila
     local keyLabel = infoBar:CreateFontString(nil, "OVERLAY")
-    keyLabel:SetPoint("LEFT", sourceText, "RIGHT", 18, 0)
+    keyLabel:SetPoint("LEFT", scoreValue, "RIGHT", 18, 0)
     Theme:ApplyFont(keyLabel, "mono", 12)
     keyLabel:SetText("")
     Theme:SetTextColor(keyLabel, Theme.GOLD.gold3)
     self._keystoneText = keyLabel
-
-    -- Tooltip sobre el score
-    local scoreHover = CreateFrame("Frame", nil, infoBar)
-    scoreHover:SetPoint("LEFT", scoreLabel, "LEFT", 0, 0)
-    scoreHover:SetPoint("RIGHT", sourceText, "RIGHT", 0, 0)
-    scoreHover:SetHeight(26)
-    scoreHover:EnableMouse(true)
-    scoreHover:SetScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine("Puntaje Mítico+ (temporada actual)", 1, 0.8, 0.2)
-        GameTooltip:AddLine("Leído directamente de la API de Blizzard:", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine("C_PlayerInfo.GetPlayerMythicPlusRatingSummary(\"player\")", 0.6, 0.9, 1, true)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        GameTooltip:AddLine("Raider.IO no es necesario: Blizzard expone el mismo valor que muestra el panel de Calabozos Míticos+.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    scoreHover:SetScript("OnLeave", function()
-        if GameTooltip then GameTooltip:Hide() end
-    end)
-
-    -- ── Botón ayuda (derecha) ────────────────────────────────────────────
-    local helpBtn = CreateFrame("Button", nil, infoBar, BackdropTemplateMixin and "BackdropTemplate")
-    helpBtn:SetPoint("RIGHT", infoBar, "RIGHT", -12, 0)
-    helpBtn:SetSize(180, 22)
-    helpBtn:SetBackdrop(Theme.BACKDROPS.simple)
-    Theme:SetBackdropColor(helpBtn, { r = 0.118, g = 0.086, b = 0.024, a = 0.65 })
-    Theme:SetBackdropBorderColor(helpBtn, Theme.GOLD.gold0)
-
-    local helpText = helpBtn:CreateFontString(nil, "OVERLAY")
-    helpText:SetAllPoints()
-    Theme:ApplyFont(helpText, "mono", 12)
-    helpText:SetText("?  Cómo ver datos reales")
-    helpText:SetJustifyH("CENTER")
-    Theme:SetTextColor(helpText, Theme.GOLD.gold4)
-
-    helpBtn:SetScript("OnEnter", function(self)
-        Theme:SetBackdropColor(self, { r = 0.200, g = 0.160, b = 0.060, a = 0.85 })
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine(HELP_TITLE, 1, 0.8, 0.2)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        for _, line in ipairs(HELP_LINES) do
-            GameTooltip:AddLine(line, 0.85, 0.85, 0.85, true)
-        end
-        GameTooltip:Show()
-    end)
-    helpBtn:SetScript("OnLeave", function(self)
-        Theme:SetBackdropColor(self, { r = 0.118, g = 0.086, b = 0.024, a = 0.65 })
-        if GameTooltip then GameTooltip:Hide() end
-    end)
-    helpBtn:SetScript("OnClick", function(self)
-        if MitzuMPlus.Print then
-            MitzuMPlus:Print("|cFFe8b84a" .. HELP_TITLE .. "|r")
-            for _, line in ipairs(HELP_LINES) do
-                if line ~= " " then MitzuMPlus:Print("  " .. line) end
-            end
-        end
-    end)
 
     self.infoBar = infoBar
     self:UpdateMPlusScore()
@@ -1355,11 +1441,14 @@ end
 -- TABLE
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- Hueco que se le deja a la barra de desplazamiento en el borde derecho.
+local SCROLLBAR_GUTTER = 8
+
 function PanelHistorial:CreateTable(parent)
     local tableContainer = CreateFrame("Frame", nil, parent)
     tableContainer:SetPoint("TOPLEFT", self.archiveBar, "BOTTOMLEFT", 0, 0)
     tableContainer:SetPoint("TOPRIGHT", self.archiveBar, "BOTTOMRIGHT", 0, 0)
-    tableContainer:SetPoint("BOTTOM", parent, "BOTTOM", 0, 36)
+    tableContainer:SetPoint("BOTTOM", parent, "BOTTOM", 0, 42)
     
     local scrollFrame = CreateFrame("ScrollFrame", nil, tableContainer)
     scrollFrame:SetAllPoints(tableContainer)
@@ -1388,6 +1477,8 @@ function PanelHistorial:CreateTable(parent)
         row:Hide()
         self.tableRows[i] = row
     end
+    local tableContentHeight=36+(#self.tableRows*32)
+    scrollChild:SetHeight(tableContentHeight)
     
     local scrollBar = CreateFrame("Slider", nil, scrollFrame, BackdropTemplateMixin and "BackdropTemplate")
     scrollBar:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", -2, -2)
@@ -1424,8 +1515,13 @@ function PanelHistorial:CreateTable(parent)
     -- Ajuste dinámico al redimensionar
     scrollFrame:SetScript("OnSizeChanged", function(self, w, h)
         scrollChild:SetWidth(w)
+        local maxScroll=math.max(0,tableContentHeight-(h or 0))
+        scrollBar:SetMinMaxValues(0,maxScroll)
+        if scrollBar:GetValue()>maxScroll then scrollBar:SetValue(maxScroll) end
         if w > 50 then
-            PanelHistorial:ResizeColumns(w)
+            -- La barra de desplazamiento vive en el borde derecho: si las
+            -- columnas llegan hasta ahi, la ultima queda debajo de ella.
+            PanelHistorial:ResizeColumns(w - SCROLLBAR_GUTTER)
         end
     end)
 
@@ -1434,7 +1530,7 @@ function PanelHistorial:CreateTable(parent)
         local w = scrollFrame:GetWidth()
         if w > 50 then
             scrollChild:SetWidth(w)
-            PanelHistorial:ResizeColumns(w)
+            PanelHistorial:ResizeColumns(w - SCROLLBAR_GUTTER)
         end
     end)
     self.tableHeader = tableHeader
@@ -1456,7 +1552,7 @@ function PanelHistorial:CreateTableHeader(parent)
     Theme:SetVertexColor(bottomBorder, Theme.GOLD.gold0)
     
     local columns = {
-        { key = "favorite", text = "FAV", width = 36 },
+        { key = "favorite", text = "FAV.", width = 42 },
         { key = "dungeon", text = "MAZMORRA", width = 140 },
         { key = "level", text = "NIVEL", width = 50 },
         { key = "season", text = "TEMPORADA", width = 100 },
@@ -1466,7 +1562,7 @@ function PanelHistorial:CreateTableHeader(parent)
         { key = "role", text = "ROL", width = 55 },
         { key = "quality", text = "DATOS", width = 70 },
         { key = "notes", text = "NOTA", width = 55 },
-        { key = "tags", text = "ETIQUETAS", width = 90 },
+        { key = "tags", text = "ETIQUETA", width = 90 },
         { key = "group", text = "GRUPO", width = 90 },
         { key = "date", text = "FECHA", width = 90 },
         { key = "actions", text = "", width = 30 },
@@ -1486,6 +1582,8 @@ function PanelHistorial:CreateTableHeader(parent)
 
         local colText = colHeader:CreateFontString(nil, "OVERLAY")
         colText:SetWordWrap(false)
+        colText:SetNonSpaceWrap(false)
+        if colText.SetMaxLines then colText:SetMaxLines(1) end
         Theme:ApplyFont(colText, "mono", 12)
         colText:SetText(col.text)
         Theme:SetTextColor(colText, Theme.GOLD.gold3)
@@ -1495,6 +1593,7 @@ function PanelHistorial:CreateTableHeader(parent)
             colText:SetJustifyH("CENTER")
         else
             colText:SetPoint("LEFT", colHeader, "LEFT", 10, 0)
+            colText:SetPoint("RIGHT",colHeader,"RIGHT",-6,0)
             colText:SetJustifyH("LEFT")
         end
         
@@ -1521,6 +1620,7 @@ function PanelHistorial:CreateTableHeader(parent)
 
             -- Fase 3.2 — Tooltips descriptivos en columnas
             local COL_TOOLTIPS = {
+                favorite= {"Favorita", "Una estrella encendida identifica una partida favorita"},
                 dungeon = {"Mazmorra", "Nombre del dungeon Mythic+"},
                 level   = {"Nivel de llave", "Nivel del Mythic+ completado (ej: +10)"},
                 season  = {"Temporada", "Temporada guardada en la run; nunca se infiere para runs históricas"},
@@ -1577,6 +1677,28 @@ function PanelHistorial:CreateTableRow(parent, index)
     Theme:SetVertexColor(bottomBorder, Theme.BORDER.panel)
     
     row.cells = {}
+
+    -- Favorito se expresa como estrella nativa, no como combinaciones "x*".
+    -- La selección ya queda inequívoca por el fondo dorado de la fila.
+    local favoriteIcon = row:CreateTexture(nil, "OVERLAY")
+    favoriteIcon:SetSize(17, 17)
+    favoriteIcon:SetTexture("Interface\\COMMON\\ReputationStar")
+    favoriteIcon:SetVertexColor(Theme.GOLD.gold4.r,Theme.GOLD.gold4.g,Theme.GOLD.gold4.b,1)
+    row.favoriteIcon = favoriteIcon
+
+    local favoriteTipFrame = CreateFrame("Frame", nil, row)
+    favoriteTipFrame:SetSize(24, 24)
+    favoriteTipFrame:EnableMouse(true)
+    favoriteTipFrame:SetScript("OnEnter", function(self)
+        if not row.runData or not GameTooltip then return end
+        GameTooltip:SetOwner(self,"ANCHOR_TOP")
+        GameTooltip:SetText(row.runData.isFavorite and "Partida favorita" or "No marcada como favorita",1,.8,.2)
+        GameTooltip:AddLine("Selecciona la fila y usa Favorita para cambiarla.",.75,.75,.75,true)
+        GameTooltip:Show()
+    end)
+    favoriteTipFrame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    favoriteTipFrame:SetScript("OnMouseDown",function(_,button) if button=="LeftButton" then PanelHistorial:SelectRow(row) end end)
+    row.favoriteTipFrame = favoriteTipFrame
     
     -- ── Acento lateral dorado (aparece en hover) ─────────────────────────────
     -- 3 texturas para simular gradiente vertical: transparente → dorado → transparente
@@ -1620,6 +1742,26 @@ function PanelHistorial:CreateTableRow(parent, index)
     specIcon:SetAlpha(0.85)
     specIcon:Hide()
     row.specIcon = specIcon
+
+    -- Rol: icono oficial de Blizzard y zona de tooltip accesible.
+    local roleIcon = row:CreateTexture(nil, "OVERLAY")
+    roleIcon:SetSize(20, 20)
+    SetNativeRoleIcon(roleIcon,"DAMAGER")
+    row.roleIcon = roleIcon
+
+    local roleTipFrame = CreateFrame("Frame", nil, row)
+    roleTipFrame:SetSize(28, 26)
+    roleTipFrame:EnableMouse(true)
+    roleTipFrame:SetScript("OnEnter", function(self)
+        if not row.runData or not GameTooltip then return end
+        local role = row._displayRole or "DAMAGER"
+        GameTooltip:SetOwner(self,"ANCHOR_TOP")
+        GameTooltip:SetText("Rol: " .. (ROLE_LABEL[role] or "DPS"),1,.8,.2)
+        GameTooltip:Show()
+    end)
+    roleTipFrame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    roleTipFrame:SetScript("OnMouseDown",function(_,button) if button=="LeftButton" then PanelHistorial:SelectRow(row) end end)
+    row.roleTipFrame = roleTipFrame
 
     -- ── Record badge (sobre el nivel, col 3) ─────────────────────────────────
     local recordBadge = row:CreateTexture(nil, "OVERLAY")
@@ -1736,6 +1878,14 @@ function PanelHistorial:CreateTableRow(parent, index)
         if self.runData and GameTooltip then
             GameTooltip:SetOwner(self,"ANCHOR_TOP")
             GameTooltip:SetText(string.format("%s +%d",self.runData.dungeonName or "Run",tonumber(self.runData.keyLevel) or 0),1,.82,.2)
+            local _,seasonName=MitzuMPlus.RunMetrics:GetSeason(self.runData)
+            GameTooltip:AddLine(string.format("%s · %s",self.runData.playerName or "Sin personaje",seasonName or "Midnight"),.78,.78,.78,true)
+            if type(self.runData.tags)=="table" and #self.runData.tags>0 then
+                GameTooltip:AddLine("Etiqueta: "..table.concat(self.runData.tags,", "),.85,.72,.35,true)
+            end
+            if tostring(self.runData.notes or "")~="" then
+                GameTooltip:AddLine("Nota: "..tostring(self.runData.notes),.75,.75,.75,true)
+            end
             GameTooltip:AddLine(self.selected and "Seleccionada" or "No seleccionada",self.selected and .3 or .7,self.selected and .85 or .7,self.selected and 1 or .7)
             GameTooltip:AddLine("Clic: seleccionar · Ctrl+clic: selección múltiple",.75,.75,.75,true)
             GameTooltip:Show()
@@ -1895,22 +2045,7 @@ function PanelHistorial:Refresh()
 end
 
 function PanelHistorial:RefreshSeasonFilter()
-    if not self.seasonDropdown or not self.seasonDropdown.SetItems or not MitzuMPlus.RunMetrics then return end
-    local seasonMap={}
-    for _,run in ipairs(MitzuMPlus:GetAllRuns() or {}) do
-        local key,label=MitzuMPlus.RunMetrics:GetSeason(run);seasonMap[key]=label
-    end
-    local keys={};for key in pairs(seasonMap) do keys[#keys+1]=key end
-    table.sort(keys,function(a,b)return tostring(seasonMap[a])<tostring(seasonMap[b]) end)
-    local options={"Todas"};self.seasonKeys={"ALL"}
-    local activeIndex=1
-    for _,key in ipairs(keys) do
-        options[#options+1]=seasonMap[key];self.seasonKeys[#self.seasonKeys+1]=key
-        if key==self.activeSeasonFilter then activeIndex=#options end
-    end
-    if self.activeSeasonFilter~="ALL" and activeIndex==1 then self.activeSeasonFilter="ALL" end
-    self.seasonDropdown:SetItems(options)
-    if self.seasonDropdown.SetButtonText then self.seasonDropdown:SetButtonText(options[activeIndex]) end
+    self.activeSeasonFilter="MIDNIGHT"
 end
 
 -- Helper: anima un FontString de 0 → targetVal en ~0.4s (Fase 4.2)
@@ -2045,11 +2180,10 @@ function PanelHistorial:ApplyFilters()
         runs = filtered
     end
 
-    if self.activeSeasonFilter and self.activeSeasonFilter~="ALL" then
+    if self.activeSeasonFilter=="MIDNIGHT" then
         local filtered={}
         for _,run in ipairs(runs) do
-            local key=MitzuMPlus.RunMetrics:GetSeason(run)
-            if key==self.activeSeasonFilter then filtered[#filtered+1]=run end
+            if IsMidnightRun(run) then filtered[#filtered+1]=run end
         end
         runs=filtered
     end
@@ -2131,6 +2265,14 @@ function PanelHistorial:ApplyFilters()
     end
 
     self.filteredRuns = runs
+
+    -- Al cambiar el filtro cambia el nombre de mazmorra mas largo de la lista,
+    -- y con el lo que necesita esa columna. Sin esto, filtrar a una sola
+    -- mazmorra dejaria la columna del tamano que pedia la lista anterior.
+    if self.scrollFrame then
+        local w = self.scrollFrame:GetWidth()
+        if w and w > 50 then self:ResizeColumns(w - SCROLLBAR_GUTTER) end
+    end
 
     -- ── Calcular records por mazmorra (mejor nivel por nombre) ───────────────
     self.recordKeys = {}   -- dungeonName → max keyLevel en filteredRuns
@@ -2250,9 +2392,9 @@ function PanelHistorial:PopulateRow(row, run, globalIndex)
     row.selected = self.selectedRunIDs and self.selectedRunIDs[tonumber(run.runID)] or false
     Theme:SetBackdropColor(row,row.selected and Theme.BG.rowSel or (row.rowIndex%2==1 and Theme.BG.rowOdd or Theme.BG.rowEven))
     
-    local isSelected=self.selectedRunIDs and self.selectedRunIDs[tonumber(run.runID)]
-    row.cells[1]:SetText(isSelected and (run.isFavorite and "x*" or "x") or (run.isFavorite and "*" or "-"))
-    Theme:SetTextColor(row.cells[1], row.selected and Theme.STATUS.info or (run.isFavorite and Theme.GOLD.gold4 or Theme.TEXT.dim))
+    row.cells[1]:SetText("")
+    row.favoriteIcon:SetAlpha(run.isFavorite and 1 or .18)
+    if row.favoriteIcon.SetDesaturated then row.favoriteIcon:SetDesaturated(not run.isFavorite) end
     
     -- ── Spec icon ────────────────────────────────────────────────────────────
     local role = (run.playerRole or run.role or "DAMAGER"):upper()
@@ -2285,8 +2427,10 @@ function PanelHistorial:PopulateRow(row, run, globalIndex)
         row.recordBadge:Hide()
     end
     
-    local seasonLabel="Sin temporada (histórico)"
-    if MitzuMPlus.RunMetrics then local _,label=MitzuMPlus.RunMetrics:GetSeason(run);seasonLabel=label end
+    local seasonLabel=""
+    if MitzuMPlus.RunMetrics and IsMidnightRun(run) then
+        local _,label=MitzuMPlus.RunMetrics:GetSeason(run);seasonLabel=label or "Midnight"
+    end
     if #seasonLabel>20 then seasonLabel=seasonLabel:sub(1,17).."..." end
     row.cells[4]:SetText(seasonLabel);Theme:SetTextColor(row.cells[4],Theme.TEXT.secondary)
     
@@ -2309,7 +2453,10 @@ function PanelHistorial:PopulateRow(row, run, globalIndex)
     Theme:SetTextColor(row.cells[7],Theme.TEXT.primary)
     local role,roleLabel="DAMAGER","DPS"
     if MitzuMPlus.RunMetrics then role,roleLabel=MitzuMPlus.RunMetrics:GetRole(run) end
-    row.cells[8]:SetText(roleLabel);Theme:SetTextColor(row.cells[8],role=="HEALER" and Theme.STATUS.ok or (role=="TANK" and Theme.STATUS.info or Theme.GOLD.gold4))
+    row.cells[8]:SetText("")
+    row._displayRole=role
+    SetNativeRoleIcon(row.roleIcon,role)
+    row.roleIcon:SetAlpha(1)
     local quality,qualityLabel="INVALID","Incompleta"
     if MitzuMPlus.RunMetrics then quality,qualityLabel=MitzuMPlus.RunMetrics:GetQuality(run) end
     row.cells[9]:SetText(qualityLabel)
@@ -2351,7 +2498,10 @@ function PanelHistorial:PopulateRow(row, run, globalIndex)
             Theme:SetBackdropBorderColor(dot, border)
             dot.label:SetText(abbr)
             dot.label:SetTextColor(clsColor.r, clsColor.g, clsColor.b, 1)
-            dot:Show()
+            -- `_hasMember` es lo que permite que ResizeColumns las devuelva
+            -- al ensanchar la ventana sin tener que repintar la tabla.
+            dot._hasMember = true
+            dot:SetShown(not self:IsColumnHidden("group"))
 
             -- Tooltip con nombre de clase
             dot:SetScript("OnEnter", function(self)
@@ -2366,6 +2516,7 @@ function PanelHistorial:PopulateRow(row, run, globalIndex)
                 if GameTooltip then GameTooltip:Hide() end
             end)
         else
+            dot._hasMember = false
             dot:Hide()
         end
     end
@@ -2457,15 +2608,20 @@ function PanelHistorial:UpdatePaginationUI()
     self.pageInfo:SetText(string.format("Página %d de %d · %d runs totales", 
         self.currentPage, totalPages, #self.filteredRuns))
     
+    local firstPage=math.max(1,math.min(self.currentPage-2,totalPages-4))
     for i, btn in ipairs(self.pageButtons) do
-        if i <= totalPages then
-            btn.pageNum = i
-            btn:SetButtonText(tostring(i))
+        local pageNum=firstPage+i-1
+        if pageNum <= totalPages then
+            btn.pageNum = pageNum
+            btn:SetButtonText(tostring(pageNum))
+            btn:SetAlpha(pageNum==self.currentPage and 1 or .72)
             btn:Show()
         else
             btn:Hide()
         end
     end
+    if self.prevBtn then self.prevBtn:SetEnabled(self.currentPage>1);self.prevBtn:SetAlpha(self.currentPage>1 and 1 or .32) end
+    if self.nextBtn then self.nextBtn:SetEnabled(self.currentPage<totalPages);self.nextBtn:SetAlpha(self.currentPage<totalPages and 1 or .32) end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2474,9 +2630,39 @@ end
 
 -- Pesos relativos de cada columna (deben sumar 1.0)
 local COLUMN_WEIGHTS = {
-    favorite=0.035,dungeon=0.145,level=0.050,season=0.085,result=0.090,
-    margin=0.065,character=0.100,role=0.050,quality=0.070,notes=0.045,
-    tags=0.065,group=0.060,date=0.105,actions=0.035,
+    favorite=0.035,dungeon=0.170,level=0.050,season=0.090,result=0.085,
+    margin=0.065,character=0.105,role=0.040,quality=0.065,notes=0.040,
+    tags=0.070,group=0.075,date=0.075,actions=0.035,
+}
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- BUG UI-TB1 — la tabla se salía de la ventana y los títulos aparecían
+-- cortados ("TEMPORA...", "RESULTA...", "MARG...", y FECHA partida por el
+-- borde derecho).
+--
+-- Dos causas, las dos en estos números:
+--
+--  1. Los mínimos suman 1255 px. El contenedor real ronda los 1040. El
+--     reparto hacía `extra = max(0, total - 1255)` = 0 y le daba a cada
+--     columna su mínimo... o sea 1255 px de columnas en 1040 px de hueco.
+--     Los últimos 215 px caían FUERA de la ventana. El `max(0, ...)` evitaba
+--     un número negativo pero no el desbordamiento: no había ningún camino
+--     para el caso "no cabe".
+--  2. Los mínimos estaban puestos a ojo para la fuente de Blizzard. Con la
+--     del tema, "TEMPORADA" no cabe en los 115 px que tenía asignados, así
+--     que se recortaba aunque la columna tuviera su ancho completo.
+--
+-- Ahora: el mínimo de cada columna es el mayor entre su mínimo legible y lo
+-- que mide SU PROPIO TÍTULO, medido en el cliente. Y si con eso no cabe, se
+-- van soltando columnas por orden de menos valor hasta que quepa.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Anchos mínimos legibles de los DATOS. El título puede pedir más y manda el
+-- mayor de los dos; ver PanelHistorial:_ColumnMin.
+local COLUMN_MIN_WIDTH = {
+    favorite=45,dungeon=220,level=60,season=115,result=105,
+    margin=75,character=140,role=50,quality=75,notes=50,
+    tags=85,group=100,date=100,actions=35,
 }
 
 local COLUMN_ORDER = {
@@ -2484,29 +2670,171 @@ local COLUMN_ORDER = {
     "margin","character","role","quality","notes","tags","group","date","actions"
 }
 
+-- clave -> indice de celda. Las celdas de una fila se crean en este mismo
+-- orden (CELL_KEYS en CreateTableRow), asi que el indice coincide.
+local CELL_INDEX = {}
+for i, key in ipairs(COLUMN_ORDER) do CELL_INDEX[key] = i end
+
+-- Orden de sacrificio cuando no cabe todo: la primera de la lista es la
+-- primera en desaparecer. El criterio es cuánta información aporta DE VERDAD
+-- en la tabla:
+--   TEMPORADA  pone "Midnight" en las 20 filas y ya hay un filtro para ella.
+--   NOTA       un "-" en casi todas; el detalle de la fila la muestra.
+--   ETIQUETA   igual.
+--   DATOS      "Completa" en casi todas.
+--   GRUPO      las pastillas de composición; útil, así que cae la última.
+-- Lo que NUNCA se suelta: FAV, MAZMORRA, NIVEL, RESULTADO, MARGEN,
+-- PERSONAJE, ROL, FECHA y la flecha de detalle.
+local COLUMN_DROP_ORDER = { "season", "notes", "tags", "quality", "group" }
+
+-- Mínimo real de una columna: el mayor entre el mínimo de sus datos y lo que
+-- ocupa su título con la fuente que de verdad se está usando. Se mide una vez
+-- y se guarda; solo depende de la fuente, no del tamaño de la ventana.
+function PanelHistorial:_ColumnMin(key)
+    self._colMin = self._colMin or {}
+    local cache = self._colMin[key]
+    if cache then return cache end
+
+    local minimo = COLUMN_MIN_WIDTH[key] or 0
+    local colHeader = self.tableHeader and self.tableHeader.columns
+                      and self.tableHeader.columns[key]
+    local fs = colHeader and colHeader.text
+    local medido = false
+    if fs and fs.GetStringWidth then
+        local ok, w = pcall(fs.GetStringWidth, fs)
+        -- 16 px son los márgenes del texto dentro de la celda (10 + 6) y 4
+        -- más de holgura para que no quede el título pegado al borde.
+        if ok and type(w) == "number" and w > 0 then
+            medido = true
+            if (w + 20) > minimo then minimo = w + 20 end
+        end
+    end
+    -- Solo se guarda una medida VALIDA. Si el cliente aun no sabe medir ese
+    -- texto devuelve 0, y cachear el minimo de fabrica en ese momento seria
+    -- quedarse para siempre con el numero puesto a ojo.
+    if medido then self._colMin[key] = minimo end
+    return minimo
+end
+
+-- ¿Está suelta esta columna ahora mismo?
+function PanelHistorial:IsColumnHidden(key)
+    return self._hiddenColumns ~= nil and self._hiddenColumns[key] == true
+end
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Lo que pide la columna MAZMORRA para no recortar ningún nombre
+--
+-- Era la truncadura más visible de la tabla: "Estanques de Vida...", "El
+-- Valle Enceguece...", "Templo de Sethrali...". Un mínimo puesto a ojo no
+-- puede saberlo, porque depende de la fuente Y de qué mazmorras tenga este
+-- jugador en su historial. Así que se mide el nombre más largo que de verdad
+-- hay en la lista, con la fuente de las celdas.
+--
+-- La columna es la identidad de la fila: si algo tiene que recortarse, que
+-- sea otra cosa. Por eso pide sitio y las columnas de relleno se sueltan
+-- antes. El tope evita que un nombre desmesurado se coma la tabla entera.
+-- ─────────────────────────────────────────────────────────────────────────
+
+local DUNGEON_ICON_ROOM  = 32   -- hueco del icono de spec + margen
+local DUNGEON_MAX_SHARE  = 0.34 -- como maximo, este porcentaje de la tabla
+
+function PanelHistorial:_DungeonNameWidth(totalWidth)
+    local header = self.tableHeader
+    if not header then return 0 end
+    if not self._nameMeasure then
+        local fs = header:CreateFontString(nil, "ARTWORK")
+        Theme:ApplyFont(fs, "mono", 14)   -- la misma que las celdas
+        if fs.SetWordWrap then fs:SetWordWrap(false) end
+        fs:Hide()
+        self._nameMeasure = fs
+    end
+
+    local fs = self._nameMeasure
+    local vistos, masLargo = {}, 0
+    local runs = self.filteredRuns
+    if type(runs) ~= "table" or #runs == 0 then
+        runs = (MitzuMPlus.GetAllRuns and MitzuMPlus:GetAllRuns()) or {}
+    end
+    for _, run in ipairs(runs) do
+        local nombre = run and run.dungeonName
+        if type(nombre) == "string" and nombre ~= "" and not vistos[nombre] then
+            vistos[nombre] = true
+            fs:SetText(nombre)
+            local ok, w = pcall(fs.GetStringWidth, fs)
+            if ok and type(w) == "number" and w > masLargo then masLargo = w end
+        end
+    end
+    if masLargo <= 0 then return 0 end
+
+    local pedido = masLargo + DUNGEON_ICON_ROOM + 8
+    local tope = math.floor((totalWidth or 0) * DUNGEON_MAX_SHARE)
+    if tope > 0 and pedido > tope then pedido = tope end
+    return pedido
+end
+
 function PanelHistorial:ResizeColumns(totalWidth)
     if not totalWidth or totalWidth < 50 then return end
     if not self.tableHeader or not self.tableHeader.columns then return end
 
+    -- El reparto en si es aritmetica pura y vive en Widgets:FitColumns, donde
+    -- se puede probar sin abrir el juego. Aqui se le dan los minimos ya
+    -- medidos y se aplican los anchos que devuelve.
+    local minimos = {}
+    for _, key in ipairs(COLUMN_ORDER) do minimos[key] = self:_ColumnMin(key) end
+    -- MAZMORRA pide lo que de verdad ocupa el nombre mas largo del historial.
+    local pideMazmorra = self:_DungeonNameWidth(totalWidth)
+    if pideMazmorra > minimos.dungeon then minimos.dungeon = pideMazmorra end
+
+    local anchos, sueltas = Widgets:FitColumns({
+        total     = totalWidth,
+        order     = COLUMN_ORDER,
+        mins      = minimos,
+        weights   = COLUMN_WEIGHTS,
+        dropOrder = COLUMN_DROP_ORDER,
+    })
+    self._hiddenColumns = sueltas
+
     local xOffset = 0
     for _, key in ipairs(COLUMN_ORDER) do
-        local colWidth = math.floor(totalWidth * (COLUMN_WEIGHTS[key] or 0.05))
         local colHeader = self.tableHeader.columns[key]
+
+        if sueltas[key] then
+            if colHeader then colHeader:Hide() end
+            for _, row in ipairs(self.tableRows or {}) do
+                local ci = CELL_INDEX[key]
+                if ci and row.cells and row.cells[ci] then row.cells[ci]:Hide() end
+                if key == "group" and row.memberDots then
+                    for _, dot in ipairs(row.memberDots) do dot:Hide() end
+                end
+            end
+            -- No se avanza xOffset: la columna no ocupa sitio.
+        else
+
+        local colWidth = anchos[key] or 0
         if colHeader then
+            colHeader:Show()
             colHeader:ClearAllPoints()
             colHeader:SetPoint("LEFT", self.tableHeader, "LEFT", xOffset, 0)
             colHeader:SetWidth(colWidth)
         end
         -- Actualizar celdas de cada fila
         for _, row in ipairs(self.tableRows or {}) do
-            local cellIndex = nil
-            for ci, ck in ipairs(COLUMN_ORDER) do
-                if ck == key then cellIndex = ci break end
-            end
+            local cellIndex = CELL_INDEX[key]
             if cellIndex and row.cells and row.cells[cellIndex] then
+                row.cells[cellIndex]:Show()
                 row.cells[cellIndex]:ClearAllPoints()
 
-                if key == "dungeon" then
+                if key == "favorite" then
+                    row.cells[cellIndex]:SetText("")
+                    if row.favoriteIcon then
+                        row.favoriteIcon:ClearAllPoints()
+                        row.favoriteIcon:SetPoint("CENTER",row,"LEFT",xOffset+math.floor(colWidth/2),0)
+                    end
+                    if row.favoriteTipFrame then
+                        row.favoriteTipFrame:ClearAllPoints()
+                        row.favoriteTipFrame:SetPoint("CENTER",row,"LEFT",xOffset+math.floor(colWidth/2),0)
+                    end
+                elseif key == "dungeon" then
                     -- Dejar espacio para el spec icon (20px)
                     row.cells[cellIndex]:SetPoint("LEFT", row, "LEFT", xOffset + 26, 0)
                     row.cells[cellIndex]:SetWidth(colWidth - 32)
@@ -2515,9 +2843,24 @@ function PanelHistorial:ResizeColumns(totalWidth)
                         row.specIcon:ClearAllPoints()
                         row.specIcon:SetPoint("LEFT", row, "LEFT", xOffset + 4, 0)
                     end
+                elseif key == "role" then
+                    row.cells[cellIndex]:SetText("")
+                    if row.roleIcon then
+                        row.roleIcon:ClearAllPoints()
+                        row.roleIcon:SetPoint("CENTER",row,"LEFT",xOffset+math.floor(colWidth/2),0)
+                    end
+                    if row.roleTipFrame then
+                        row.roleTipFrame:ClearAllPoints()
+                        row.roleTipFrame:SetPoint("CENTER",row,"LEFT",xOffset+math.floor(colWidth/2),0)
+                    end
                 elseif key == "group" then
                     -- Ocultar fontstring (los dots son frames separados)
                     row.cells[cellIndex]:SetText("")
+                    if row.memberDots then
+                        for _, dot in ipairs(row.memberDots) do
+                            dot:SetShown(dot._hasMember == true)
+                        end
+                    end
                     -- Posicionar los 5 member dots dentro de la columna
                     if row.memberDots then
                         local dotW    = 14
@@ -2548,6 +2891,7 @@ function PanelHistorial:ResizeColumns(totalWidth)
             end
         end
         xOffset = xOffset + colWidth
+        end   -- fin de la rama "la columna se ve"
     end
 end
 

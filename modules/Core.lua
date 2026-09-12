@@ -274,6 +274,7 @@ function MitzuMPlus:RegisterCoreEvents()
         MitzuMPlus._trackingActive = false
 
         MitzuMPlus._eventsRegistered = true
+        if MitzuMPlus.UpdateWindowStatus then MitzuMPlus:UpdateWindowStatus() end
         return true
     end
 
@@ -502,6 +503,8 @@ function MitzuMPlus:OnGroupRosterUpdate()
 end
 
 function MitzuMPlus:OnChallengeStart()
+    local settings=self.db and self.db.profile and self.db.profile.settings
+    if settings and settings.autoActivateTracking == false then return end
     -- ─────────────────────────────────────────────────────────────────────
     -- BUG CTX-1 (v7.11.0) — este handler colgaba de CHALLENGE_MODE_START, y
     -- ese evento NO significa que la llave haya empezado: se dispara al
@@ -721,6 +724,7 @@ function MitzuMPlus:OnChallengeStart()
     end
 
     _G.MitzuMPlusCurrentRun = run
+    if self.UpdateWindowStatus then self:UpdateWindowStatus() end
 
     -- v5.4.2: ShowOverlay arranca el ticker externo del Coach. Ya NO hace falta
     -- acertar con el instante exacto: si IsChallengeModeActive() todavia es
@@ -1629,6 +1633,7 @@ function MitzuMPlus:_TeardownRun(reason)
         pcall(self.ClearCombatBaseline, self)
     end
     _G.MitzuMPlusCurrentRun = nil
+    if self.UpdateWindowStatus then self:UpdateWindowStatus() end
     if self.EventBus then
         self.EventBus:Emit("RUN_TEARDOWN", reason)
     end
@@ -2091,6 +2096,8 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 if MitzuMPlus.EventBus then
     MitzuMPlus.EventBus:On("MITZU_KEY_STARTED", function()
+        local settings=MitzuMPlus.db and MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings
+        if settings and settings.autoActivateTracking == false then return end
         if _G.MitzuMPlusCurrentRun then return end
         pcall(function() MitzuMPlus:OnChallengeStart() end)
     end)

@@ -124,7 +124,7 @@ function MitzuMPlus:CreateTitlebar(parent)
     local statusText = titlebar:CreateFontString(nil, "OVERLAY")
     statusText:SetPoint("LEFT", statusDot, "RIGHT", 5, 0)
     Theme:ApplyFont(statusText, "mono", 10)
-    statusText:SetText("ACTIVA")
+    statusText:SetText("CAPTURA ACTIVA")
     Theme:SetTextColor(statusText, Theme.STATUS.ok)
     
     local settingsBtn = CreateFrame("Button", nil, titlebar, BackdropTemplateMixin and "BackdropTemplate")
@@ -272,7 +272,7 @@ end
 -- UPDATE STATUS INDICATOR
 -- ═══════════════════════════════════════════════════════════════════════════
 
-function MitzuMPlus:UpdateWindowStatus(active)
+function MitzuMPlus:UpdateWindowStatus()
     if not self.Window then return end
     
     local statusDot = self.Window.statusDot
@@ -280,14 +280,18 @@ function MitzuMPlus:UpdateWindowStatus(active)
     
     if not statusDot or not statusText then return end
     
-    if active then
+    if _G.MitzuMPlusCurrentRun then
+        Theme:SetVertexColor(statusDot, Theme.STATUS.warn)
+        statusText:SetText("M+ EN CURSO")
+        Theme:SetTextColor(statusText, Theme.STATUS.warn)
+    elseif self._eventsRegistered then
         Theme:SetVertexColor(statusDot, Theme.STATUS.ok)
-        statusText:SetText("ACTIVA")
+        statusText:SetText("CAPTURA ACTIVA")
         Theme:SetTextColor(statusText, Theme.STATUS.ok)
     else
         Theme:SetVertexColor(statusDot, Theme.TEXT.dim)
-        statusText:SetText("INACTIVO")
-        Theme:SetTextColor(statusText, Theme.TEXT.dim)
+        statusText:SetText("CAPTURA PAUSADA")
+        Theme:SetTextColor(statusText, Theme.TEXT.tertiary)
     end
 end
 

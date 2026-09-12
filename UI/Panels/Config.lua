@@ -96,7 +96,8 @@ local function MakeToggleRow(section, labelText, descText, getState, onChanged)
     cb:SetPoint("RIGHT", row,"RIGHT", 0, 0)
     cb:SetChecked(getState())
     cb:SetScript("OnClick", function(self)
-        onChanged(self:GetChecked())
+        local accepted = onChanged(self:GetChecked())
+        if accepted == false then self:SetChecked(not self:GetChecked()) end
     end)
     row.toggle = cb
     row.toggle.SetState = function(self,v) self:SetChecked(v) end
@@ -297,29 +298,30 @@ function PanelConfig:Create(parent)
     secGeneral:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
     secGeneral:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
 
-    MakeToggleRow(secGeneral,
+    self.captureToggleRow = MakeToggleRow(secGeneral,
         "Registrar automáticamente",
         "Registra las runs completadas de forma automática",
-        function() return S().autoActivateTracking ~= false end,
-        function(v) S().autoActivateTracking = v end)
+        function() return MitzuMPlus._eventsRegistered == true end,
+        function(v)
+            if v and InCombatLockdown and InCombatLockdown() then
+                MitzuMPlus:Print("|cFFFF9922La captura se puede reactivar al salir de combate.|r")
+                return false
+            end
+            if not v and _G.MitzuMPlusCurrentRun then
+                MitzuMPlus:Print("|cFFFF9922La captura no puede pausarse durante una M+ en curso.|r")
+                return false
+            end
+            S().autoActivateTracking = v
+            if v then MitzuMPlus:_SafeRegisterCoreEvents()
+            else MitzuMPlus:UnregisterCoreEvents() end
+            if MitzuMPlus.UpdateWindowStatus then MitzuMPlus:UpdateWindowStatus() end
+        end)
 
     MakeToggleRow(secGeneral,
         "Solo runs en tiempo",
         "Registra únicamente runs completadas dentro del tiempo límite",
         function() return P().onlyInTime or false end,
         function(v) P().onlyInTime = v end)
-
-    MakeToggleRow(secGeneral,
-        "Registrar detalles completos",
-        "Incluye estadísticas de combate: DPS, healing, muertes, etc.",
-        function()
-            local t = S().tracking
-            return t == nil or t.damage ~= false
-        end,
-        function(v)
-            if not S().tracking then S().tracking = {} end
-            S().tracking.damage = v
-        end)
 
     MakeToggleRow(secGeneral,
         "Compartir datos con grupo",
@@ -467,8 +469,8 @@ function PanelConfig:Create(parent)
 
     MakeSliderRow(secUI,
         "Opacidad de ventana  (%)",
-        20, 100,
-        function() return math.floor((S().windowOpacity or 0.92) * 100) end,
+        80, 100,
+        function() return math.max(80,math.floor((S().windowOpacity or 1.0) * 100)) end,
         function(v)
             local alpha = v / 100
             S().windowOpacity = alpha
@@ -672,32 +674,20 @@ function PanelConfig:Create(parent)
     secData:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
     secData:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
 
-    MakeInfoRow(secData, "Runs registradas:", tostring(runsCount) .. " en base de datos")
+    self.runsInfoRow = MakeInfoRow(secData, "Partidas guardadas:", tostring(runsCount))
 
-    MakeButtonRow(secData, "Exportar a CSV",
-        function()
-            if MitzuMPlus.Export and MitzuMPlus.Export.ExportToCSV then
-                MitzuMPlus.Export:ExportToCSV()
-            else
-                MitzuMPlus:Print("Exportación no disponible.")
-            end
-        end, "primary")
+    MakeButtonRow(secData, "Restablecer ajustes (conserva partidas)",
+        function() if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_RESET_CONFIG") end end, "normal")
 
-    MakeButtonRow(secData, "Restablecer configuracion",
-        function() if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_RESET_CONFIG") end end, "bad")
-
-    MakeButtonRow(secData, "Borrar todos los datos",
+    MakeButtonRow(secData, "Borrar historial de partidas",
         function() if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_CLEAR_ALL") end end, "bad")
 
-    MakeButtonRow(secData, "Validar integridad",
+    MakeButtonRow(secData, "Revisar integridad del historial",
         function()
             if MitzuMPlus.DataManager then
                 local valid, invalid = MitzuMPlus.DataManager:ValidateAllRuns()
                 MitzuMPlus:Print(string.format(
-                    "|cFFe8b84a[DataManager]|r %d válidas, %d corruptas.", valid, invalid))
-                if invalid > 0 then
-                    MitzuMPlus.DataManager:RemoveCorruptRuns()
-                end
+                    "|cFFe8b84aRevisión terminada:|r %d partidas válidas y %d corruptas. No se eliminó nada.", valid, invalid))
             end
         end, "primary")
 
@@ -759,7 +749,15 @@ end
 -- ─────────────────────────────────────────────────────────────────────────
 
 function PanelConfig:Refresh()
-    -- Los widgets leen S()/P() en tiempo de click, no necesitan refresh.
+    if self.captureToggleRow and self.captureToggleRow.toggle then
+        self.captureToggleRow.toggle:SetChecked(MitzuMPlus._eventsRegistered == true)
+    end
+    if self.runsInfoRow and self.runsInfoRow.valueFS then
+        local count=0
+        local runs=MitzuMPlus.db and MitzuMPlus.db.global and MitzuMPlus.db.global.runs or {}
+        for _ in pairs(runs) do count=count+1 end
+        self.runsInfoRow.valueFS:SetText(tostring(count))
+    end
 end
 
 return PanelConfig

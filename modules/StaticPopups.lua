@@ -31,20 +31,26 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE"] = {
 }
 
 StaticPopupDialogs["MITZUMPLUS_CONFIRM_CLEAR_ALL"] = {
-    text = "¿Borrar TODAS las runs del historial? Esto es IRREVERSIBLE.",
-    button1 = "|cFFFF4444Borrar todo|r",
+    text = "¿Borrar el historial de partidas? Se eliminarán las partidas guardadas y los récords personales calculados a partir de ellas. Las rutas y los ajustes se conservarán. Esta acción no se puede deshacer.",
+    button1 = "|cFFFF4444Borrar historial|r",
     button2 = "Cancelar",
     OnAccept = function()
-        if MitzuMPlus and MitzuMPlus.db and MitzuMPlus.db.global then
-            wipe(MitzuMPlus.db.global.runs)
-            MitzuMPlus.db.global.nextRunID = 1
+        local removed=0
+        if MitzuMPlus and MitzuMPlus.DataManager and MitzuMPlus.DataManager.ClearRunHistory then
+            removed=MitzuMPlus.DataManager:ClearRunHistory()
+        end
+        if MitzuMPlus and MitzuMPlus.PanelHistorial then
+            MitzuMPlus.PanelHistorial.selectedRunID=nil
+            if MitzuMPlus.PanelHistorial.selectedRunIDs then wipe(MitzuMPlus.PanelHistorial.selectedRunIDs) end
         end
         if MitzuMPlus and MitzuMPlus.RefreshHistorialTable then
             MitzuMPlus:RefreshHistorialTable()
         end
         if MitzuMPlus and MitzuMPlus.ShowToast then
-            MitzuMPlus:ShowToast("Historial borrado.", "ok")
+            MitzuMPlus:ShowToast(string.format("Historial borrado: %d partidas.",removed), "ok")
         end
+        if MitzuMPlus and MitzuMPlus.Footer and MitzuMPlus.Footer.UpdateStats then MitzuMPlus.Footer:UpdateStats() end
+        if MitzuMPlus and MitzuMPlus.PanelConfig and MitzuMPlus.PanelConfig.Refresh then MitzuMPlus.PanelConfig:Refresh() end
     end,
     timeout = 0,
     whileDead = true,
@@ -53,16 +59,21 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_CLEAR_ALL"] = {
 }
 
 StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
-    text = "¿Restablecer TODA la configuración a valores por defecto? Tus runs NO se borrarán.",
+    text = "¿Restablecer todos los ajustes? Las partidas guardadas, sus notas y las rutas se conservarán. La interfaz se recargará para aplicar los valores por defecto.",
     button1 = "Restablecer",
     button2 = "Cancelar",
     OnAccept = function()
         if MitzuMPlus and MitzuMPlus.db then
+            -- Las rutas son datos del usuario, no ajustes visuales. ResetProfile
+            -- vacía todo el perfil, así que se conservan explícitamente.
+            local routes=MitzuMPlus.db.profile and MitzuMPlus.db.profile.routes
             MitzuMPlus.db:ResetProfile()
+            if routes and MitzuMPlus.db.profile then MitzuMPlus.db.profile.routes=routes end
         end
         if MitzuMPlus and MitzuMPlus.ShowToast then
             MitzuMPlus:ShowToast("Configuración restablecida.", "ok")
         end
+        if ReloadUI then ReloadUI() end
     end,
     timeout = 0,
     whileDead = true,

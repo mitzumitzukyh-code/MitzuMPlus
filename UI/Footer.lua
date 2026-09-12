@@ -42,7 +42,7 @@ function Footer:Create(parent)
     local rightContainer = CreateFrame("Frame", nil, footer)
     rightContainer:SetPoint("RIGHT", footer, "RIGHT", -12, 0)
     rightContainer:SetHeight(Theme.LAYOUT.footerHeight)
-    rightContainer:SetWidth(300)
+    rightContainer:SetWidth(420)
     
     local xOffset = 0
     
@@ -67,6 +67,18 @@ function Footer:Create(parent)
     Theme:ApplyFont(clock, "mono", 12)
     Theme:SetTextColor(clock, Theme.TEXT.dim)
     footer.clock = clock
+
+    local clockHover=CreateFrame("Frame",nil,footer)
+    clockHover:SetPoint("CENTER",clock,"CENTER",0,0)
+    clockHover:SetSize(125,24);clockHover:EnableMouse(true)
+    clockHover:SetScript("OnEnter",function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self,"ANCHOR_TOP")
+        GameTooltip:SetText("Hora del servidor",1,.8,.2)
+        GameTooltip:AddLine("Es la hora del reino de World of Warcraft, no la hora local del equipo.",.8,.8,.8,true)
+        GameTooltip:Show()
+    end)
+    clockHover:SetScript("OnLeave",function() if GameTooltip then GameTooltip:Hide() end end)
     
     self:StartClockUpdate(footer)
     self:UpdateStats()   -- FIX: poblar con datos reales desde DB al crear
@@ -148,8 +160,7 @@ function Footer:StartClockUpdate(footer)
     local function UpdateClock()
         if footer and footer.clock and footer:IsVisible() then
             local hour, minute, second = GetGameTime()
-            -- Fase 3.1: prefijo "ST" para indicar Server Time inequívocamente
-            footer.clock:SetText(string.format("ST %02d:%02d:%02d", hour, minute, second))
+            footer.clock:SetText(string.format("SERVIDOR %02d:%02d", hour, minute))
         end
     end
 

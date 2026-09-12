@@ -34,7 +34,7 @@ Theme.BG = {
     bottomBar = { r = 0.016, g = 0.016, b = 0.027, a = 0.85 }, -- #040407
 
     -- Tabla / headers
-    tableHeader = { r = 0.051, g = 0.043, b = 0.020, a = 0.80 },
+    tableHeader = { r = 0.051, g = 0.043, b = 0.020, a = 1.00 },
     tableHeaderBorder = { r = 0.290, g = 0.235, b = 0.094, a = 0.90 },
 }
 
@@ -130,8 +130,10 @@ Theme.ROLE = {
 
 Theme.LAYOUT = {
     -- Window (tamaño fijo — no redimensionable)
-    windowWidth  = 1160,     -- fuentes extra grandes
-    windowHeight = 700,      -- fuentes extra grandes
+    -- A 1920x1080, 1400 px deja aire a filtros y columnas sin perder el
+    -- encuadre de WoW. Era 1160: obligaba a truncar casi toda la tabla.
+    windowWidth  = 1400,
+    windowHeight = 820,
     
     -- Titlebar
     titlebarHeight = 56,     -- fuentes extra grandes

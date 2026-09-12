@@ -60,6 +60,7 @@ MitzuMPlusDB_Defaults = {
             -- Sin estos, db:ResetProfile() los descarta y la posición/visibilidad
             -- del overlay no se restaura correctamente.
             overlayEnabled   = true,
+            autoActivateTracking = true,
             autoTrackOnEnter = false,
             coachEnabled     = true,
             coachAnchorBlizzard = true,
@@ -89,7 +90,6 @@ MitzuMPlusDB_Defaults = {
             -- ── Tracking por rol ──────────────────────────────────────────
             tracking = {
                 -- DPS / general
-                damage      = true,
                 damageSplit = true,
                 peakDPS     = true,
 

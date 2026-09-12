@@ -104,25 +104,17 @@ function DataManager:ValidateAllRuns()
     return valid, invalid, corrupt
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- DATA INTEGRITY: Remove corrupt runs
--- ─────────────────────────────────────────────────────────────────────────
-
-function DataManager:RemoveCorruptRuns()
-    local valid, invalid, corrupt = self:ValidateAllRuns()
-    if invalid == 0 then return 0 end
-
-    for _, runID in ipairs(corrupt) do
-        MitzuMPlus.db.global.runs[runID] = nil
-    end
-
-    if MitzuMPlus.Print then
-        MitzuMPlus:Print(string.format(
-            "|cFFe8b84a[DataManager]|r Eliminadas %d runs corruptas. %d runs válidas.",
-            invalid, valid))
-    end
-
-    return invalid
+-- Borra exclusivamente el historial y los récords derivados de él. Rutas,
+-- perfiles, configuración y AdaptiveRoute no se tocan.
+function DataManager:ClearRunHistory()
+    if not MitzuMPlus.db or not MitzuMPlus.db.global then return 0 end
+    local global=MitzuMPlus.db.global
+    local count=0
+    for _ in pairs(global.runs or {}) do count=count+1 end
+    if not global.runs then global.runs={} else wipe(global.runs) end
+    global.nextRunID=1
+    if not global.personalBests then global.personalBests={} else wipe(global.personalBests) end
+    return count
 end
 
 -- ─────────────────────────────────────────────────────────────────────────
