@@ -1,0 +1,129 @@
+════════════════════════════════════════════════════════════════════════════
+ MitzuMPlus M+ Historial — v6.7.0
+ Motor de Ruta Adaptativa en Vivo + integracion con Threat Plates
+════════════════════════════════════════════════════════════════════════════
+
+ARQUITECTURA — 5 modulos + 1 de cableado
+────────────────────────────────────────────────────────────────────────────
+ modules/AdaptiveRoute/
+   ProfileManager.lua    SavedVariables MPlusAdaptiveRouteDB, ProfileKey,
+                         carga/guardado, init seguro en ADDON_LOADED
+   DataStructure.lua     indice hash npcID -> pullIndex, acumulados, costes
+   SolverAlgorithm.lua   FUNCION PURA: mochila 0/1 exacta (DP) + voraz
+   EventTracker.lua      combat log filtrado + sync de red troceada
+   NameplateHooks.lua    marcas [SKIP] sobre Threat Plates, taint-safe
+   Bootstrap.lua         cableado al ciclo de vida de la llave
+
+ Los cinco primeros no se conocen entre si. El solver no sabe que es una
+ llave; el ProfileManager no sabe que es un nameplate. Bootstrap.lua es lo
+ unico que los une, y por eso es el unico que hay que tocar si cambia el
+ ciclo de vida del addon.
+
+1. PERFILES (ProfileManager)
+────────────────────────────────────────────────────────────────────────────
+   ProfileKey = DungeonID .. "_" .. KeyLevel .. "_" .. AffixIDs_ordenados
+
+   Los afijos se ORDENAN antes de unirlos: la API no garantiza orden estable
+   y sin ordenar "9-10-152" y "10-9-152" serian dos perfiles de la misma
+   semana. El nivel entra porque en una +2 saltas paquetes que en una +18 son
+   obligatorios por conteo.
+
+   LoadNearest(): si no hay perfil exacto busca el de la misma mazmorra con
+   el nivel mas parecido y, a igualdad, el mas reciente. Una ruta de la
+   semana pasada es infinitamente mejor que reimportar de MDT cada sesion,
+   que es justo lo que se queria evitar.
+
+   SavedVariables propio y NO MitzuMPlusDB: las rutas son grandes y se
+   reescriben a menudo; mezclarlas con el historial haria que cada guardado
+   serializase tambien todas las runs.
+
+   Init en ADDON_LOADED con fusion recursiva no destructiva: nunca se asigna
+   la tabla de defaults encima, se rellenan solo las claves que faltan. Con
+   asignacion directa, la primera actualizacion que anadiese un campo nuevo
+   borraria las rutas del usuario.
+
+2. RENDIMIENTO (EventTracker) — el requisito duro
+────────────────────────────────────────────────────────────────────────────
+   COMBAT_LOG_EVENT_UNFILTERED dispara cientos de veces por segundo en un
+   pull grande. El handler sale en la PRIMERA comparacion si el subevento no
+   es UNIT_DIED, antes de tocar ninguna tabla. Solo entonces:
+     npcID = strsplit sobre destGUID           (cadena corta, sin busqueda)
+     pullIndex = idx.npcToPull[npcID]          (una lectura de hash)
+   Cero bucles, cero asignaciones de tabla en el camino caliente.
+
+   El RECALCULO no vive ahi: un ticker de 1.5 s agrupa los cambios. Sin eso,
+   un pull de 12 mobs lanzaria 12 recalculos identicos en dos segundos.
+
+3. SOLVER — mochila 0/1, y esta VERIFICADO
+────────────────────────────────────────────────────────────────────────────
+   Delta = tropas_observadas - tropas_esperadas_a_estas_alturas.
+   Con delta > 0 se pueden saltar paquetes futuros. Se quiere maximizar el
+   coste de movimiento AHORRADO sujeto a que la suma de tropas saltadas no
+   supere el delta: si te pasas, no llegas al 100% y la llave muere por
+   conteo.
+
+   Eso es exactamente una mochila 0/1: capacidad = delta, peso = tropas,
+   valor = coste de desvio. DP exacta hasta 32 pulls / capacidad 600; por
+   encima, voraz por densidad de valor. Nunca se cuelga.
+
+   VERIFICADO CONTRA FUERZA BRUTA (unica pieza testeable sin el juego):
+     ruta de 8 pulls, delta 12
+     DP  -> saltar [2, 6] · 9 tropas · coste ahorrado 11
+     BF  -> optimo    11  · pulls [2, 6]                    COINCIDE
+
+   /emp skiptest [delta]  ejecuta esa misma prueba en vivo.
+
+   Es una funcion PURA: no lee globales, no escribe SavedVariables, no toca
+   UI. Por eso se ha podido comprobar sin arrancar WoW.
+
+4. RED (EventTracker)
+────────────────────────────────────────────────────────────────────────────
+   C_ChatInfo.SendAddonMessage con prefijo MMPARoute, canal INSTANCE_CHAT
+   dentro de la mazmorra. Solo emite el LIDER: si los cinco recalculasen y
+   emitiesen, cinco versiones de ActiveSkips se pisarian entre si, y el delta
+   de cada uno difiere si alguien entro tarde o perdio eventos.
+
+   Serializacion compacta (solo npcIDs separados por comas) y TROCEADA: el
+   limite es 255 bytes por mensaje y 40 npcIDs de 6 cifras lo superan. El
+   receptor reensambla por (emisor, total) y descarta su propio eco.
+
+5. THREAT PLATES (NameplateHooks) — taint-safe
+────────────────────────────────────────────────────────────────────────────
+   SKIP -> alpha 0.35 · barra gris neutro · prefijo "|cffffcc00[SKIP]|r"
+
+   Reglas anti-taint que sigue el modulo:
+     · No se llama a NINGUNA funcion protegida. Nada de SetPoint sobre el
+       frame de Blizzard, nada de mostrar/ocultar el nameplate, nada de
+       tocar atributos seguros.
+     · Solo SetAlpha / SetStatusBarColor / SetText sobre regiones que ya
+       existen. Ninguna de las tres requiere permisos.
+     · Todo cuelga de NAME_PLATE_UNIT_ADDED/REMOVED, eventos normales.
+       Ningun OnUpdate corriendo dentro de codigo seguro.
+     · El estado original (nombre y color) se guarda UNA sola vez por placa,
+       para poder devolverlo tal cual. Guardarlo en cada refresco acabaria
+       guardando nuestro propio texto con el prefijo ya puesto.
+     · En NAME_PLATE_UNIT_REMOVED no se restaura nada: la placa se recicla y
+       restaurar ahi escribiria sobre una placa que ya es de otra unidad.
+
+   DETECCION, NO SUPOSICION: no hay forma de verificar la API interna de
+   ThreatPlates desde fuera del juego, y adivinar nombres de funcion ya
+   salio mal dos veces en este addon. Se prueban varias vias conocidas en
+   orden (ThreatPlates -> TPFrame -> UnitFrame -> nameplate crudo), se
+   registra cual funciono, y `/emp ruta` dice cual esta en uso de verdad.
+
+COMANDOS
+────────────────────────────────────────────────────────────────────────────
+   /emp ruta              estado completo: contexto, clave de perfil,
+                          perfiles guardados, delta, SKIPs activos, red y
+                          via de integracion con nameplates
+   /emp skiptest [delta]  prueba en seco del solver
+
+LO QUE NO ESTA VERIFICADO
+────────────────────────────────────────────────────────────────────────────
+   Solo el solver se ha podido probar de verdad. Lo demas esta validado
+   estructuralmente pero NO ejecutado en el juego. En concreto:
+     · la via de integracion con ThreatPlates (por eso la reporta)
+     · si el perfil trae npcIDs (depende de que MDT este cargado al importar;
+       sin ellos hay delta pero NO marcas de SKIP, y el addon lo avisa al
+       arrancar la llave)
+     · el troceado de mensajes de addon con listas largas

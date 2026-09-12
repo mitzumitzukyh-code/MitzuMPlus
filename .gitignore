@@ -1,0 +1,21 @@
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local caches and temporary files
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+*.bak
+
+# Local packaged releases
+*.zip

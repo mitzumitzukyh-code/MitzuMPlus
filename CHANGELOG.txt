@@ -1,0 +1,18 @@
+6.6.1
+- Fixed Config panel section overlap with dynamic section heights.
+- Removed GroupTracker/groupTracking feature.
+- Simplified Midnight-safe combat metrics to local-player data only.
+- Moved Personal Best notification to Notifications.
+
+MitzuMPlus M+ Historial — Changelog
+
+v6.6.0 — Clean Release
+- Eliminada la pestaña Última Run y el panel de detalle.
+- Eliminado el reporte Post-Run.
+- Eliminados Talent Advisor, TalentLoadout y datos/builders de talentos.
+- Eliminados CombatLogImporter, CombatLogBridge y el handler clásico de CombatLog.
+- Eliminadas funciones de diagnóstico de APIs bloqueadas y el sistema automático de maná no fiable en Midnight.
+- Eliminados módulos legacy/deshabilitados, herramientas de desarrollo, cachés, archivos .windsurf y recursos sin uso.
+- Reducidas las librerías Ace3 a las realmente utilizadas.
+- Historial, minimapa, Coach y configuración simplificados.
+- Conservadas únicamente fuentes de datos permitidas por Blizzard y métricas que el addon puede obtener sin inventar valores.

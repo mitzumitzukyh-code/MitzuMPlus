@@ -1,0 +1,9 @@
+MitzuMPlus M+ Historial 6.6.1
+
+- Corregido el solapamiento del panel Configuración.
+- Las secciones de Configuración ahora calculan su altura según el contenido.
+- Corregido un fallo que hacía que Loot Tracker y Gestión de datos se dibujaran encima de M+ Coach.
+- Eliminado Tracking de grupo completo y el módulo GroupTracker.
+- C_DamageMeter se usa únicamente para métricas compatibles del jugador local.
+- Notificar Personal Best se movió a Notificaciones.
+- Ajustes de texto y filas para evitar amontonamiento.
