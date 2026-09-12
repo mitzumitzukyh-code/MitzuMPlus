@@ -162,6 +162,19 @@ modules\RouteArrowPresenter.lua
 modules\AdaptiveRoute\NameplateGenerations.lua
 modules\AdaptiveRoute\ArrowDemoTelemetry.lua
 modules\AdaptiveRoute\ArrowDemo.lua
+# ALINEACION RUTA <-> EJECUCION FISICA (fase 4). SOLO DIAGNOSTICO: ninguno de
+# estos cuatro toca RouteProgress, ni las flechas, ni escribe identidad. Se
+# alimentan del tick de ArrowDemo y solo escriben telemetria.
+#   RouteSignature              lo que la ruta ESPERA en un pull.
+#   ExecutionEpisodeTracker     lo que de verdad OCURRIO, por episodios.
+#   RoutePullCandidateScorer    puro: compara los dos y puntua. Sin estado.
+#   RouteAlignment              los une, guarda la hipotesis y la registra.
+# Va DESPUES de ArrowDemo, que es quien los alimenta, y antes de Bootstrap.
+# Para retirarlo, borra estas cuatro lineas.
+modules\AdaptiveRoute\RouteSignature.lua
+modules\AdaptiveRoute\ExecutionEpisodeTracker.lua
+modules\AdaptiveRoute\RoutePullCandidateScorer.lua
+modules\AdaptiveRoute\RouteAlignment.lua
 modules\AdaptiveRoute\Bootstrap.lua
 
 # UI

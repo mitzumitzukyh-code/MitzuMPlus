@@ -232,6 +232,31 @@ function RouteManager:GetActiveRoute() return self._active end
 function RouteManager:IsReady()        return self._active ~= nil end
 function RouteManager:GetValidation()  return self._validation end
 
+-- ─────────────────────────────────────────────────────────────────────────
+-- FIRMA DE UN PULL  (fase 4)
+--
+-- Qué espera la ruta en el pull N: cuántas unidades y de qué npcIDs.
+--
+--   RouteManager:GetPullSignature(nil, 4)
+--     -> { pull = 4, mobCount = 7, npcMultiset = { [190207] = 2, ... } }
+--
+-- `routeID` nil significa la ruta ACTIVA. Funciona sin MDT instalado: sale
+-- de los ficheros empaquetados, igual que todo lo demás de la ruta nativa.
+--
+-- El cálculo vive en AdaptiveRoute/RouteSignature para poder probarlo
+-- aislado; aquí solo está la puerta, porque el manager es quien sabe
+-- resolver un routeID.
+-- ─────────────────────────────────────────────────────────────────────────
+
+function RouteManager:GetPullSignature(routeID, pullIndex)
+    local AR = MitzuMPlus.AdaptiveRoute
+    local RS = AR and AR.RouteSignature
+    if not RS then return nil, "RouteSignature no está cargado" end
+    local route = routeID and self:Get(routeID) or self._active
+    if not route then return nil, "no hay ruta" end
+    return RS:ForPull(route, pullIndex)
+end
+
 function RouteManager:LoadForDungeon(dungeonKey)
     self:Discover()
     if not dungeonKey then return nil, "sin dungeonKey" end

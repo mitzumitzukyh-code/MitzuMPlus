@@ -50,6 +50,7 @@ end
 local world = {
     time = 1000, state = "RUNNING", elapsed = 0, startedAt = 1788000000,
     pull = 1, plates = {}, visible = {}, engagement = {}, pointed = {},
+    cast = {}, recentEvent = {},
     dungeonName = "Ruby Life Pools",
 }
 
@@ -206,6 +207,13 @@ AR.UnitLinkEvidence = { Evaluate = function(_, tok, clase)
     local p = world.pointed[tok]
     return (p and p[clase]) and "SAME_UNIT" or "DIFFERENT_UNIT"
 end }
+AR.CastEvidence = { Evaluate = function(_, tok)
+    return world.cast[tok] or "NOT_CASTING"
+end }
+AR.EventCastEvidence = { InspectToken = function(_, tok)
+    return { eventState = world.recentEvent[tok] and "SEEN" or "NONE",
+             safeSpellIDValue = SECRET_NUM }
+end }
 
 -- Resolver simulado: identidad secreta, nunca MATCH. Se cuentan sus llamadas.
 local lerCalls = 0
@@ -260,6 +268,7 @@ end
 local function resetWorld()
     for _, tok in ipairs(world.visible) do world.plates[tok] = nil end
     world.visible, world.engagement, world.pointed = {}, {}, {}
+    world.cast, world.recentEvent = {}, {}
     world.state, world.pull, world.elapsed = "RUNNING", 1, 0
     world.dungeonName = "Ruby Life Pools"
 end
@@ -281,6 +290,21 @@ local function fresh()
     TEL:Store().current = nil
     printed = {}
 end
+
+test("alignment observation carries states, never the event payload", function()
+    fresh()
+    addPlate("nameplate1", "ENGAGED")
+    world.pointed.nameplate1 = { TARGET = true }
+    world.cast.nameplate1 = "CASTING"
+    world.recentEvent.nameplate1 = true
+    local obs = AD:_Observe(world.time)
+    equal(#obs, 1, "una observacion")
+    equal(obs[1].castState, "CASTING", "estado de cast")
+    equal(obs[1].recentEvent, "RECENT_EVENT", "evento temporal")
+    equal(obs[1].tokenLink, "TARGET", "enlace de token")
+    equal(obs[1].safeSpellIDValue, nil, "payload no transportado")
+    equal(obs[1].spellID, nil, "identidad de cast no transportada")
+end)
 
 local function events(run)
     run = run or TEL:GetRun(nil)

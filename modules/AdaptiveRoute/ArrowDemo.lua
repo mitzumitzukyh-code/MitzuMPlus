@@ -636,6 +636,33 @@ local function apuntadaDe(tok)
     return nil
 end
 
+-- Señales adicionales para RouteAlignment. Solo se transportan estados
+-- canónicos nuestros: nunca spellID, nombre de hechizo ni GUID. La demo no
+-- consulta estos campos al decidir o aplicar flechas.
+local function castDe(tok)
+    local CE = AR.CastEvidence
+    if not CE or type(CE.Evaluate) ~= "function" then return "UNKNOWN" end
+    local ok, estado = pcall(CE.Evaluate, CE, tok)
+    if not ok then return "UNKNOWN" end
+    if estado == "CASTING" or estado == "CHANNELING" or estado == "NOT_CASTING" then
+        return estado
+    end
+    return "UNKNOWN"
+end
+
+local function eventCastDe(tok)
+    local ECE = AR.EventCastEvidence
+    if not ECE or type(ECE.InspectToken) ~= "function" then return "NONE" end
+    local ok, detalle = pcall(ECE.InspectToken, ECE, tok)
+    if not ok or type(detalle) ~= "table" then return "NONE" end
+    -- EventCastEvidence es únicamente una huella temporal de actividad. No
+    -- se leen ni se copian safeSpellIDValue/spellIDState.
+    if detalle.eventState == "SEEN" then
+        return "RECENT_EVENT"
+    end
+    return "NONE"
+end
+
 local function esperados()
     local PE, RP = AR.PackEvidence, MitzuMPlus.RouteProgress
     if not (PE and RP) then return nil end
@@ -652,16 +679,23 @@ function ArrowDemo:_Observe(now)
         local gen = ng and ng:Current(tok) or nil
         if gen then
             local e = engagementDe(tok)
+            local enlace = apuntadaDe(tok)
+            local evento = eventCastDe(tok)
             if e == "ENGAGED" then
                 enganchados = enganchados + 1
                 if not self._firstEngaged[gen] then self._firstEngaged[gen] = now end
             end
-            obs[#obs + 1] = { token = tok, gen = gen, engagement = e }
+            obs[#obs + 1] = {
+                token = tok, gen = gen, engagement = e,
+                castState = castDe(tok),
+                recentEvent = evento,
+                tokenLink = enlace,
+            }
         end
     end
     -- Solo sin combate se pregunta a quién apuntas: con combate no se usa.
     if enganchados == 0 and P.IDLE_POINTING then
-        for _, o in ipairs(obs) do o.pointed = apuntadaDe(o.token) end
+        for _, o in ipairs(obs) do o.pointed = o.tokenLink end
     end
     return obs
 end
@@ -693,6 +727,13 @@ function ArrowDemo:_Tick()
     self:_AuditFast(now)
     local obs = self:_Observe(now)
     if tel then tel:ObserveEngagement(obs) end
+    -- FASE 4. Calle de un solo sentido: la capa de alineación MIRA lo mismo
+    -- que mira la demo y no devuelve nada que pueda cambiar una flecha. Si
+    -- revienta, la demo sigue: la inferencia es lo prescindible de los dos.
+    local RAl = AR.RouteAlignment
+    if RAl and RAl.Feed then
+        if not pcall(RAl.Feed, RAl, obs, now) and tel then tel:Error("ALIGNMENT") end
+    end
     local plan = self:Decide({
         now = now, running = true, expected = esperados(), obs = obs,
         marks = self._marks, firstEngaged = self._firstEngaged,
@@ -757,6 +798,10 @@ end
 function ArrowDemo:_ResetState()
     self._firstEngaged, self._wanted, self._skipped, self._rejected = {}, {}, {}, {}
     self._lastPlan, self._peak = nil, 0
+    -- Sin tick no hay observación, así que un episodio abierto se quedaría
+    -- colgado hasta el siguiente evento de llave. Se cierra aquí.
+    local RAl = AR.RouteAlignment
+    if RAl and RAl.Reset then pcall(RAl.Reset, RAl, nil) end
 end
 
 -- silent: se reactiva tras un /reload, con un recordatorio en vez del cartel.

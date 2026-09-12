@@ -79,6 +79,10 @@ local CODES = {
     -- problemas
     "LUA_ERROR", "INCONSISTENCY", "ARROW_ORPHAN", "GENERATION_MISMATCH",
     "POOL_INCONSISTENCY",
+    -- FASE 4: alineación ruta <-> ejecución física. SOLO diagnóstico: ninguno
+    -- de estos códigos implica que se haya tocado la ruta.
+    "PHYSICAL_EPISODE_START", "PHYSICAL_EPISODE_END", "OBSERVATION",
+    "PULL_CANDIDATE", "ALIGNMENT", "POSSIBLE_WIPE",
 }
 T.CODES = {}
 for _, c in ipairs(CODES) do T.CODES[c] = c end
@@ -101,6 +105,14 @@ local SUMMARY_KEYS = {
     "staleArrowEvents", "orphanArrowEvents", "generationMismatch",
     "poolInconsistencies", "luaErrors", "inconsistencies",
     "eventsDropped", "castLinesDropped", "snapshotsDropped",
+    -- FASE 4. Se añaden AL FINAL: las claves anteriores no se mueven de sitio
+    -- y un export viejo sigue leyéndose igual.
+    "physicalEpisodes", "possibleWipes", "alignmentEvaluations",
+    "alignmentStrong", "alignmentProbable", "alignmentAmbiguous",
+    "alignmentWeak", "alignmentNoEvidence", "alignmentChains",
+    "alignmentLogSuppressed", "alignmentAnchorAdvances", "alignmentAnchorResyncs",
+    "npcIDAvailablePeak", "npcIDSecretPeak", "npcIDUnavailablePeak",
+    "routeProgressInit",
 }
 T.SUMMARY_KEYS = SUMMARY_KEYS
 
@@ -587,7 +599,18 @@ function T:_PullContext(pullIndex, prev, reason)
         -- Cualquier cambio de pull que no venga del jugador ni de una
         -- recuperación es progreso automático, venga de donde venga. Es una
         -- medición real, no un cero puesto a mano.
-        if reason ~= "MANUAL" and reason ~= "RECOVERY" then
+        --
+        -- BUG ENCONTRADO EN LA TELEMETRÍA LIVE DEL 2026-09-11: la run de
+        -- Altar of Fangs salió con automaticRouteProgress=1 sin que nada
+        -- hubiera inferido nada. El culpable era `RunSession` poniendo el
+        -- pull a 1 con reason=NEW_RUN al arrancar la llave. Eso es
+        -- INICIALIZACIÓN, no inferencia. Poner la ruta en su punto de
+        -- partida y adivinar por dónde vamos son cosas distintas y ahora se
+        -- cuentan por separado: la invariante de la fase 4 no se cumple
+        -- silenciando nada, se cumple clasificando bien.
+        if reason == "NEW_RUN" or reason == "RESET" then
+            sumar(s.run, "routeProgressInit")
+        elseif reason ~= "MANUAL" and reason ~= "RECOVERY" then
             sumar(s.run, "automaticRouteProgress")
         end
     end
@@ -795,7 +818,15 @@ function T:OnCastEvent(event, unitToken, ...)
     return code
 end
 
+-- El estado del encuentro se guarda FUERA de la sesión: el tracker de
+-- episodios lo consulta para segmentar, y tiene que saberlo aunque la
+-- telemetría no esté grabando.
+T._encounterActive = false
+function T:IsEncounterActive() return self._encounterActive == true end
+
 function T:OnEncounter(event)
+    if event == "ENCOUNTER_START" then self._encounterActive = true
+    elseif event == "ENCOUNTER_END" then self._encounterActive = false end
     local s = self._session
     if not s then return end
     if event == "ENCOUNTER_START" then
@@ -895,8 +926,18 @@ function T:ReportLines(run)
             " peakSimultaneous=" .. v(c.demoPeakSimultaneous),
         "Cast: events=" .. v(c.castEvents) .. " safeSpellIDs=" .. v(c.safeSpellIDs) ..
             " secretSpellIDs=" .. v(c.secretSpellIDs),
+        "Alignment: episodes=" .. v(c.physicalEpisodes) ..
+            " evals=" .. v(c.alignmentEvaluations) ..
+            " strong=" .. v(c.alignmentStrong) .. " probable=" .. v(c.alignmentProbable) ..
+            " ambiguous=" .. v(c.alignmentAmbiguous) .. " weak=" .. v(c.alignmentWeak) ..
+            " noEvidence=" .. v(c.alignmentNoEvidence) ..
+            " chains=" .. v(c.alignmentChains) .. " wipes=" .. v(c.possibleWipes),
+        "Identity (pico por episodio): npcIDAvailable=" .. v(c.npcIDAvailablePeak) ..
+            " npcIDSecret=" .. v(c.npcIDSecretPeak) ..
+            " npcIDUnavailable=" .. v(c.npcIDUnavailablePeak),
         "Safety: resolverMatchesFabricated=0 identityWrites=0 (estructural)" ..
-            " automaticRouteProgress=" .. v(c.automaticRouteProgress) .. " (medido)",
+            " automaticRouteProgress=" .. v(c.automaticRouteProgress) .. " (medido)" ..
+            " routeProgressInit=" .. v(c.routeProgressInit) .. " (NEW_RUN/RESET)",
         "Possible problems: staleArrowEvents=" .. v(c.staleArrowEvents) ..
             " orphanArrowEvents=" .. v(c.orphanArrowEvents) ..
             " generationMismatch=" .. v(c.generationMismatch) ..
@@ -982,14 +1023,15 @@ if type(CreateFrame) == "function" then
             pcall(T.Checkpoint, T)
             return
         end
-        if not T._session then return end
-        local ok
+        -- ENCOUNTER pasa SIEMPRE: marca un estado que otros consultan, y
+        -- perderse un END por no estar grabando dejaría "hay boss" colgado
+        -- para siempre. Dentro, OnEncounter ya sale solo si no hay sesión.
         if event == "ENCOUNTER_START" or event == "ENCOUNTER_END" then
-            ok = pcall(T.OnEncounter, T, event)
-        else
-            ok = pcall(T.OnCastEvent, T, event, ...)
+            if not pcall(T.OnEncounter, T, event) then T:Error("EVENT") end
+            return
         end
-        if not ok then T:Error("EVENT") end
+        if not T._session then return end
+        if not pcall(T.OnCastEvent, T, event, ...) then T:Error("EVENT") end
     end)
     T._frame = frame
 end

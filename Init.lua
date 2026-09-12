@@ -1731,6 +1731,63 @@ function MitzuMPlus:HandleSlashCommand(input)
             end
         end
     -- ═══════════════════════════════════════════════════════════════════
+    -- ALINEACION RUTA <-> EJECUCION FISICA (fase 4). SOLO DIAGNOSTICO.
+    -- Nada de lo que se imprima aqui ha movido el pull ni ha pintado nada.
+    -- ═══════════════════════════════════════════════════════════════════
+    elseif cmd == "alignmentdetail" or cmd == "alignedetail" then
+        local RAl = self.AdaptiveRoute and self.AdaptiveRoute.RouteAlignment
+        if not RAl then
+            self:Print("|cFFff9922La capa de alineacion no esta cargada.|r")
+            return
+        end
+        for _, line in ipairs(RAl:DetailLines()) do self:Print(line) end
+    elseif cmd == "align" or cmd == "alineacion" then
+        local ARd = self.AdaptiveRoute
+        local RAl = ARd and ARd.RouteAlignment
+        if not RAl then
+            self:Print("|cFFff9922La capa de alineacion no esta cargada.|r")
+            return
+        end
+        local sub = args[2]
+        if sub == "detail" or sub == "detalle" then
+            for _, line in ipairs(RAl:DetailLines()) do self:Print(line) end
+        elseif sub == "candidates" or sub == "candidatos" then
+            for _, line in ipairs(RAl:CandidateLines()) do self:Print(line) end
+        elseif sub == "history" or sub == "historial" then
+            for _, line in ipairs(RAl:HistoryLines()) do self:Print(line) end
+        elseif sub == "episodes" or sub == "episodios" then
+            local EET = ARd.ExecutionEpisodeTracker
+            if not EET then
+                self:Print("|cFFff9922ExecutionEpisodeTracker no esta cargado.|r")
+            else
+                for _, line in ipairs(EET:StatusLines()) do self:Print(line) end
+            end
+        elseif sub == "signature" or sub == "firma" then
+            local RM = self.RouteManager
+            local RP = self.RouteProgress
+            local n = tonumber(args[3]) or (RP and RP:GetPullIndex()) or 1
+            local sig, err = RM and RM:GetPullSignature(nil, n)
+            if not sig then
+                self:Print("|cFFff9922" .. tostring(err or "sin ruta") .. "|r")
+            else
+                self:Print("|cFFe8b84a--- Firma estatica del pull " .. n .. " ---|r")
+                for _, line in ipairs(ARd.RouteSignature:Lines(RM:GetActiveRoute(), n)) do
+                    self:Print(line)
+                end
+            end
+        elseif sub == "on" then
+            RAl:SetEnabled(true)
+            self:Print("Inferencia de alineacion ACTIVADA (sigue sin mover la ruta).")
+        elseif sub == "off" then
+            RAl:SetEnabled(false)
+            self:Print("Inferencia de alineacion APAGADA.")
+        else
+            for _, line in ipairs(RAl:StatusLines()) do self:Print(line) end
+            if sub ~= "status" and sub ~= "estado" then
+                self:Print("Uso: /emp align [status] | detail | candidates | history | episodes | signature [n] | on/off")
+            end
+        end
+    -- ═══════════════════════════════════════════════════════════════════
     -- PRUEBA VISUAL DEL PIPELINE
     --
     -- Recorre RouteProgress -> GuidanceEngine -> RouteArrowPresenter ->
@@ -2118,6 +2175,9 @@ function MitzuMPlus:PrintHelp()
     self:Print("|cFFf7d470/MitzuMPlus arrowdemo on/off|r     - DEMO de flechas aproximadas + telemetria")
     self:Print("|cFFf7d470/MitzuMPlus arrowdemo report|r     - Resumen de la ultima run de la demo")
     self:Print("|cFFf7d470/MitzuMPlus arrowdemo export|r     - Copiar la telemetria (caja seleccionable)")
+    self:Print("|cFFf7d470/MitzuMPlus align|r               - En que pull cree estar la inferencia (diagnostico)")
+    self:Print("|cFFf7d470/MitzuMPlus align candidates|r    - Todos los candidatos y sus puntuaciones")
+    self:Print("|cFFf7d470/MitzuMPlus alignmentdetail|r     - Best/runner-up, margen y desglose pasivo")
     self:Print("|cFFf7d470/MitzuMPlus next|r / |cFFf7d470prev|r       - Avanza/retrocede un pull")
     self:Print("|cFFf7d470/MitzuMPlus runtime [todo]|r    - Que puede leer el addon en este cliente")
     self:Print("|cFFf7d470/MitzuMPlus probe [unidad]|r    - SPIKE: todo lo legible de una placa")
