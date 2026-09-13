@@ -1,0 +1,73 @@
+## Interface: 120100
+## Title: MitzuRouteArrows |cFFFF6600(EXPERIMENTAL)|r
+## Notes: EXPERIMENTAL / IN DEVELOPMENT. Visual pull guidance on nameplates. Reads MitzuMPlus through its read-only public API. Not ready for general use.
+## Notes-esES: EXPERIMENTAL / EN DESARROLLO. Flechas de ruta sobre las placas. Lee MitzuMPlus por su API publica de solo lectura. No apto para uso general.
+## Author: Mutzukyhs
+## Version: 0.1.0-dev
+## SavedVariables: MitzuRouteArrowsDB
+## OptionalDeps: MitzuMPlus, ThreatPlates, Plater, ElvUI
+## X-License: MIT
+## X-Category: Dungeons & Raids
+## X-Status: EXPERIMENTAL
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MitzuRouteArrows — EXPERIMENTAL / IN DEVELOPMENT / NOT READY FOR CURSEFORGE
+#
+# Flechas de ruta, logica de nameplates, Evidence Layer y alignment.
+#
+# DEPENDENCIA DE MitzuMPlus
+# Se declara como OptionalDeps (solo garantiza cargar despues) y NO como
+# Dependencies. Con una dependencia obligatoria, si MitzuMPlus faltara WoW
+# descartaria este addon sin decir nada en el juego. Asi, carga igualmente,
+# avisa en el chat y se queda inerte (Core/Bootstrap: MRA:CanOperate).
+#
+# Todo lo que lee de MitzuMPlus pasa por MitzuMPlusAPI (Core/Host.lua). No
+# nombra `MitzuMPlus`, no toca sus SavedVariables y no puede escribir su estado.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Nucleo: espacio de nombres, base de datos propia, fachada sobre la API.
+Core\Bootstrap.lua
+Core\Host.lua
+Core\CopyBox.lua
+
+# Datos estaticos que solo usa esta capa (fotografia fisica de MDT por clon).
+Data\MDTPhysicalGroupData.lua
+
+# Evidence Layer. Sin dependencias entre si salvo PackEvidence y la correlacion,
+# que consumen las anteriores.
+Evidence\EngagementEvidence.lua
+Evidence\UnitLinkEvidence.lua
+Evidence\PhysicalGroupMetadata.lua
+Evidence\PhysicalGroupCorrelation.lua
+Evidence\CastEvidence.lua
+Evidence\AuraEvidence.lua
+Evidence\EventCastEvidence.lua
+Evidence\PackEvidence.lua
+
+# Flechas y placas. NameplateAnchorProvider antes que RouteArrows (lo consulta
+# en cada MarkUnit); PullUnitResolver despues de RouteArrows; GuidanceEngine y
+# RouteArrowPresenter despues del resolver al que consultan.
+Modules\NameplateAnchorProvider.lua
+Modules\RouteArrows.lua
+Modules\PullUnitResolver.lua
+Modules\LiveEnemyResolver.lua
+Modules\GuidanceEngine.lua
+Modules\RouteArrowPresenter.lua
+
+# Arrow Demo: generaciones -> telemetria -> demo (se suscriben al cargar).
+Modules\NameplateGenerations.lua
+Modules\ArrowDemoTelemetry.lua
+Modules\ArrowDemo.lua
+
+# Alignment (solo diagnostico): se alimenta del tick de ArrowDemo.
+Alignment\RouteSignature.lua
+Alignment\ExecutionEpisodeTracker.lua
+Alignment\RoutePullCandidateScorer.lua
+Alignment\RouteAlignment.lua
+
+# Ciclo de vida y comandos: al final, cuando todos los modulos existen.
+Core\Lifecycle.lua
+Core\Commands.lua
+
+# Archive\NameplateHooks.lua NO se carga: sistema [SKIP] retirado, se conserva
+# solo como referencia historica.

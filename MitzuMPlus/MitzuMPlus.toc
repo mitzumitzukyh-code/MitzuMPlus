@@ -1,0 +1,152 @@
+## Interface: 120100
+## Title: MitzuMPlus
+## Notes: Mythic+ run history, native routes and a live coach. Works without MDT.
+## Notes-esES: Historial de Mythic+, rutas nativas y Coach en vivo. Funciona sin MDT.
+## Author: Mutzukyhs
+## Version: 7.13.0-rc1
+## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\1_addon
+## SavedVariables: MitzuMPlusDB, MPlusAdaptiveRouteDB
+## OptionalDeps: MythicDungeonTools, LibSharedMedia-3.0
+## X-License: MIT
+## X-Category: Dungeons & Raids
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MitzuMPlus — PRODUCTO PRINCIPAL
+#
+# Este addon NO contiene flechas de ruta, logica de nameplates, Evidence Layer
+# ni alignment. Todo eso vive en el addon aparte MitzuRouteArrows, que consume
+# MitzuMPlus SOLO a traves de la API publica de solo lectura (API\PublicAPI.lua).
+# MitzuMPlus no conoce a MitzuRouteArrows y funciona igual con o sin el.
+#
+# MDT (MythicDungeonTools) es OPCIONAL: solo sirve para importar rutas. Las
+# rutas de la temporada viajan dentro del addon (data\Routes).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Libraries
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+libs\LibDBIcon-1.0\lib.xml
+libs\AceAddon-3.0\AceAddon-3.0.xml
+libs\AceEvent-3.0\AceEvent-3.0.xml
+libs\AceDB-3.0\AceDB-3.0.xml
+libs\AceLocale-3.0\AceLocale-3.0.xml
+libs\AceConsole-3.0\AceConsole-3.0.xml
+libs\AceSerializer-3.0\AceSerializer-3.0.xml
+
+# Localization
+Locales\enUS.lua
+Locales\esES.lua
+
+# Bootstrap / core
+Bootstrap.lua
+MitzuMPlus_main.lua
+modules\Constants.lua
+Utils\Helpers.lua
+Utils\Formatters.lua
+modules\Database.lua
+modules\EventBus.lua
+# RuntimeCapabilities: que se puede leer de verdad en este cliente.
+# Sin dependencias; se sondea bajo demanda, no al cargar.
+modules\RuntimeCapabilities.lua
+# ChallengeClock: el tiempo REAL de la llave, del servidor. Fuente unica
+# para Coach, proyeccion y RunSession. Antes que KeystoneTracker.
+modules\ChallengeClock.lua
+# DungeonRegistry: converge instanceID / uiMapID / challengeMapID en una
+# identidad canonica. Antes que DungeonContext, que lo consulta.
+modules\DungeonRegistry.lua
+# DungeonContext: donde estoy y en que punto de la llave. Fuente unica.
+# Va antes que Core, que se suscribe a su MITZU_KEY_STARTED.
+modules\DungeonContext.lua
+# SpecDatabase: esquema de specs y capacidades (sin dataset todavia).
+modules\SpecDatabase.lua
+# PartyProfiler: los cinco del grupo. Incluye PartyContext y SpecCache.
+modules\PartyProfiler.lua
+# Ruta nativa. Orden: el schema define el formato, el manager lo registra
+# y selecciona, y RouteProgress consume la ruta ya cargada.
+modules\RouteSchema.lua
+modules\RouteManager.lua
+modules\RouteProgress.lua
+# RunSession: decide si un snapshot pertenece a la partida actual.
+# Despues de RouteProgress, al que le pide la restauracion.
+modules\RunSession.lua
+modules\Validation.lua
+modules\RunMetrics.lua
+modules\RuntimeVersion.lua
+
+# Mythic+ tracking
+modules\LootTracker.lua
+modules\KeystoneTracker.lua
+modules\RouteAdvisor.lua
+modules\MDTImporter.lua
+modules\PredictionEngine.lua
+modules\Calibration.lua
+modules\PersonalBest.lua
+modules\DataManager.lua
+
+# Runtime
+modules\Export.lua
+modules\StaticPopups.lua
+modules\ErrorLogger.lua
+modules\Core.lua
+modules\MidnightSafeTracking.lua
+modules\MinimapIcon.lua
+modules\InspectQueue.lua
+modules\Keybindings.lua
+
+# Rutas nativas EMPAQUETADAS. Existen en una instalacion limpia: sin MDT,
+# sin SavedVariables y sin importar nada. Registry.lua va primero, que es
+# quien crea la tabla en la que se registran las ocho.
+data\Routes\Season2\Registry.lua
+data\Routes\Season2\KingsRest.lua
+data\Routes\Season2\TempleOfSethraliss.lua
+data\Routes\Season2\RubyLifePools.lua
+data\Routes\Season2\BlindingVale.lua
+data\Routes\Season2\VoidscarArena.lua
+data\Routes\Season2\DenOfNalorakk.lua
+data\Routes\Season2\MurderRow.lua
+data\Routes\Season2\AltarOfFangs.lua
+data\MDTEnemyData.lua
+
+# Adaptive Route Engine (progreso de ruta, HUD de pull y solver de tropas)
+#
+# Orden obligatorio y por que:
+#   ProfileManager   crea la DB de ajustes y perfiles.
+#   DataStructure    indexa la ruta, incluido routeClones (enemyIdx+cloneIdx).
+#   Solver           es puro, no depende de nadie.
+#   EventTracker     consume los dos anteriores.
+#   PullNavigator    estado del pull que navega el HUD.
+#   PullHUD          pinta "PULL 4 / 21"; se suscribe a PullNavigator AL CARGAR,
+#                    asi que el navegador tiene que ir antes.
+#   Bootstrap        lo cablea todo al ciclo de vida de la llave.
+modules\AdaptiveRoute\ProfileManager.lua
+modules\AdaptiveRoute\DataStructure.lua
+modules\AdaptiveRoute\SolverAlgorithm.lua
+modules\AdaptiveRoute\EventTracker.lua
+modules\AdaptiveRoute\PullNavigator.lua
+modules\AdaptiveRoute\PullHUD.lua
+modules\AdaptiveRoute\Bootstrap.lua
+
+# UI
+UI\Theme.lua
+UI\Colors.lua
+UI\WidgetsCompat.lua
+modules\UI_Common.lua
+modules\UI_SimpleDropdown.lua
+UI\RenderizadoNuevo.lua
+UI\Window.lua
+UI\Tabs.lua
+UI\Footer.lua
+UI\Panels\Historial.lua
+UI\Panels\Stats.lua
+UI\Panels\Players.lua
+UI\Panels\Coach.lua
+UI\Panels\Config.lua
+modules\UI_Overlay_v2.lua
+
+# API publica de SOLO LECTURA para otros addons (MitzuRouteArrows). Va despues
+# de todos los modulos que lee y antes de Init.lua. No escribe estado.
+API\PublicAPI.lua
+
+# Initialization
+Init.lua
