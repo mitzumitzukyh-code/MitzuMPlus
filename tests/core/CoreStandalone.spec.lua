@@ -192,13 +192,31 @@ test("C3 el codigo del core no nombra modulos experimentales ni Threat Plates", 
                 if ids[nombre] then error(ruta .. " usa " .. nombre) end
             end
             -- Tampoco por su nombre en un string (rawget(M, "RouteArrows")...).
-            for _, s in ipairs(Src.strings(texto)) do
-                if porNombre[s] then error(ruta .. " busca el modulo " .. s .. " por nombre") end
+            -- Unica excepcion: el invariante de QA que DETECTA si alguno se
+            -- colo en el core. Solo comprueba presencia (ver test C4).
+            if ruta ~= "MitzuMPlus/modules/QA/Invariants.lua" then
+                for _, s in ipairs(Src.strings(texto)) do
+                    if porNombre[s] then error(ruta .. " busca el modulo " .. s .. " por nombre") end
+                end
             end
             assertions = assertions + 1
         end
     end
     truthy(revisados > 60, "ficheros propios revisados: " .. revisados)
+end)
+
+test("C4 la excepcion de QA solo comprueba presencia de modulos experimentales", function()
+    local texto = Src.read("MitzuMPlus/modules/QA/Invariants.lua")
+    local code = Src.code(texto)
+    -- Los nombres solo se usan en rawget(..., name) ~= nil, nunca para llamar.
+    local usos = 0
+    for _ in code:gmatch("rawget%(%s*[%w_]+%s*,%s*name%s*%)%s*~=%s*nil") do usos = usos + 1 end
+    equal(usos, 2, "comprobaciones de presencia (MitzuMPlus y AdaptiveRoute)")
+    truthy(not code:find("name%s*%]%s*[:%.(]"), "nunca indexa ni llama al modulo encontrado")
+    local ids = Src.identifiers(texto)
+    for _, nombre in ipairs(EXPERIMENTAL) do
+        equal(ids[nombre], nil, "sin identificador " .. nombre)
+    end
 end)
 
 -- ── H ──────────────────────────────────────────────────────────────────────

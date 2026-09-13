@@ -585,6 +585,16 @@ function MitzuMPlus:InitOverlay()
 
         if not previewing and not live then self:RestoreBlizzardTracker();self:Hide(); return end
 
+        -- v7.14.0: el Coach HUD V2 es la vista principal durante la llave. Si
+        -- esta activo y reemplaza al overlay clasico (ajuste hud.replaceClassic,
+        -- por defecto si), este panel no se pinta en vivo y el tracker de
+        -- Blizzard queda intacto. La vista previa explicita sigue funcionando.
+        -- No se toca overlayEnabled: la preferencia del usuario se conserva.
+        local HUD=MitzuMPlus.CoachHUD
+        if not previewing and HUD and HUD.ReplacesClassicOverlay and HUD:ReplacesClassicOverlay() then
+            self:RestoreBlizzardTracker();self:Hide(); return
+        end
+
         local s
         if previewing then
             s = fakeSnapshot()
@@ -610,14 +620,13 @@ function MitzuMPlus:InitOverlay()
             else lines[#lines+1]={text,color} end
         end
 
+        -- La regla vive en CoachAdvice (compartida con el Coach HUD V2). El
+        -- overlay la llama SIN requireBasis para conservar su comportamiento.
+        local SEV_COLOR={CRITICAL=C.bad,WARN=C.warn,INFO=C.info,GOOD=C.good}
         local function priorityAdvice()
-            if (s.timeRemaining or 9999)<=120 then return 'PRIORIDAD: quedan menos de 2 minutos',C.bad end
-            if s.deathBudget and s.deathBudget<=1 then return 'PRIORIDAD: casi sin margen para otra muerte',C.bad end
-            if s.pacePct and s.neededPct and s.pacePct<s.neededPct then
-                return string.format('PRIORIDAD: acelera fuerzas (faltan %.1f%%/min)',s.neededPct-s.pacePct),C.warn
-            end
-            if (s.bossesDone or 0)<(s.bossesTotal or 0) then return 'PRIORIDAD: siguiente boss y supervivencia',C.info end
-            return 'PRIORIDAD: completa fuerzas sin asumir riesgos',C.good
+            local a=MitzuMPlus.CoachAdvice and MitzuMPlus.CoachAdvice.Evaluate(s) or nil
+            if not a then return 'PRIORIDAD: completa fuerzas sin asumir riesgos',C.good end
+            return 'PRIORIDAD: '..a.text,SEV_COLOR[a.severity] or C.info
         end
 
         if mode=='COMPACT' then

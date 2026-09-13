@@ -3,8 +3,8 @@
 ## Notes: Mythic+ run history, native routes and a live coach. Works without MDT.
 ## Notes-esES: Historial de Mythic+, rutas nativas y Coach en vivo. Funciona sin MDT.
 ## Author: Mutzukyhs
-## Version: 7.13.0-rc1
-## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\1_addon
+## Version: 7.14.0-rc1
+## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\logo_64
 ## SavedVariables: MitzuMPlusDB, MPlusAdaptiveRouteDB
 ## OptionalDeps: MythicDungeonTools, LibSharedMedia-3.0
 ## X-License: MIT
@@ -46,6 +46,10 @@ Utils\Helpers.lua
 Utils\Formatters.lua
 modules\Database.lua
 modules\EventBus.lua
+# QA: saneado de valores y caja negra. Antes que DungeonContext, para oir
+# desde la primera transicion.
+modules\QA\SafeValue.lua
+modules\QA\FlightRecorder.lua
 # RuntimeCapabilities: que se puede leer de verdad en este cliente.
 # Sin dependencias; se sondea bajo demanda, no al cargar.
 modules\RuntimeCapabilities.lua
@@ -80,6 +84,7 @@ modules\KeystoneTracker.lua
 modules\RouteAdvisor.lua
 modules\MDTImporter.lua
 modules\PredictionEngine.lua
+modules\CoachAdvice.lua
 modules\Calibration.lua
 modules\PersonalBest.lua
 modules\DataManager.lua
@@ -143,6 +148,11 @@ UI\Panels\Players.lua
 UI\Panels\Coach.lua
 UI\Panels\Config.lua
 modules\UI_Overlay_v2.lua
+# Coach HUD V2: la vista principal durante la llave (lee autoridades, no escribe).
+modules\CoachHUD.lua
+# Bug Report V2: invariantes e informe de QA.
+modules\QA\Invariants.lua
+modules\QA\BugReport.lua
 
 # API publica de SOLO LECTURA para otros addons (MitzuRouteArrows). Va despues
 # de todos los modulos que lee y antes de Init.lua. No escribe estado.

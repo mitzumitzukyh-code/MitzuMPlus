@@ -110,8 +110,15 @@ Export.JSONEncode = jsonEncode
 -- CLIPBOARD — abre una EditBox pre-rellenada para copiar con Ctrl+A / Ctrl+C
 -- ─────────────────────────────────────────────────────────────────────────────
 
-function Export:CopyToClipboard(text)
+-- opts (opcional, v7.14.0; sin opts el comportamiento es el de siempre):
+--   title       titulo de la ventana          (por defecto "EXPORTAR DATOS")
+--   hint        texto de ayuda bajo el titulo
+--   autoClose   false para no cerrar sola a los 60 s (un informe largo se lee)
+--   mono        true para fuente monoespaciada
+--   clearLabel / onClear   boton opcional para limpiar (p. ej. logs de QA)
+function Export:CopyToClipboard(text, opts)
     if not text or text == "" then return end
+    opts = type(opts) == "table" and opts or {}
 
     if not MitzuMPlus._clipboardFrame then
         local Theme = MitzuMPlus.Theme
@@ -134,6 +141,7 @@ function Export:CopyToClipboard(text)
         end
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.title = title
         if Theme and Theme.ApplyFont then Theme:ApplyFont(title,"title",16) end
         title:SetPoint("TOP", 0, -10)
         title:SetText("EXPORTAR DATOS")
@@ -144,6 +152,7 @@ function Export:CopyToClipboard(text)
         end
 
         local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        f.hint = hint
         if Theme and Theme.ApplyFont then Theme:ApplyFont(hint,"normal",12) end
         hint:SetPoint("TOP", 0, -28)
         hint:SetText("Pulsa Ctrl+A para seleccionar todo, luego Ctrl+C para copiar.")
@@ -170,21 +179,53 @@ function Export:CopyToClipboard(text)
         local closeBtn = MitzuMPlus:CreateButton(f, "Cerrar", "primary", function() f:Hide() end)
         closeBtn:SetPoint("BOTTOM", 0, 8)
         closeBtn:SetWidth(100)
+        f.closeBtn = closeBtn
+
+        -- Boton opcional de limpieza. Existe siempre, se muestra solo si se pide.
+        local clearBtn = MitzuMPlus:CreateButton(f, "Limpiar", "secondary", function()
+            if type(f._onClear) == "function" then pcall(f._onClear) end
+            f:Hide()
+        end)
+        clearBtn:SetPoint("BOTTOMRIGHT", -30, 8)
+        clearBtn:SetWidth(130)
+        clearBtn:Hide()
+        f.clearBtn = clearBtn
 
         f:Hide()
         MitzuMPlus._clipboardFrame = f
     end
 
     local cf = MitzuMPlus._clipboardFrame
+    local Theme = MitzuMPlus.Theme
+    if cf.title then cf.title:SetText(opts.title or "EXPORTAR DATOS") end
+    if cf.hint then
+        cf.hint:SetText(opts.hint or "Pulsa Ctrl+A para seleccionar todo, luego Ctrl+C para copiar.")
+    end
+    if Theme and Theme.ApplyFont then
+        pcall(Theme.ApplyFont, Theme, cf.editBox, opts.mono and "mono" or "normal", opts.mono and 12 or 13)
+    end
+    cf._onClear = opts.onClear
+    if cf.clearBtn then
+        if type(opts.onClear) == "function" then
+            if cf.clearBtn.SetText then cf.clearBtn:SetText(opts.clearLabel or "Limpiar") end
+            cf.clearBtn:Show()
+        else
+            cf.clearBtn:Hide()
+        end
+    end
     cf.editBox:SetText(text)
     cf.editBox:HighlightText()
     cf.editBox:SetFocus()
     cf:Show()
 
-    -- Auto-cerrar tras 60 segundos para no quedar abierto indefinidamente
-    if C_Timer and C_Timer.After then
+    -- Auto-cerrar tras 60 segundos para no quedar abierto indefinidamente.
+    -- Con una marca por apertura: el temporizador de una exportacion anterior
+    -- ya no cierra la ventana si mientras tanto se abrio otra.
+    cf._openSeq = (cf._openSeq or 0) + 1
+    local seq = cf._openSeq
+    if opts.autoClose ~= false and C_Timer and C_Timer.After then
         C_Timer.After(60, function()
-            if cf and cf:IsShown() then cf:Hide() end
+            if cf and cf:IsShown() and cf._openSeq == seq then cf:Hide() end
         end)
     end
 end

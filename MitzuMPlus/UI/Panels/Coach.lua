@@ -161,6 +161,31 @@ function PanelCoach:Create(parent)
     scroll:SetScript("OnSizeChanged",function(self,w) content:SetWidth(math.max(1,w-22)) end)
 
     local y=0
+
+    -- ── v7.14.0: COACH HUD V2 ─────────────────────────────────────────────
+    -- La vista principal durante la llave. Todo lo de aquí llama a CoachHUD,
+    -- que es solo una vista: ningún botón toca la llave, la ruta ni la sesión.
+    -- 3 info (28) + 4 toggles (42) + 3 filas de botones (35) desde -42 => 525.
+    local function hud() return MitzuMPlus.CoachHUD end
+    local function hudSettings() local H=hud(); return H and H:Settings() or {} end
+    local hudSec=makeSection(content,">> COACH HUD V2",540)
+    hudSec:SetPoint("TOPLEFT",0,y); hudSec:SetPoint("TOPRIGHT",0,y); y=y-550
+    self.hudState=makeInfo(hudSec,"Estado del HUD")
+    self.hudPull=makeInfo(hudSec,"Pull mostrado / de la ruta")
+    self.hudLook=makeInfo(hudSec,"Tamaño / opacidad")
+    makeToggle(hudSec,"Coach HUD","Pull, ruta, siguiente pull y recomendación durante la llave. Solo lee el estado.",function() return hudSettings().enabled~=false end,function(v) if hud() then hud():SetEnabled(v) end end)
+    makeToggle(hudSec,"Bloquear posición","Bloqueado no se puede arrastrar y no intercepta clics sobre el mundo.",function() return hudSettings().locked==true end,function(v) if hud() then hud():SetOption("locked",v) end end)
+    makeToggle(hudSec,"Modo compacto","Solo cabecera, pull, barra y Coach.",function() return hudSettings().compact==true end,function(v) if hud() then hud():SetOption("compact",v) end end)
+    makeToggle(hudSec,"Sustituir el Coach clásico","Evita tener el HUD y el overlay clásico a la vez en pantalla.",function() return hudSettings().replaceClassic~=false end,function(v) if hud() then hud():SetOption("replaceClassic",v) end end)
+    local function nudgeHud(delta)
+        local H=hud(); if not H then return end
+        local s=H:Settings()
+        H:SetOption("scale",(tonumber(s.scale) or 1.0)+delta)
+    end
+    makeButtonRow(hudSec,{{"TAMAÑO  -",function() nudgeHud(-0.1) end},{"TAMAÑO  +",function() nudgeHud(0.1) end}})
+    makeButtonRow(hudSec,{{"VISTA PREVIA",function() if hud() then hud():SetPreview(true) end end},{"SALIR DE LA VISTA PREVIA",function() if hud() then hud():SetPreview(false) end end}})
+    makeButtonRow(hudSec,{{"RESTABLECER POSICIÓN",function() if hud() then hud():ResetPosition() end end},{"BUG REPORT",function() if MitzuMPlus.BugReport then pcall(MitzuMPlus.BugReport.Show,MitzuMPlus.BugReport) end end}})
+
     -- 4 info (28) + 3 toggles (42) + 3 filas de botones (35) desde -42:
     -- ultima fila arriba en -350, alto 30 => 380 px usados.
     local live=makeSection(content,">> COACH EN VIVO",400)
@@ -244,6 +269,23 @@ end
 
 function PanelCoach:Refresh()
     if not self.container then return end
+    local H=MitzuMPlus.CoachHUD
+    if H then
+        pcall(function()
+            local s=H:Settings()
+            if self.hudState then
+                local mode=H:IsPreview() and "PREVIEW" or tostring(H:GetMode())
+                self.hudState.value:SetText((s.enabled~=false and "|cFF21DE66ACTIVO|r" or "|cFFFF5555INACTIVO|r").." · "..mode)
+            end
+            if self.hudPull then
+                local RP=MitzuMPlus.RouteProgress
+                self.hudPull.value:SetText(tostring(H:GetDisplayedPull() or "—").." / "..tostring(RP and RP:GetPullIndex() or "—"))
+            end
+            if self.hudLook then
+                self.hudLook.value:SetText(string.format("%d%% / %d%%",math.floor((tonumber(s.scale) or 1)*100+0.5),math.floor((tonumber(s.alpha) or 1)*100+0.5)))
+            end
+        end)
+    end
     local active=isKeyActive()
     if self.liveActive then self.liveActive.value:SetText(yesno(active)) end
     local anchor="sin resolver"

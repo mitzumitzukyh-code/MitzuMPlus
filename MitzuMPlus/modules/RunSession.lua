@@ -68,6 +68,13 @@ RunSession._lastRestoredPull = nil
 local function bus() return MitzuMPlus.EventBus end
 local function ahora() return (time and time()) or 0 end
 
+-- Caja negra de QA (FlightRecorder). Solo ANOTA decisiones ya tomadas; si no
+-- esta cargado no pasa nada. No cambia ninguna decision de este modulo.
+local function qa(event, data)
+    local FR = MitzuMPlus.FlightRecorder
+    if FR and FR.Record then FR:Record("SESSION", event, data) end
+end
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- ALMACÉN
 --
@@ -156,6 +163,7 @@ function RunSession:Begin(route, pullIndex)
     s.lastChangeReason = "BEGIN"
     s.updatedAt      = ahora()
     self._state, self._reason = PENDING, "NEW_RUN"
+    qa("SNAPSHOT_CREATED", { route = route.id, pull = s.pullIndex, level = s.keystoneLevel })
     return true
 end
 
@@ -167,6 +175,7 @@ function RunSession:UpdatePull(pullIndex, reason)
     local fp = self:Fingerprint()
     if not fp or fp.startedAt == nil
        or math.abs(fp.startedAt - s.startedAt) > TOLERANCIA then
+        qa("SNAPSHOT_UPDATE_SKIPPED", { pull = pullIndex, why = fp and "SESSION_MISMATCH" or "NO_FINGERPRINT" })
         return false, "la partida activa no es la del snapshot"
     end
     s.pullIndex = tonumber(pullIndex) or s.pullIndex
@@ -181,6 +190,7 @@ function RunSession:Clear(reason)
     self._state  = CLEARED
     self._reason = reason or "CLEARED"
     self._lastRestoredPull = nil
+    qa("SNAPSHOT_CLEARED", { reason = self._reason })
     if reason == "COMPLETED" or reason == "RESET" then
         -- La partida acabo: el proximo MITZU_KEY_STARTED sera de una nueva.
         self._decided = false
@@ -251,6 +261,7 @@ function RunSession:TryRestore()
     local estado, motivo = self:Evaluate()
     self._state, self._reason = estado, motivo
     if estado ~= PENDING or motivo ~= "SESSION_MATCH" then
+        qa("RECOVERY_ATTEMPT", { result = estado, reason = motivo })
         return estado, motivo, nil
     end
 
@@ -264,10 +275,12 @@ function RunSession:TryRestore()
     local ok, info = RP:RestorePull(s.pullIndex, { source = "RUN_SESSION", reason = motivo })
     if not ok then
         self._state, self._reason = REJECTED, tostring(info)
+        qa("RECOVERY_FAILED", { reason = self._reason, pull = s.pullIndex })
         return self._state, self._reason, nil
     end
     self._state, self._reason = RESTORED, "SESSION_MATCH"
     self._lastRestoredPull = s.pullIndex
+    qa("RECOVERY_SUCCEEDED", { pull = s.pullIndex, route = s.routeID })
     return RESTORED, motivo, s.pullIndex
 end
 
@@ -373,6 +386,7 @@ function RunSession:TryRecoverWhenReady()
     if falta ~= "NONE" then
         -- NO se escribe el snapshot. Este es el arreglo del BUG RS-1.
         self._state, self._reason = PENDING, "WAITING_" .. falta
+        qa("RECOVERY_WAITING", { waitingFor = falta })
         self:_ScheduleRetry()
         return self._state, self._reason
     end
@@ -395,6 +409,7 @@ function RunSession:TryRecoverWhenReady()
 
     if estado == NONE or estado == REJECTED or estado == EXPIRED then
         -- Decisión positiva: ahora sí se puede escribir.
+        qa("DECISION_NEW_RUN", { evaluated = estado, reason = motivo })
         if route then beginNew(route, motivo) end
         self._decided = true
         return self._state, self._reason

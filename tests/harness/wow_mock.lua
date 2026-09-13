@@ -75,9 +75,30 @@ function debugprofilestop() return WoW.now * 1000 end
 
 function GetTime() return WoW.now end
 function time() return WoW.epoch + math.floor(WoW.now - 1000) end
-function date(fmt) return os.date(fmt or "%Y-%m-%d %H:%M:%S", time()) end
+function date(fmt, t) return os.date(fmt or "%Y-%m-%d %H:%M:%S", t or time()) end
 function GetServerTime() return time() end
 function GetLocale() return "esES" end
+function GetGameTime() return 12, 30, 0 end
+function GetFramerate() return 60 end
+function UIFrameFadeIn(f) if f and f.Show then f:Show() end end
+function UIFrameFadeOut(f) end
+function UIFrameFlash() end
+function PanelTemplates_SetTab() end
+function EasyMenu() end
+function ToggleDropDownMenu() end
+function CloseDropDownMenus() end
+function UIDropDownMenu_Initialize() end
+function UIDropDownMenu_CreateInfo() return {} end
+function UIDropDownMenu_AddButton() end
+function UIDropDownMenu_SetWidth() end
+function UIDropDownMenu_SetText() end
+function SecondsToTime(s) return tostring(s) end
+function FormatLargeNumber(n) return tostring(n) end
+function GetClassColor() return 1, 1, 1, "ffffffff" end
+function GetMouseFocus() return nil end
+function GetMouseFoci() return {} end
+function IsModifierKeyDown() return false end
+function GetNetStats() return 0, 0, 20, 20 end
 function GetBuildInfo() return "12.1.0", "99999", "Sep 1 2026", 120100 end
 function IsLoggedIn() return true end
 function InCombatLockdown() return WoW.state.inCombat end
@@ -176,10 +197,15 @@ C_ChallengeMode = {
         if not WoW.state.challengeActive then return 0, {}, false end
         return WoW.state.keyLevel, {}, false
     end,
-    GetMapUIInfo = function(id) return "Mazmorra " .. tostring(id), id, 1800, nil end,
+    -- Ruby Life Pools con el mismo nombre que da GetInstanceInfo: asi
+    -- DungeonRegistry la reconoce ANTES de la piedra (PRE_KEY), como en vivo.
+    GetMapUIInfo = function(id)
+        if tonumber(id) == 399 then return "Estanques de Vida Rubi", 399, 1800, nil end
+        return "Mazmorra " .. tostring(id), id, 1800, nil
+    end,
     GetCompletionInfo = function() return nil end,
     GetDeathCount = function() return 0, 0 end,
-    GetMapTable = function() return {} end,
+    GetMapTable = function() return { 399 } end,
     GetAffixInfo = function() return "Afijo", "", 0 end,
     GetStartTime = function() return nil end,
 }
@@ -194,6 +220,22 @@ C_MythicPlus = {
     GetCurrentSeason = function() return 18 end,
 }
 C_ChallengeModeInfo = C_ChallengeMode
+
+-- Cronometro de la Challenge que mantiene el servidor (lo leen ChallengeClock y
+-- RunSession). `timerReady=false` imita el hueco de unos segundos que hay tras
+-- un /reload antes de que GetWorldElapsedTimers vuelva a devolver el timer.
+LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE = 1
+function GetWorldElapsedTimers()
+    local s = WoW.state
+    if s.challengeActive and s.challengeStartedAt and s.timerReady ~= false then return 1 end
+end
+function GetWorldElapsedTime(id)
+    local s = WoW.state
+    if id ~= 1 or not (s.challengeActive and s.challengeStartedAt) or s.timerReady == false then
+        return nil
+    end
+    return nil, math.floor(WoW.now - s.challengeStartedAt), LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE
+end
 C_PlayerInfo = { GetPlayerMythicPlusRatingSummary = function() return { currentSeasonScore = 0 } end }
 C_Map = {
     GetBestMapForUnit = function() return WoW.state.uiMapID end,
@@ -236,21 +278,30 @@ C_Timer = {
     end,
 }
 
--- Avanza el reloj y dispara los temporizadores vencidos.
+-- Avanza el reloj y dispara los temporizadores vencidos EN ORDEN, parando el
+-- reloj en cada vencimiento. Un ticker de 1 s dentro de advance(5) dispara
+-- cinco veces, como en el cliente.
 function WoW.advance(secs)
-    WoW.now = WoW.now + (secs or 0)
-    for _ = 1, 50 do
+    local target = WoW.now + (secs or 0)
+    for _ = 1, 10000 do
+        local earliest
+        for _, t in ipairs(WoW.timers) do
+            if t.at <= target and (not earliest or t.at < earliest) then earliest = t.at end
+        end
+        if not earliest then break end
+        if earliest > WoW.now then WoW.now = earliest end
         local listos, resto = {}, {}
         for _, t in ipairs(WoW.timers) do
             if t.at <= WoW.now then listos[#listos + 1] = t else resto[#resto + 1] = t end
         end
         WoW.timers = resto
-        if #listos == 0 then break end
         for _, t in ipairs(listos) do
             if t.ticker then
                 if not t.ticker.cancelled then
-                    pcall(t.ticker.fn, t.ticker)
-                    WoW.timers[#WoW.timers + 1] = { at = WoW.now + t.ticker.secs, ticker = t.ticker }
+                    local ok, err = pcall(t.ticker.fn, t.ticker)
+                    if not ok then WoW.errors[#WoW.errors + 1] = "ticker: " .. tostring(err) end
+                    local paso = math.max(0.001, tonumber(t.ticker.secs) or 1)
+                    WoW.timers[#WoW.timers + 1] = { at = t.at + paso, ticker = t.ticker }
                 end
             else
                 local ok, err = pcall(t.fn)
@@ -258,6 +309,7 @@ function WoW.advance(secs)
             end
         end
     end
+    WoW.now = target
 end
 WoW.errors = {}
 

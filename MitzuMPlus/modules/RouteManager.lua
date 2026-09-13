@@ -325,7 +325,9 @@ function RouteManager:StatusLines()
     local RS = MitzuMPlus.RunSession
     if RP and RP.WasRecovered and RP:WasRecovered() then
         L[#L + 1] = "recovered=true"
-        L[#L + 1] = "recoveryPull=" .. tostring(RP:GetPullIndex())
+        -- El pull restaurado, no el actual (ver RouteProgress:GetRecoveryPull).
+        L[#L + 1] = "recoveryOriginalPull=" .. tostring(RP.GetRecoveryPull and RP:GetRecoveryPull())
+        L[#L + 1] = "currentPull=" .. tostring(RP:GetPullIndex())
         L[#L + 1] = "recoveryReason=" .. tostring(RS and RS:GetReason() or "?")
     elseif RS then
         L[#L + 1] = "recovered=false"

@@ -78,15 +78,29 @@ end
 -- flechas del pull nuevo. Ese modulo ya no es del core: MitzuRouteArrows se
 -- entera del cambio por la API publica (PullNavigator:OnChange, expuesto como
 -- NAVIGATOR_PULL_CHANGED) y repinta por su cuenta.
+--
+-- v7.14.0: las teclas movian SOLO PullNavigator, mientras /emp next y
+-- /emp pull movian RouteProgress. Con el Coach HUD V2 leyendo la autoridad
+-- (RouteProgress), pulsar la tecla no cambiaba el HUD. Ahora hacen lo mismo
+-- que /emp pull: RouteProgress si hay ruta cargada (PullNavigator se
+-- sincroniza solo via MITZU_PULL_CHANGED) y PullNavigator solo como respaldo.
 local function moverPull(fn)
+    local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME, true)
+    local RP = MitzuMPlus and MitzuMPlus.RouteProgress
     local ar = AR()
     local PN = ar and ar.PullNavigator
-    if not PN then return end
-    local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME, true)
-    local ok, info = fn(PN)
+    local mover
+    if RP and RP.GetRoute and RP:GetRoute() then
+        mover = RP
+    elseif PN then
+        mover = PN
+    else
+        return
+    end
+    local ok, info = fn(mover)
     if MitzuMPlus and MitzuMPlus.Print then
         if ok then
-            local total = PN:GetPullCount()
+            local total = mover:GetPullCount()
             MitzuMPlus:Print(string.format("|cFF21de66Pull|r %d de %s", info,
                 total > 0 and tostring(total) or "?"))
         else
@@ -96,9 +110,9 @@ local function moverPull(fn)
 end
 
 function MitzuMPlus_RouteNextPullBinding()
-    moverPull(function(PN) return PN:NextPull() end)
+    moverPull(function(m) return m:NextPull("KEYBIND") end)
 end
 
 function MitzuMPlus_RoutePreviousPullBinding()
-    moverPull(function(PN) return PN:PreviousPull() end)
+    moverPull(function(m) return m:PreviousPull("KEYBIND") end)
 end

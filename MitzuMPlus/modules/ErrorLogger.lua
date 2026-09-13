@@ -103,6 +103,14 @@ local function SaveError(msg)
         while #log > MAX_ERRORS do
             table.remove(log, 1)
         end
+
+        -- v7.14.0: el error también queda en la caja negra de QA, en su
+        -- momento exacto entre las transiciones de la llave. El mensaje entra
+        -- ya saneado (sin rutas locales ni valores secretos).
+        local FR = MitzuMPlus.FlightRecorder
+        if FR and FR.Record then
+            FR:Record("ERROR", "LUA_ERROR", { msg = Truncate(msg, 120) })
+        end
     end)
 
     -- Si el propio pcall falló (caso extremadamente raro), lo ignoramos
@@ -211,6 +219,13 @@ end
 -- ─────────────────────────────────────────────────────────────────────────────
 -- HELPERS PÚBLICOS
 -- ─────────────────────────────────────────────────────────────────────────────
+
+-- Las entradas del log de errores, o una lista vacía. Para el Bug Report V2.
+function ErrorLogger:Entries()
+    local g = MitzuMPlus.db and MitzuMPlus.db.global
+    if type(g) ~= "table" or type(g.errorLog) ~= "table" then return {} end
+    return g.errorLog
+end
 
 -- Devuelve cuántos errores hay guardados (0 si no hay DB).
 function ErrorLogger:Count()

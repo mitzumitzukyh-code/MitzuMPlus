@@ -17,6 +17,18 @@ function S.boot(opts)
     local WoW = dofile("tests/harness/wow_mock.lua")
     local Loader = dofile("tests/harness/addon_loader.lua")
 
+    -- /reload: el reloj, el estado del cliente y las SavedVariables siguen.
+    if opts.clock then
+        WoW.now, WoW.epoch = opts.clock.now, opts.clock.epoch
+        for k, v in pairs(opts.clock.state or {}) do WoW.state[k] = v end
+    end
+    for name, value in pairs(opts.savedVariables or {}) do _G[name] = value end
+    if opts.timerDelay then
+        WoW.state.timerReady = false
+        WoW.timers[#WoW.timers + 1] = { at = WoW.now + opts.timerDelay,
+            fn = function() WoW.state.timerReady = true end }
+    end
+
     if opts.withThreatPlates then
         _G.ThreatPlates = { _mock = true }
     end
@@ -50,9 +62,13 @@ function S.boot(opts)
     return env
 end
 
--- Entra en Ruby Life Pools (challengeMapID 399), arranca la llave y deja
--- correr los temporizadores del core.
-function S.enterRubyAndStartKey(env)
+local function drenar(env, etiqueta)
+    for _, e in ipairs(env.WoW.errors) do env.errors[#env.errors + 1] = etiqueta .. ": " .. e end
+    env.WoW.errors = {}
+end
+
+-- Entra en Ruby Life Pools sin piedra: PRE_KEY.
+function S.enterRuby(env)
     local WoW = env.WoW
     local st = WoW.state
     st.inInstance, st.instanceType = true, "party"
@@ -60,12 +76,78 @@ function S.enterRubyAndStartKey(env)
     st.uiMapID = 2094
     WoW.fire("PLAYER_ENTERING_WORLD", false, false)
     WoW.fire("ZONE_CHANGED_NEW_AREA")
-    WoW.advance(2)
-    st.challengeActive, st.challengeMapID, st.keyLevel = true, 399, 12
+    WoW.advance(4)   -- el informe de entrada de AdaptiveRoute espera 3 s
+    drenar(env, "scenario")
+end
+
+-- Inserta la piedra. Con opts.withReset reproduce la secuencia vista en vivo:
+-- al meter la piedra el cliente dispara CHALLENGE_MODE_RESET (la instancia se
+-- reinicia) y luego CHALLENGE_MODE_START.
+function S.startKey(env, opts)
+    opts = opts or {}
+    local WoW = env.WoW
+    local st = WoW.state
+    if opts.withReset then
+        WoW.fire("CHALLENGE_MODE_RESET")
+        WoW.advance(0.5)
+    end
+    st.challengeActive, st.challengeMapID, st.keyLevel = true, 399, opts.level or 12
+    st.challengeStartedAt = WoW.now
     WoW.fire("CHALLENGE_MODE_START", 399)
     WoW.advance(3)
-    for _, e in ipairs(WoW.errors) do env.errors[#env.errors + 1] = "scenario: " .. e end
-    WoW.errors = {}
+    drenar(env, "scenario")
+end
+
+-- Entra en Ruby Life Pools (challengeMapID 399), arranca la llave y deja
+-- correr los temporizadores del core.
+function S.enterRubyAndStartKey(env, opts)
+    S.enterRuby(env)
+    S.startKey(env, opts)
+end
+
+-- Sale de la instancia (OUTSIDE).
+function S.leaveDungeon(env)
+    local st = env.WoW.state
+    st.inInstance, st.instanceType, st.instanceMapID, st.instanceName = false, "none", nil, ""
+    st.uiMapID = nil
+    env.WoW.fire("PLAYER_ENTERING_WORLD", false, false)
+    env.WoW.advance(1)
+    drenar(env, "scenario")
+end
+
+local function copiaProfunda(v, vistos)
+    if type(v) ~= "table" then return v end
+    vistos = vistos or {}
+    if vistos[v] then return vistos[v] end
+    local out = {}
+    vistos[v] = out
+    for k, x in pairs(v) do
+        if type(x) ~= "function" then out[copiaProfunda(k, vistos)] = copiaProfunda(x, vistos) end
+    end
+    return out
+end
+S.deepCopy = copiaProfunda
+
+-- Lo que sobrevive a un /reload: SavedVariables (tras PLAYER_LOGOUT, que es
+-- cuando AceDB quita los valores por defecto), el reloj y el estado del cliente.
+function S.captureForReload(env)
+    env.WoW.fire("PLAYER_LOGOUT")
+    local sv = {}
+    for _, name in ipairs({ "MitzuMPlusDB", "MPlusAdaptiveRouteDB", "MitzuRouteArrowsDB" }) do
+        if rawget(_G, name) ~= nil then sv[name] = copiaProfunda(rawget(_G, name)) end
+    end
+    return { savedVariables = sv,
+             clock = { now = env.WoW.now + 3, epoch = env.WoW.epoch,
+                       state = copiaProfunda(env.WoW.state) } }
+end
+
+-- Arranca un cliente NUEVO con lo capturado. Hay que llamarlo en otro
+-- S.isolated distinto del de la partida anterior.
+function S.bootAfterReload(saved, opts)
+    opts = opts or {}
+    opts.savedVariables = saved.savedVariables
+    opts.clock = saved.clock
+    return S.boot(opts)
 end
 
 -- Deja guardado un perfil de ruta adaptativa para la mazmorra, como si el

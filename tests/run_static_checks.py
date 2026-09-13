@@ -31,6 +31,9 @@ EXPERIMENTAL_MODULES = [
 ]
 
 
+QA_PRESENCE_CHECK = "MitzuMPlus/modules/QA/Invariants.lua"
+
+
 class Checks:
     def __init__(self) -> None:
         self.count = 0
@@ -172,6 +175,87 @@ def check_core_toc(c: Checks) -> None:
             c.check(ok, f"core: development file inside the package folder: {rel(path)}")
 
 
+HUD_QA_MODULES = [
+    "modules/CoachHUD.lua", "modules/CoachAdvice.lua", "modules/AdaptiveRoute/PullHUD.lua",
+    "modules/QA/SafeValue.lua", "modules/QA/FlightRecorder.lua",
+    "modules/QA/Invariants.lua", "modules/QA/BugReport.lua",
+]
+AUTHORITY_WRITERS = [
+    "SetPull", "NextPull", "PreviousPull", "RestorePull", "SetCurrentPull", "Prepare", "Start",
+    "Complete", "Begin", "UpdatePull", "TryRestore", "TryRecoverWhenReady", "_Transition", "Emit",
+    "LoadForDungeon", "Unload", "SetSelectedRoute",
+]
+
+
+def check_hud_and_qa(c: Checks) -> None:
+    """Coach HUD V2, QA flight recorder and Bug Report V2 are views/observers."""
+    files = toc_files(CORE / "MitzuMPlus.toc")
+    c.check(in_order(files, ["modules/EventBus.lua", "modules/QA/SafeValue.lua",
+                             "modules/QA/FlightRecorder.lua", "modules/DungeonContext.lua"]),
+            "core TOC: QA SafeValue/FlightRecorder must load after EventBus and before DungeonContext")
+    c.check(in_order(files, ["modules/PredictionEngine.lua", "modules/CoachAdvice.lua"]),
+            "core TOC: CoachAdvice must load after PredictionEngine")
+    c.check(in_order(files, ["modules/UI_Overlay_v2.lua", "modules/CoachHUD.lua",
+                             "modules/QA/Invariants.lua", "modules/QA/BugReport.lua",
+                             "API/PublicAPI.lua", "Init.lua"]),
+            "core TOC: CoachHUD, Invariants and BugReport load order is invalid")
+
+    for relpath in HUD_QA_MODULES:
+        path = CORE / relpath
+        c.check(path.exists(), f"missing {relpath}")
+        if not path.exists():
+            continue
+        source = read(path)
+        code = lua_code(source, keep_strings=False)
+        ids = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
+        writers = sorted(ids & set(AUTHORITY_WRITERS))
+        c.check(not writers, f"{relpath}: a view/observer names authority writers {writers}")
+        scans = sorted(ids & {"C_NamePlate", "UnitGUID", "UnitName", "GetRealmName", "BNGetInfo",
+                              "CombatLogGetCurrentEventInfo", "COMBAT_LOG_EVENT_UNFILTERED"})
+        c.check(not scans, f"{relpath}: scans units/nameplates/identity {scans}")
+        literal = lua_code(source)
+        c.check('"OnUpdate"' not in literal and "'OnUpdate'" not in literal,
+                f"{relpath}: no OnUpdate polling (event-driven + NewTicker only)")
+        c.check("Secure" not in literal, f"{relpath}: no secure templates or protected actions")
+
+    hud = lua_code(read(CORE / "modules" / "CoachHUD.lua"))
+    c.check("C_Timer.NewTicker(1," in hud, "CoachHUD: clock ticker must be 1 s")
+    c.check("PLAYER_REGEN_ENABLED" in hud and "InCombatLockdown" in hud,
+            "CoachHUD: settings must be deferred out of combat")
+    c.check(hud.count("PreviewModel") >= 2, "CoachHUD: preview must use a mock model")
+    overlay = lua_code(read(CORE / "modules" / "UI_Overlay_v2.lua"))
+    c.check("ReplacesClassicOverlay" in overlay and "CoachAdvice" in overlay,
+            "classic overlay must defer to the HUD and share CoachAdvice")
+    report = lua_code(read(CORE / "modules" / "QA" / "BugReport.lua"))
+    for section in ["BUILD", "CONTEXT", "PLAYER", "PARTY", "ROUTE", "SESSION", "HUD", "COACH",
+                    "CAPABILITIES", "INVARIANTS", "RECENT EVENTS", "ERRORS"]:
+        c.check(f'"{section}"' in report, f"BugReport: missing section {section}")
+    c.check("pcall(fn, add, line)" in report, "BugReport: every section must be isolated in pcall")
+
+    # Icon: new logo in place, old textures and references gone.
+    meta = toc_meta(CORE / "MitzuMPlus.toc")
+    c.check(meta.get("IconTexture", "").endswith("Media\\Icons\\logo_64"), "core TOC: IconTexture must be logo_64")
+    logo = CORE / "Media" / "Icons" / "logo_64.tga"
+    c.check(logo.exists(), "missing Media/Icons/logo_64.tga")
+    if logo.exists():
+        head = logo.read_bytes()[:18]
+        w, h = head[12] | head[13] << 8, head[14] | head[15] << 8
+        c.check(head[2] == 2 and head[16] == 32 and head[17] == 0x08 and w == h == 64,
+                "logo_64.tga must be uncompressed 32 bpp 64x64 bottom-left TGA")
+    for old in ["1_addon.tga", "10_minimap.tga"]:
+        c.check(not (CORE / "Media" / "Icons" / old).exists(), f"unused old icon still packaged: {old}")
+    for path in list(CORE.rglob("*.lua")) + [CORE / "MitzuMPlus.toc"]:
+        if "libs" in path.relative_to(CORE).parts:
+            continue
+        text = read(path)
+        c.check("1_addon" not in text and "10_minimap" not in text, f"{rel(path)}: references a removed icon")
+
+    release = read(ROOT / "docs" / "RELEASE.md")
+    c.check("05a4d77" in release, "docs/RELEASE.md must record the live-validated baseline 05a4d77")
+    c.check("GPL-2.0" in release and "BLOQUEO" in release.upper(),
+            "docs/RELEASE.md must keep the MDT GPL-2.0 license blocker visible")
+
+
 def check_core_isolation(c: Checks) -> None:
     forbidden_ids = set(EXPERIMENTAL_MODULES) | {
         "MitzuRouteArrows", "MitzuRouteArrowsDB", "ThreatPlates", "TidyPlatesThreat", "Plater",
@@ -186,7 +270,14 @@ def check_core_isolation(c: Checks) -> None:
         c.check(not hits, f"{rel(path)}: core references experimental code: {hits}")
         strings = set(re.findall(r"[\"']([A-Za-z]+)[\"']", lua_code(read(path))))
         by_name = sorted(strings & set(EXPERIMENTAL_MODULES))
-        c.check(not by_name, f"{rel(path)}: core looks up experimental module by name: {by_name}")
+        if rel(path) == QA_PRESENCE_CHECK:
+            # The QA invariant that DETECTS experimental modules leaking into the
+            # core may name them, but only to test presence: rawget(t, name) ~= nil.
+            presence = re.findall(r"rawget\(\s*\w+\s*,\s*name\s*\)\s*~=\s*nil", code)
+            c.check(len(presence) == 2 and not re.search(r"name\s*\]\s*[:.(]", code),
+                    f"{rel(path)}: QA invariant may only test presence of experimental modules")
+        else:
+            c.check(not by_name, f"{rel(path)}: core looks up experimental module by name: {by_name}")
         c.check(not re.search(r"(^|[^.\w])SlashCmdList\s*=", code),
                 f"{rel(path)}: reassigns the Blizzard global SlashCmdList (taint)")
 
@@ -382,6 +473,7 @@ def main() -> None:
     lua_files = compile_all(c)
     check_core_toc(c)
     check_core_isolation(c)
+    check_hud_and_qa(c)
     mra_files = check_mra_toc(c)
     check_mra_isolation(c, mra_files)
     check_alignment_rules(c)

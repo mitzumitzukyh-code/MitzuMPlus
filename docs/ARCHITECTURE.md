@@ -90,7 +90,7 @@ sostiene en que la API no ofrece cómo hacerlo y en las comprobaciones estática
 | Grupo | Función | Devuelve |
 |---|---|---|
 | Identidad | `GetAPIVersion()` | número de contrato |
-| | `GetVersion()` | versión del addon (`7.13.0-rc1`) |
+| | `GetVersion()` | versión del addon (p. ej. `7.14.0-rc1`) |
 | | `IsReady()` | `true` cuando la base de datos del core existe |
 | Mazmorra | `IsChallengeActive()` | booleano |
 | | `GetDungeonState()` | `OUTSIDE` / `IN_UNSUPPORTED_DUNGEON` / `PRE_KEY` / `RUNNING` / `COMPLETED` / `RESET` |
@@ -152,6 +152,93 @@ navegador, sin fingir que es lo mismo.
 - **`Core/Commands.lua`** — `/mra` y `/mitzuroutearrows`. No reasigna `SlashCmdList`.
 - **SavedVariables** — `MitzuRouteArrowsDB` (ajustes de flechas y telemetría de ArrowDemo).
 
+## Coach HUD V2 y capa de QA (7.14)
+
+### Grafo de estado: autoridad → eventos → vista
+
+```
+DungeonContext ──MITZU_DUNGEON_STATE_CHANGED / MITZU_DUNGEON_CHANGED──┐
+RouteManager  ──MITZU_ROUTE_LOADED / UNLOADED─────────────────────────┤
+RouteProgress ──MITZU_ROUTE_PREPARED / STARTED / COMPLETED────────────┤
+              ──MITZU_ROUTE_RECOVERED / MITZU_PULL_CHANGED────────────┼──► CoachHUD:Refresh(reason)
+Core          ──RUN_STARTED / RUN_TEARDOWN────────────────────────────┤        │  BuildModel()  (solo lectura)
+WoW           ──PLAYER_ENTERING_WORLD─────────────────────────────────┘        ▼
+ChallengeClock ◄── ticker de 1 s solo en RUNNING (reloj; cada 2 s modelo) ── Render(model)
+RunSession / KeystoneTracker / PredictionEngine + CoachAdvice ◄── lecturas del modelo
+```
+
+- **Autoridades** (sin cambios de responsabilidad): DungeonContext (ciclo de vida),
+  ChallengeClock (tiempo), RouteManager (ruta), **RouteProgress (pull)**, RunSession
+  (snapshot y recuperación), PartyProfiler (grupo), PredictionEngine (proyección).
+- **CoachHUD** es una vista. `BuildModel()` construye una tabla nueva en cada refresco
+  leyendo a las autoridades; `Render()` la pinta con cambios diferenciales de texto.
+  Solo recuerda lo que pintó (`_displayed`), que el Bug Report compara con la autoridad.
+  No existe ningún `HUDCurrentPull`.
+- El HUD se suscribe con prioridad 5 (después de las autoridades, 10-90); la caja
+  negra con prioridad 1000 (antes que todas, para anotar causa antes que efecto).
+
+### Visibilidad
+
+| `DungeonContext` | Modo del HUD |
+|---|---|
+| `OUTSIDE`, `IN_UNSUPPORTED_DUNGEON` | `HIDDEN` |
+| `PRE_KEY` | `PREPARE` (si `hud.showPreKey`) |
+| `RUNNING` | `RUN` (ticker activo) |
+| `COMPLETED` | `SUMMARY` durante 20 s, luego `HIDDEN` |
+| `RESET` | `HIDDEN` y memoria visual limpia |
+
+Con la vista previa (`/emp hud test`) el modelo sale de `PreviewModel()`: datos
+fijos, marcados PREVIEW, sin leer ni escribir ninguna autoridad. Se apaga sola al
+entrar en `RUNNING`.
+
+**Recuperación tras /reload:** mientras RunSession tiene un snapshot sin decidir
+(esperando el cronómetro del servidor), el modelo marca `recovering` y el HUD pinta
+`PULL — / N · recuperando la sesión` en lugar del pull 1 provisional. En cuanto
+RunSession restaura, `MITZU_PULL_CHANGED (RECOVERY)` repinta el pull real.
+
+### Módulos
+
+| Módulo | Papel |
+|---|---|
+| `modules/CoachHUD.lua` | Vista principal. Ajustes en `MitzuMPlusDB.profile.settings.hud` (enabled, locked, scale, alpha, compact, showPreKey, replaceClassic, posición). En combate aplaza escala/alfa/posición/ratón a `PLAYER_REGEN_ENABLED`. Sin plantillas seguras. |
+| `modules/AdaptiveRoute/PullHUD.lua` | Adaptador: conserva `AR.PullHUD` y delega en CoachHUD. Ya no crea frame. |
+| `modules/CoachAdvice.lua` | Regla única de prioridad del Coach (pura). `Evaluate(snapshot, {requireBasis})`; cada regla declara su evidencia (`TIME` o `PROJECTION`). El HUD exige base; el overlay clásico conserva su comportamiento. |
+| `modules/QA/SafeValue.lua` | Saneado copy-safe: `issecretvalue` antes de tocar, `pcall` en cada conversión, `SECRET` / `UNAVAILABLE` / `REDACTED`, sin `"\|"`, sin rutas locales, BattleTags ni GUIDs. |
+| `modules/QA/FlightRecorder.lua` | Caja negra: anillo de 200 entradas en `MitzuMPlusDB.global.qaFlight`, O(1), funde repetidos, sobrevive al /reload, descarta un anillo guardado corrupto. Solo hechos de alto nivel; nada de combat log. |
+| `modules/QA/Invariants.lua` | `Gather()` lee el estado; `Evaluate(state)` es pura y devuelve PASS/WARN/FAIL/SKIP. |
+| `modules/QA/BugReport.lua` | Informe V2: 12 secciones, cada una en su `pcall`; caja de copia de `Export` (sin auto-cierre) con caída a chat. |
+
+Instrumentación añadida a autoridades: solo **anotaciones** (`FlightRecorder:Record`)
+en RunSession, ErrorLogger y RuntimeCapabilities. Ninguna decisión cambió.
+
+### Invariantes
+
+| Id | Regla | Resultado si se incumple |
+|---|---|---|
+| `CHALLENGE_IMPLIES_RUNNING` | llave activa ⇒ `RUNNING` | FAIL; WARN durante la cuenta atrás o en `RESET` |
+| `RUNNING_IMPLIES_CHALLENGE` | `RUNNING` ⇒ llave activa | FAIL |
+| `ROUTE_STATE_HAS_ROUTE` | `PREPARED/ACTIVE/COMPLETED` ⇒ hay ruta | FAIL |
+| `PULL_IN_RANGE` | 1 ≤ pull ≤ total | FAIL |
+| `ROUTE_MATCHES_MANAGER` | RouteProgress y RouteManager, misma ruta | FAIL (WARN si el manager no tiene) |
+| `OUTSIDE_NO_PROGRESS` | fuera ⇒ RouteProgress `INACTIVE` | FAIL |
+| `RUNNING_ROUTE_ACTIVE` | llave con ruta ⇒ `ACTIVE` | WARN |
+| `SNAPSHOT_MATCHES_PULL` | sesión decidida ⇒ snapshot = pull | WARN (el snapshot exige la huella del cronómetro) |
+| `HUD_MATCHES_AUTHORITY` | HUD visible ⇒ pull pintado = RouteProgress | FAIL (SKIP en preview o recuperando) |
+| `PREVIEW_NOT_DURING_RUN` | sin preview durante la llave | WARN |
+| `NAVIGATOR_FOLLOWS_PROGRESS` | PullNavigator = RouteProgress | WARN |
+| `NO_ROUTEARROWS_IN_CORE` | ningún módulo experimental en el core | FAIL |
+| `PUBLIC_API_READ_ONLY` | `MitzuMPlusAPI` es el proxy de solo lectura | FAIL |
+
+`Invariants.lua` es la **única** excepción a "el core no nombra módulos
+experimentales": los nombra solo para `rawget(tabla, name) ~= nil`. La excepción
+está acotada por `tests/run_static_checks.py` y por el test `C4`.
+
+### Teclas de pull
+
+`MitzuMPlus_RouteNextPullBinding` / `...PreviousPullBinding` mueven RouteProgress
+cuando hay ruta (como `/emp pull`) y PullNavigator solo como respaldo. Antes movían
+solo PullNavigator, y el HUD V2, que lee la autoridad, no se habría enterado.
+
 ## Pruebas
 
 | Banco | Qué demuestra |
@@ -159,6 +246,9 @@ navegador, sin fingir que es lo mismo.
 | `tests/core/CoreStandalone.spec.lua` | A: el core carga por su `.toc` y juega una llave solo · B: sin MDT (y con MDT) · C: sin módulos, globales ni referencias experimentales · H: orden del `.toc` · I: `/emp` ya no atiende comandos movidos |
 | `tests/core/PublicAPI.spec.lua` | proxy de solo lectura, sin escritores, copias, eventos saneados y ordenados, aislamiento de errores |
 | `tests/core/RouteData.spec.lua` | datos de ruta del core sin la fotografía física |
+| `tests/core/CoachHUD.spec.lua` | A visibilidad por ciclo de vida · B refleja RouteProgress (comandos, teclas, navegador) · C no escribe autoridades · D /reload reconstruye el pull · E sin segunda autoridad · F preview sin efectos · configuración, combate, migración y ventana principal |
+| `tests/core/BugReport.spec.lua` | G informe completo · H módulos nil · I errores internos y datos corruptos · J saneado · K anillo y persistencia · L invariantes con estados fabricados |
+| `tests/core/BaselineRegression.spec.lua` | **regresión obligatoria** de la baseline `05a4d77` validada en vivo, detalles A y B, y llave nueva sin restauración falsa |
 | `tests/routearrows/HostIsolation.spec.lua` | D: solo `MitzuMPlusAPI` · E: no puede escribir estado del core · F: resultado idéntico del core con y sin MRA · G: con/sin MitzuMPlus y con/sin Threat Plates · H: orden del `.toc` · I: barras y bindings sin colisión |
 | resto de `tests/routearrows/` | Evidence, Guidance, ArrowDemo y Alignment, ya adaptados a `Host` |
 | `tests/run_static_checks.py` | compilación de todo el Lua y las reglas de dependencia leídas del código |

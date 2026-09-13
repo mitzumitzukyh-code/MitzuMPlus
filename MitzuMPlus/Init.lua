@@ -98,6 +98,13 @@ function MitzuMPlus:_SafeRegisterCoreEvents()
 end
 
 function MitzuMPlus:OnEnable()
+    -- Caja negra de QA: conectada a la DB ya existente. Primer hecho anotado.
+    if self.FlightRecorder then
+        pcall(function()
+            self.FlightRecorder:Attach()
+            self.FlightRecorder:Record("ADDON", "INITIALIZED", { version = self.VERSION })
+        end)
+    end
     if self.InitMinimapIcon then
         self:InitMinimapIcon()
     end
@@ -320,7 +327,7 @@ function MitzuMPlus:CreateMainWindow()
     local addonIcon = titlebar:CreateTexture(nil, "OVERLAY")
     addonIcon:SetSize(28, 28)
     addonIcon:SetPoint("LEFT", titlebar, "LEFT", 6, 0)
-    addonIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\1_addon")
+    addonIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\logo_64")
     addonIcon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
 
     local titleText = titlebar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -569,24 +576,37 @@ function MitzuMPlus:HandleSlashCommand(input)
     elseif cmd == "version" or cmd == "v" then
         -- BUG-FIX-7: usar MitzuMPlus.VERSION como única fuente de verdad.
         self:Print(string.format("MitzuMPlus M+ Historial |cFFe8b84av%s|r", MitzuMPlus.VERSION or ADDON_VERSION_FALLBACK))
+    -- ═══════════════════════════════════════════════════════════════════
+    -- Bug Report V2 (v7.14.0): UN informe con todo el contexto de la prueba.
+    -- Siempre abre el informe, haya o no errores: la mayoria de fallos en vivo
+    -- no son errores de Lua sino estados incoherentes, y eso esta en el resto
+    -- de secciones. Cada sub-comando va en pcall: diagnosticar no puede romper.
+    -- ═══════════════════════════════════════════════════════════════════
     elseif cmd == "bugreport" then
-        if self.ErrorLogger then
-            local count = self.ErrorLogger:Count()
-            if count == 0 then
-                self:Print("|cFF21de66No hay errores registrados. ¡Todo en orden!|r")
-            else
-                self:Print(string.format(
-                    "|cFFe8b84a[ErrorLogger]|r %d error(es) encontrado(s). Abriendo clipboard…", count))
-                local report = self.ErrorLogger:GetReport()
-                if self.Export and self.Export.CopyToClipboard then
-                    self.Export:CopyToClipboard(report)
-                else
-                    -- Fallback: imprimir en chat si el clipboard no está disponible.
-                    self:Print(report)
-                end
+        local BR = self.BugReport
+        local sub = args[2]
+        if not BR then
+            self:Print("|cFFee3333[BugReport] Modulo no cargado. Verifica el TOC.|r")
+            return
+        end
+        if sub == "clear" then
+            pcall(BR.ClearLogs, BR)
+            self:Print("|cFF21de66[BugReport]|r caja negra y log de errores limpiados.")
+        elseif sub == "status" or sub == "text" then
+            local ok, lines = pcall(BR.SummaryLines, BR)
+            for _, l in ipairs(ok and lines or { "resumen no disponible" }) do
+                self:Print("|cFFe8b84a[BugReport]|r " .. l)
+            end
+            if sub == "text" then
+                self:Print("Usa |cFFf7d470/emp bugreport|r para abrir el informe completo y copiarlo.")
             end
         else
-            self:Print("|cFFee3333[ErrorLogger] Módulo no cargado. Verifica el TOC.|r")
+            local ok, shown = pcall(BR.Show, BR)
+            if not ok then
+                self:Print("|cFFee3333[BugReport]|r no se pudo abrir el informe.")
+            elseif shown then
+                self:Print("|cFFe8b84a[BugReport]|r informe abierto: Ctrl+A, Ctrl+C y pegalo en tu mensaje.")
+            end
         end
     elseif cmd == "clearerrors" then
         if self.ErrorLogger then
@@ -1365,19 +1385,44 @@ function MitzuMPlus:HandleSlashCommand(input)
                 #clones > 0 and table.concat(clones, ", ") or "(ninguno)"))
         end
         self:Print(string.format("  total: %d grupos · %d clones", #enemies, totalClones))
+    -- ═══════════════════════════════════════════════════════════════════
+    -- Coach HUD V2 (v7.14.0). El HUD es una vista: ningun sub-comando toca
+    -- DungeonContext, RouteProgress ni RunSession. "test" solo alimenta la
+    -- vista con datos de ejemplo y lo marca como PREVIEW.
+    -- ═══════════════════════════════════════════════════════════════════
     elseif cmd == "hud" then
-        local HUD = self.AdaptiveRoute and self.AdaptiveRoute.PullHUD
+        local HUD = self.CoachHUD
         if not HUD then
-            self:Print("|cFFff9922PullHUD no esta cargado.|r")
+            self:Print("|cFFff9922Coach HUD no esta cargado.|r")
             return
         end
-        if args[2] == "reset" then
+        local sub, val = args[2], args[3]
+        if sub == "reset" then
             HUD:ResetPosition()
             self:Print("|cFF21de66Posicion del HUD restaurada.|r")
+        elseif sub == "test" or sub == "preview" then
+            local on = val ~= "off"
+            HUD:SetPreview(on)
+            self:Print(on and "HUD: |cFFb58cffPREVIEW|r con datos de ejemplo (no toca la llave). |cFFf7d470/emp hud test off|r para salir."
+                          or "HUD: vista previa desactivada, vuelve el estado real.")
+        elseif sub == "on" or sub == "off" then
+            HUD:SetEnabled(sub == "on")
+            self:Print("HUD: " .. (sub == "on" and "|cFF21de66activado|r" or "|cFFff9922desactivado|r"))
+        elseif sub == "lock" or sub == "unlock" then
+            HUD:SetOption("locked", sub == "lock")
+            self:Print("HUD: " .. (sub == "lock" and "bloqueado (no captura clics)" or "desbloqueado (arrastralo)"))
+        elseif sub == "compact" then
+            local ok, v = HUD:SetOption("compact", val ~= "off")
+            self:Print("HUD compacto: " .. tostring(ok and v))
+        elseif sub == "scale" or sub == "alpha" then
+            local ok, v = HUD:SetOption(sub, tonumber(val))
+            self:Print(string.format("HUD %s: %s", sub, tostring(ok and v)))
+        elseif sub == "status" then
+            for _, l in ipairs(HUD:StatusLines()) do self:Print(l) end
         else
-            self:Print("HUD de pulls: " ..
-                (HUD:Toggle() and "|cFF21de66visible|r (arrastralo donde quieras)"
-                              or "|cFFff9922oculto|r"))
+            local on = HUD:SetEnabled(not HUD:IsEnabled())
+            self:Print("HUD: " .. (on and "|cFF21de66activado|r (se muestra solo en mazmorra)"
+                                      or "|cFFff9922desactivado|r"))
         end
     elseif cmd == "help" or cmd == "?" then
         self:PrintHelp()
@@ -1409,7 +1454,12 @@ function MitzuMPlus:PrintHelp()
     self:Print("|cFFf7d470/MitzuMPlus pull prev|r          - Retrocede un pull")
     self:Print("|cFFf7d470/MitzuMPlus pull 7|r             - Salta al pull 7")
     self:Print("|cFFf7d470/MitzuMPlus pullinfo [N]|r       - Que clones trae ese pull segun MDT")
-    self:Print("|cFFf7d470/MitzuMPlus hud|r                - Muestra/oculta PULL 4 / 21")
+    self:Print("|cFFf7d470/MitzuMPlus hud|r                - Activa/desactiva el Coach HUD")
+    self:Print("|cFFf7d470/MitzuMPlus hud test [off]|r     - Vista previa del HUD con datos de ejemplo")
+    self:Print("|cFFf7d470/MitzuMPlus hud lock / unlock|r - Bloquea/desbloquea la posicion")
+    self:Print("|cFFf7d470/MitzuMPlus hud scale / alpha N|r - Tamaño (0.6-2) / opacidad (0.2-1)")
+    self:Print("|cFFf7d470/MitzuMPlus hud compact [off]|r  - Modo compacto")
+    self:Print("|cFFf7d470/MitzuMPlus hud reset / status|r - Restaura posicion / estado del HUD")
     self:Print("|cFFf7d470/MitzuMPlus dungeon|r            - Donde estoy y en que punto de la llave")
     self:Print("|cFFf7d470/MitzuMPlus lifecycle|r          - Ultima transicion de estado")
     self:Print("|cFFf7d470/MitzuMPlus party|r              - Los cinco del grupo: clase, rol y spec")
@@ -1421,7 +1471,9 @@ function MitzuMPlus:PrintHelp()
     self:Print("|cFFf7d470/MitzuMPlus next|r / |cFFf7d470prev|r       - Avanza/retrocede un pull")
     self:Print("|cFFf7d470/MitzuMPlus runtime [todo]|r    - Que puede leer el addon en este cliente")
     self:Print("|cFFf7d470/MitzuMPlus version|r            - Muestra versión")
-    self:Print("|cFFf7d470/MitzuMPlus bugreport|r          - Copia el log de errores al clipboard")
+    self:Print("|cFFf7d470/MitzuMPlus bugreport|r          - Informe QA completo para copiar y enviar")
+    self:Print("|cFFf7d470/MitzuMPlus bugreport status|r   - Resumen en el chat (invariantes, errores)")
+    self:Print("|cFFf7d470/MitzuMPlus bugreport clear|r    - Limpia la caja negra y el log de errores")
     self:Print("|cFFf7d470/MitzuMPlus clearerrors|r        - Limpia el log de errores")
     self:Print("|cFFf7d470/MitzuMPlus debuglog|r          - Copia el log de diagnóstico al clipboard")
     self:Print("|cFFf7d470/MitzuMPlus cleardebug|r        - Limpia el log de diagnóstico")

@@ -94,7 +94,14 @@ end
 -- cierto que cualquier comprobación de existencia de la API.
 function RuntimeCapabilities:SetObservedState(key, state, why)
     if not self.STATES[state] then return false, "estado no válido" end
+    local antes = self:Get(key)
     set(key, state, why or "observado en vivo")
+    -- Solo los CAMBIOS van a la caja negra de QA: una degradación en vivo es
+    -- exactamente lo que se quiere ver en un informe, repetirla no.
+    local FR = MitzuMPlus.FlightRecorder
+    if antes ~= state and FR and FR.Record then
+        FR:Record("CAPABILITY", "CHANGED", { key = key, from = antes, to = state })
+    end
     return true
 end
 

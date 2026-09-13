@@ -83,6 +83,20 @@ MitzuMPlusDB_Defaults = {
             coachShowClock        = true,   -- reloj y tiempo restante
             coachShowDeathBudget  = true,   -- cuantas muertes mas caben
 
+            -- ── v7.14.0: Coach HUD V2 (modules/CoachHUD.lua) ──────────────
+            -- Vista principal durante la llave. replaceClassic evita tener el
+            -- overlay clasico del Coach duplicado en pantalla; overlayEnabled
+            -- y el resto de ajustes del Coach NO se tocan.
+            hud = {
+                enabled        = true,
+                locked         = false,
+                scale          = 1.0,
+                alpha          = 1.0,
+                compact        = false,
+                showPreKey     = true,
+                replaceClassic = true,
+            },
+
             routeAutoLearn   = true,
             predictionEnabled = true,
 

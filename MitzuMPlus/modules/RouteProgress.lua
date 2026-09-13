@@ -109,6 +109,7 @@ function RouteProgress:Prepare(route)
     self._state     = PREPARED
     self._recovered = false
     self._recoveryContext = nil
+    self._recoveryPull = nil
     self:_BuildCache()
     if bus() then bus():Emit("MITZU_ROUTE_PREPARED", route, self) end
     return true
@@ -135,6 +136,7 @@ function RouteProgress:Reset()
     self._state = INACTIVE
     self._recovered = false
     self._recoveryContext = nil
+    self._recoveryPull = nil
     return true
 end
 
@@ -210,6 +212,9 @@ function RouteProgress:RestorePull(index, ctx)
     self._lastReason = "RECOVERY"
     self._recovered  = true
     self._recoveryContext = ctx
+    -- Solo diagnostico: el pull que se restauro, que NO cambia al avanzar
+    -- despues. El pull actual sigue siendo _pullIndex, la unica autoridad.
+    self._recoveryPull = n
     self:_BuildCache()
 
     local b = bus()
@@ -224,6 +229,8 @@ end
 
 function RouteProgress:WasRecovered() return self._recovered == true end
 function RouteProgress:GetRecoveryContext() return self._recoveryContext end
+-- El pull que dejo la recuperacion (historico), o nil si no hubo recuperacion.
+function RouteProgress:GetRecoveryPull() return self._recovered and self._recoveryPull or nil end
 
 function RouteProgress:NextPull(reason)
     if not self._route then return false, "no hay ruta cargada" end
@@ -309,7 +316,10 @@ function RouteProgress:StatusLines()
     end
     if self._recovered then
         L[#L + 1] = "recovered=true"
-        L[#L + 1] = "recoveryPull=" .. tostring(self._pullIndex)
+        -- Antes se imprimia aqui _pullIndex como "recoveryPull": tras avanzar
+        -- a mano mostraba el pull ACTUAL (4) y no el restaurado (2).
+        L[#L + 1] = "recoveryOriginalPull=" .. tostring(self._recoveryPull)
+        L[#L + 1] = "currentPull=" .. tostring(self._pullIndex)
         L[#L + 1] = "recoveryReason=" ..
             tostring(self._recoveryContext and self._recoveryContext.reason or "?")
     end
