@@ -88,7 +88,15 @@ local function Scorer() return AR.RoutePullCandidateScorer end
 local function TEL() return AR.ArrowDemoTelemetry end
 
 function RouteAlignment:IsEnabled() return self._enabled == true end
-function RouteAlignment:SetEnabled(on) self._enabled = (on == true) end
+function RouteAlignment:SetEnabled(on)
+    local target = on == true
+    if target == self._enabled then return self._enabled end
+    -- Una pausa es una frontera dura: al apagar o reactivar no se conservan
+    -- miembros, relojes, puntuaciones ni evidencia temporal del episodio.
+    self:Reset(nil)
+    self._enabled = target
+    return self._enabled
+end
 function RouteAlignment:Get() return self._hypothesis end
 function RouteAlignment:History() return self._history end
 
@@ -174,7 +182,9 @@ function RouteAlignment:Feed(obs, nowSeconds)
             "routePull", ep.routePullAtEnd or "-",
             "state", h and h.state or "NO_EVIDENCE",
             "candidate", h and h.label or "-",
-            "score", h and h.score or 0,
+            "candidateScore", h and h.candidateScore or 0,
+            "candidateMargin", h and h.candidateMargin or 0,
+            "episodeConfidence", h and h.episodeConfidence or 0,
             "npcCoverage", o and o.npcCoverage or 0,
             "anchor", h and h.anchorPull or "-",
             "nextAnchor", self._inferredPull or "-",
@@ -182,8 +192,12 @@ function RouteAlignment:Feed(obs, nowSeconds)
         if h then
             self._history[#self._history + 1] = {
                 episodeID = ep.episodeID, state = h.state, label = h.label,
-                score = h.score, runnerUpLabel = h.runnerUpLabel,
-                margin = h.margin, routePull = ep.routePullAtStart,
+                candidateScore = h.candidateScore,
+                runnerUpLabel = h.runnerUpLabel,
+                candidateMargin = h.candidateMargin,
+                episodeConfidence = h.episodeConfidence,
+                confidenceState = h.confidenceState,
+                routePull = ep.routePullAtStart,
                 anchor = h.anchorPull,
             }
             while #self._history > 20 do table.remove(self._history, 1) end
@@ -324,21 +338,21 @@ function RouteAlignment:_LogAlignment(ep, obsv, h)
         if n > P.MAX_CANDIDATE_LINES then break end
         log("PULL_CANDIDATE", {
             "episode", ep.episodeID, "candidate", c.label,
-            "score", c.total, "expected", c.expected or "-",
+            "candidateScore", c.candidateScore, "expected", c.expected or "-",
             "observed", c.observed,
             "npc", c.components.npcComposition,
+            "multiplicity", c.components.multiplicity,
             "size", c.components.sizeSimilarity,
             "seq", c.components.sequencePrior,
-            "engagement", c.components.engagementConsistency,
-            "cast", c.components.castActivity,
-            "eventEngagement", c.components.eventEngagement,
-            "tokenLink", c.components.tokenLinkage,
+            "boss", c.components.bossAnchor,
         })
     end
     log("ALIGNMENT", {
         "episode", ep.episodeID, "state", h.state,
-        "candidate", h.label or "-", "score", h.score,
-        "runnerUp", h.runnerUpLabel or "-", "margin", h.margin,
+        "candidate", h.label or "-", "candidateScore", h.candidateScore,
+        "runnerUp", h.runnerUpLabel or "-", "candidateMargin", h.candidateMargin,
+        "episodeConfidence", h.episodeConfidence,
+        "confidenceState", h.confidenceState,
         "routePull", h.routeProgressPull or "-", "anchor", h.anchorPull or "-",
         "npcCoverage", h.npcCoverage or 0,
         "reasons", table.concat(h.reasons or {}, ","),
@@ -357,6 +371,10 @@ function RouteAlignment:Reset(nowSeconds)
     self._lastEvalMs, self._loggedThisEp, self._lastLogged = nil, 0, nil
     self._inferredPull, self._lastRpPull, self._blindStreak = nil, nil, 0
     self._history = {}
+    local eventEvidence = AR.EventCastEvidence
+    if eventEvidence and type(eventEvidence.Clear) == "function" then
+        pcall(eventEvidence.Clear, eventEvidence)
+    end
 end
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -395,9 +413,9 @@ function RouteAlignment:StatusLines()
     end
     L[#L + 1] = "alignmentState=" .. h.state ..
         "  bestCandidate=" .. tostring(h.label or "-") ..
-        "  score=" .. num(h.score)
+        "  candidateScore=" .. num(h.candidateScore)
     L[#L + 1] = "runnerUp=" .. tostring(h.runnerUpLabel or "-") ..
-        "  margin=" .. num(h.margin) ..
+        "  candidateMargin=" .. num(h.candidateMargin) ..
         "  chain=" .. tostring(h.isChain == true)
     local o = h.observation
     if o then
@@ -406,6 +424,8 @@ function RouteAlignment:StatusLines()
             o.engagedCount, o.peakEngaged, o.identifiedUnits, o.secretUnits,
             o.unavailableUnits, num(o.npcCoverage))
     end
+    L[#L + 1] = "episodeConfidence=" .. num(h.episodeConfidence) ..
+        " confidenceState=" .. tostring(h.confidenceState or "WEAK")
     L[#L + 1] = "reasons=" .. table.concat(h.reasons or {}, ",")
     return L
 end
@@ -416,14 +436,12 @@ function RouteAlignment:CandidateLines()
         return { "|cFFff9922No hay candidatos evaluados ahora mismo.|r" }
     end
     local L = { "|cFFe8b84a--- Candidatos evaluados ---|r",
-                "pull score npc mult size seq pers eng cast evt link boss expected" }
+                "pull candidateScore npc mult size seq boss expected" }
     for _, c in ipairs(h.candidates) do
         local k = c.components
-        L[#L + 1] = string.format("%-5s %s %s %s %s %s %s %s %s %s %s %s %s",
-            c.label, num(c.total), num(k.npcComposition), num(k.multiplicity),
-            num(k.sizeSimilarity), num(k.sequencePrior),
-            num(k.temporalPersistence), num(k.engagementConsistency),
-            num(k.castActivity), num(k.eventEngagement), num(k.tokenLinkage),
+        L[#L + 1] = string.format("%-5s %s %s %s %s %s %s %s",
+            c.label, num(c.candidateScore), num(k.npcComposition),
+            num(k.multiplicity), num(k.sizeSimilarity), num(k.sequencePrior),
             num(k.bossAnchor), tostring(c.expected or "-"))
     end
     L[#L + 1] = "observado=" .. tostring(h.candidates[1].observed) ..
@@ -438,20 +456,21 @@ function RouteAlignment:DetailLines()
     local h = self._hypothesis
     local L = {
         "|cFFe8b84a--- alignmentdetail (SOLO DIAGNOSTICO) ---|r",
-        "authority=OBSERVATION_ONLY  progressWrites=0  resolverResults=0  arrowEffects=0",
+        "authority=NONE  progressWrites=0  matchAuthority=NONE  arrowWrites=0",
         "eventCastRole=TEMPORAL_ENGAGEMENT_ONLY  eventIdentity=DISABLED",
     }
     if not h then
-        L[#L + 1] = "bestCandidate=-  runnerUp=-  margin=0.00"
+        L[#L + 1] = "bestCandidate=-  runnerUp=-  candidateMargin=0.00"
+        L[#L + 1] = "episodeConfidence=0.00 confidenceState=WEAK reasons=NO_EVIDENCE"
         L[#L + 1] = "reasons=NO_EVIDENCE"
         return L
     end
 
     L[#L + 1] = "bestCandidate=" .. tostring(h.label or "-") ..
-        " score=" .. num(h.score) ..
+        " candidateScore=" .. num(h.candidateScore) ..
         "  runnerUp=" .. tostring(h.runnerUpLabel or "-") ..
         " runnerUpScore=" .. num(h.runnerUpScore) ..
-        "  margin=" .. num(h.margin)
+        "  candidateMargin=" .. num(h.candidateMargin)
 
     local o = h.observation or {}
     L[#L + 1] = string.format(
@@ -460,31 +479,63 @@ function RouteAlignment:DetailLines()
         tonumber(o.castingUnits) or 0, tonumber(o.recentEventUnits) or 0,
         tonumber(o.linkedUnits) or 0)
 
-    local weights = Scorer().CONFIG.weights
-    local function signal(name, value, role)
-        L[#L + 1] = string.format("signal.%s value=%s weight=%s role=%s",
-            name, num(value), num(weights[name] or 0), role)
+    local config = Scorer().CONFIG
+    local weights = config.weights
+    local function candidateSignal(name, value, contribution, role)
+        L[#L + 1] = string.format(
+            "candidate.%s value=%s weight=%s contribution=%s role=%s",
+            name, num(value), num(weights[name] or 0), num(contribution), role)
     end
     local k = h.components or {}
-    signal("sizeSimilarity", k.sizeSimilarity, "CANDIDATE_EVIDENCE")
-    L[#L + 1] = "signal.sequencePrior value=" .. num(k.sequencePrior) ..
-        " factor=" .. num((h.candidates and h.candidates[1]
-                           and h.candidates[1].sequenceFactor)) ..
-        " role=TIE_BREAK_PRIOR"
-    signal("engagementConsistency", k.engagementConsistency, "PHYSICAL_ACTIVITY")
-    signal("castActivity", k.castActivity, "CURRENT_ACTIVITY")
-    signal("eventEngagement", k.eventEngagement, "TEMPORAL_ACTIVITY_ONLY")
-    signal("tokenLinkage", k.tokenLinkage, "POINTER_LINK_ONLY")
+    local contributions = h.contributions or {}
+    candidateSignal("size", k.sizeSimilarity, contributions.sizeSimilarity,
+        "CANDIDATE_EVIDENCE")
+    candidateSignal("sequence", k.sequencePrior, contributions.sequencePrior,
+        "BOUNDED_PRIOR")
+    candidateSignal("npcComposition", k.npcComposition,
+        contributions.npcComposition, "CANDIDATE_EVIDENCE")
+    candidateSignal("multiplicity", k.multiplicity,
+        contributions.multiplicity, "CANDIDATE_EVIDENCE")
+    candidateSignal("bossAnchor", k.bossAnchor,
+        contributions.bossAnchor, "CANDIDATE_EVIDENCE")
+    L[#L + 1] = "stability.persistence value=" .. num(k.temporalPersistence) ..
+        " thresholdMs=" .. tostring(config.minPersistenceMs) ..
+        " contribution=0.00 role=STATE_GATE_ONLY"
     L[#L + 1] = "reasons=" .. table.concat(h.reasons or {}, ",")
+
+    L[#L + 1] = "episodeConfidence=" .. num(h.episodeConfidence) ..
+        " confidenceState=" .. tostring(h.confidenceState or "WEAK") ..
+        " reasons=" .. table.concat(h.confidenceReasons or {}, ",")
+    local confidenceWeights = config.confidenceWeights or {}
+    local confidenceSignals = h.confidenceSignals or {}
+    local confidenceContributions = h.confidenceContributions or {}
+    local function episodeSignal(label, key, role)
+        L[#L + 1] = string.format(
+            "episode.%s value=%s weight=%s contribution=%s role=%s",
+            label, num(confidenceSignals[key]), num(confidenceWeights[key] or 0),
+            num(confidenceContributions[key]), role)
+    end
+    episodeSignal("engagement", "engagementConsistency", "EPISODE_QUALITY_ONLY")
+    episodeSignal("recentCast", "castActivity", "EPISODE_QUALITY_ONLY")
+    episodeSignal("recentEvent", "eventEngagement", "TEMPORAL_ACTIVITY_ONLY")
+    episodeSignal("tokenLink", "tokenLinkage", "EPISODE_QUALITY_ONLY")
 
     for i, c in ipairs(h.candidates or {}) do
         if i > P.MAX_CANDIDATE_LINES then break end
         local ck = c.components or {}
-        L[#L + 1] = string.format(
-            "candidate.%d=%s total=%s size=%s seq=%s engagement=%s cast=%s event=%s link=%s",
-            i, tostring(c.label or "-"), num(c.total), num(ck.sizeSimilarity),
-            num(ck.sequencePrior), num(ck.engagementConsistency),
-            num(ck.castActivity), num(ck.eventEngagement), num(ck.tokenLinkage))
+        local cc = c.contributions or {}
+        L[#L + 1] = string.format("candidate.%d=%s candidateScore=%s",
+            i, tostring(c.label or "-"), num(c.candidateScore))
+        local function candidatePart(label, key)
+            L[#L + 1] = string.format(
+                "  candidate.%d.%s value=%s weight=%s contribution=%s",
+                i, label, num(ck[key]), num(weights[key] or 0), num(cc[key]))
+        end
+        candidatePart("size", "sizeSimilarity")
+        candidatePart("sequence", "sequencePrior")
+        candidatePart("npcComposition", "npcComposition")
+        candidatePart("multiplicity", "multiplicity")
+        candidatePart("bossAnchor", "bossAnchor")
     end
     return L
 end
@@ -496,10 +547,11 @@ function RouteAlignment:HistoryLines()
     local L = { "|cFFe8b84a--- Episodios cerrados ---|r" }
     for _, e in ipairs(self._history) do
         L[#L + 1] = string.format(
-            "Episode %d  currentRoutePull=%s  anchor=%s  best=%s  state=%s  score=%s  runnerUp=%s",
+            "Episode %d  currentRoutePull=%s  anchor=%s  best=%s  state=%s  candidateScore=%s  runnerUp=%s confidence=%s/%s",
             e.episodeID, tostring(e.routePull or "-"), tostring(e.anchor or "-"),
-            tostring(e.label or "-"), e.state, num(e.score),
-            tostring(e.runnerUpLabel or "-"))
+            tostring(e.label or "-"), e.state, num(e.candidateScore),
+            tostring(e.runnerUpLabel or "-"), num(e.episodeConfidence),
+            tostring(e.confidenceState or "WEAK"))
     end
     return L
 end

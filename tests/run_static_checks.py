@@ -142,9 +142,12 @@ def main() -> None:
     init = (ROOT / "Init.lua").read_text(encoding="utf-8-sig")
     detail_contract = [
         'cmd == "alignmentdetail"', "RAl:DetailLines()",
-        "progressWrites=0", "resolverResults=0", "arrowEffects=0",
+        "authority=NONE", "progressWrites=0", "matchAuthority=NONE", "arrowWrites=0",
         "eventCastRole=TEMPORAL_ENGAGEMENT_ONLY", "bestCandidate=",
-        "runnerUp=", "margin=", "reasons=",
+        "runnerUp=", "candidateMargin=", "candidateScore=", "episodeConfidence=",
+        'candidateSignal("npcComposition"', 'candidateSignal("multiplicity"',
+        'candidateSignal("bossAnchor"', 'episodeSignal("engagement"',
+        'episodeSignal("recentEvent"', 'episodeSignal("tokenLink"', "reasons=",
     ]
     detail_source = (ROOT / "modules" / "AdaptiveRoute" / "RouteAlignment.lua").read_text(
         encoding="utf-8-sig"
@@ -163,6 +166,19 @@ def main() -> None:
             failures.append(f"RoutePullCandidateScorer: must stay pure, found {impure}")
     if "MATCH" in scorer.replace("MISMATCH", ""):
         failures.append("RoutePullCandidateScorer: the word MATCH means identity in Mitzu")
+
+    score_one = scorer.partition("function Scorer:ScoreOne")[2].partition(
+        "function Scorer:EpisodeConfidence"
+    )[0]
+    for global_signal in ["engagementConsistency", "castActivity",
+                          "eventEngagement", "tokenLinkage"]:
+        if global_signal in score_one:
+            failures.append(
+                f"RoutePullCandidateScorer: global signal entered candidateScore: {global_signal}"
+            )
+    ranking = scorer.partition("function Scorer:Evaluate")[2]
+    if "a.candidateScore" not in ranking or "candidateMargin" not in ranking:
+        failures.append("RoutePullCandidateScorer: ranking is not explicitly candidate-only")
 
     alignment_order = [
         r"modules\AdaptiveRoute\ArrowDemo.lua",
@@ -183,8 +199,20 @@ def main() -> None:
     if "pcall(RAl.Feed" not in arrow_demo:
         failures.append("ArrowDemo: the alignment layer is no longer fed from the tick")
 
+    tick = arrow_demo.partition("function ArrowDemo:_Tick")[2].partition(
+        "function ArrowDemo:SafeTick"
+    )[0]
+    if "RAl:Get" in tick or re.search(r"self:Decide\([^)]*RAl", tick, re.DOTALL):
+        failures.append("ArrowDemo: alignment result crossed into arrow decision")
+    event_bridge = arrow_demo.partition("local function eventCastDe")[2].partition(
+        "local function esperados"
+    )[0]
+    if re.search(r"safeSpellID|spellIDState|castGUID|\.spellID", event_bridge,
+                 re.IGNORECASE):
+        failures.append("ArrowDemo: EventCast identity payload crossed the bridge")
+
     checks += len(alignment_modules) * 3 + len(progress_write_patterns) + 2
-    checks += len(detail_contract) + 3
+    checks += len(detail_contract) + 3 + 4 + 2
 
     if failures:
         print(f"Static: {checks} checks, {len(failures)} failures")

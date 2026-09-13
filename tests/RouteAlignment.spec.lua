@@ -196,6 +196,7 @@ end }
 --   nil            -> no disponible
 world.npcID = {}
 local npcIDCalls = 0
+local guidanceResolveCalls = 0
 AR.LiveEnemyResolver = {
     GetNPCID = function(_, token)
         npcIDCalls = npcIDCalls + 1
@@ -204,7 +205,10 @@ AR.LiveEnemyResolver = {
         if type(v) == "number" then return v, "AVAILABLE", "string" end
         return nil, "UNKNOWN", nil
     end,
-    ResolveForGuidance = function() return "UNKNOWN" end,
+    ResolveForGuidance = function()
+        guidanceResolveCalls = guidanceResolveCalls + 1
+        return "UNKNOWN"
+    end,
 }
 
 -- RouteArrows simulado: la fase 4 no lo toca, pero ArrowDemo si.
@@ -241,6 +245,7 @@ AR.PackEvidence = { ExpectedFromPull = function(_, pull)
 end }
 
 dofile("modules/RouteManager.lua")
+dofile("modules/AdaptiveRoute/EventCastEvidence.lua")
 dofile("modules/AdaptiveRoute/NameplateGenerations.lua")
 dofile("modules/AdaptiveRoute/ArrowDemoTelemetry.lua")
 dofile("modules/AdaptiveRoute/ArrowDemo.lua")
@@ -255,6 +260,7 @@ local SC  = AR.RoutePullCandidateScorer
 local RAl = AR.RouteAlignment
 local TEL = AR.ArrowDemoTelemetry
 local NG  = AR.NameplateGenerations
+local ECE = AR.EventCastEvidence
 local AD  = AR.ArrowDemo
 local RM  = MitzuMPlus.RouteManager
 
@@ -336,6 +342,7 @@ local function resetAll()
     TEL:Store().current = nil
     if TEL:IsRecording() then TEL:EndSession("TEST") end
     TEL._encounterActive = false
+    ECE:Clear()
     printed = {}
 end
 
@@ -424,8 +431,8 @@ test("caso 1 · composicion exacta da candidato fuerte", function()
     near(h.components.npcComposition, 1.0, 0.001, "composicion")
     near(h.components.multiplicity, 1.0, 0.001, "multiplicidad")
     near(h.components.sizeSimilarity, 1.0, 0.001, "tamano")
-    near(h.score, 1.0, 0.001, "total")
-    truthy(h.margin > SC.CONFIG.ambiguousMargin, "margen amplio")
+    near(h.candidateScore, 1.0, 0.001, "candidateScore")
+    truthy(h.candidateMargin > SC.CONFIG.ambiguousMargin, "margen amplio")
 end)
 
 test("caso 2 · multiplicidad incorrecta no es coincidencia exacta", function()
@@ -435,7 +442,7 @@ test("caso 2 · multiplicidad incorrecta no es coincidencia exacta", function()
     local h = SC:Evaluate(obs, route, 1, ctxFor("1"))
     near(h.components.npcComposition, 2 / 3, 0.001, "composicion parcial")
     near(h.components.multiplicity, 0.5, 0.001, "multiplicidad penalizada")
-    truthy(h.score < 1.0, "no es un 1.0")
+    truthy(h.candidateScore < 1.0, "no es un 1.0")
     local tiene = false
     for _, r in ipairs(h.reasons) do
         if r == "MULTIPLICITY_MISMATCH" then tiene = true end
@@ -445,7 +452,7 @@ test("caso 2 · multiplicidad incorrecta no es coincidencia exacta", function()
 
     -- Y el caso espejo puntua distinto: el multiset NO es un conjunto.
     local espejo = SC:Evaluate(mkObs(3, { [A] = 2, [B] = 1 }), route, 1, ctxFor("1"))
-    greater(espejo.score, h.score, "A A B encaja mejor que A B B")
+    greater(espejo.candidateScore, h.candidateScore, "A A B encaja mejor que A B B")
 end)
 
 test("caso 3 · observacion parcial es evidencia parcial, no identidad", function()
@@ -463,7 +470,7 @@ test("caso 4 · un mob de mas penaliza", function()
     local sobra  = SC:Evaluate(mkObs(4, { [A] = 1, [B] = 1, [Cc] = 1, [D] = 1 }), route, 1, ctxFor("1"))
     near(sobra.components.npcComposition, 0.75, 0.001, "composicion con extra")
     near(sobra.components.sizeSimilarity, 0.75, 0.001, "tamano con extra")
-    greater(exacto.score, sobra.score, "el extra baja la puntuacion")
+    greater(exacto.candidateScore, sobra.candidateScore, "el extra baja la puntuacion")
 end)
 
 test("caso 5 · chain pull: 4+5 gana a 4", function()
@@ -483,7 +490,7 @@ test("caso 5 · chain pull: 4+5 gana a 4", function()
     local suelto
     for _, c in ipairs(h.candidates) do if c.label == "4" then suelto = c end end
     truthy(suelto, "el 4 suelto esta entre los candidatos")
-    greater(h.score, suelto.total, "la cadena puntua mas")
+    greater(h.candidateScore, suelto.candidateScore, "la cadena puntua mas")
 end)
 
 test("caso 5b · sin exceso observado NO se generan cadenas", function()
@@ -507,7 +514,7 @@ test("caso 6 · dos pulls con la misma composicion dan AMBIGUOUS", function()
     })
     local h = SC:Evaluate(mkObs(3, { [A] = 2, [B] = 1 }), route, 2, ctxFor("2"))
     equal(h.state, S.AMBIGUOUS, "estado")
-    truthy(h.margin < SC.CONFIG.ambiguousMargin, "margen por debajo del umbral")
+    truthy(h.candidateMargin < SC.CONFIG.ambiguousMargin, "margen por debajo del umbral")
     truthy(h.runnerUpLabel ~= nil, "hay segundo candidato")
     local tiene = false
     for _, r in ipairs(h.reasons) do if r == "TIE_WITH_RUNNER_UP" then tiene = true end end
@@ -524,7 +531,7 @@ test("caso 6b · si la composicion desempata, ya no es AMBIGUOUS", function()
     local h = SC:Evaluate(mkObs(3, { [A] = 2, [B] = 1 }), route, 2, ctxFor("2"))
     equal(h.label, "2", "gana el que encaja")
     truthy(h.state == S.STRONG or h.state == S.PROBABLE, "estado: " .. h.state)
-    truthy(h.margin >= SC.CONFIG.ambiguousMargin, "margen suficiente")
+    truthy(h.candidateMargin >= SC.CONFIG.ambiguousMargin, "margen suficiente")
 end)
 
 test("caso 8 · ancla de boss: con ENCOUNTER gana el pull sin tropas", function()
@@ -630,12 +637,15 @@ end)
 
 test("caso 12 · target/mouseover refuerza continuidad, no identidad", function()
     local route = mkRoute({ { { A, 2 } }, { { Z, 9 } } })
-    local sinLink = mkObs(2, { [A] = 2 })
-    local conLink = mkObs(2, { [A] = 2 }, { linkedUnits = 2 })
+    local sinLink = mkObs(2, { [A] = 2 }, { tokenLinkage = 0 })
+    local conLink = mkObs(2, { [A] = 2 }, { linkedUnits = 2, tokenLinkage = 1 })
     local h1 = SC:Evaluate(sinLink, route, 1, ctxFor("1"))
     local h2 = SC:Evaluate(conLink, route, 1, ctxFor("1"))
-    equal(h1.score, h2.score, "el enlace NO cambia la puntuacion")
+    equal(h1.candidateScore, h2.candidateScore, "el enlace NO cambia candidateScore")
+    equal(h1.candidateMargin, h2.candidateMargin, "ni candidateMargin")
     equal(h1.state, h2.state, "ni el estado")
+    greater(h2.episodeConfidence, h1.episodeConfidence,
+        "solo aumenta episodeConfidence")
     -- Lo que si hace es contarse como observacion.
     equal(conLink.linkedUnits, 2, "queda registrado")
 end)
@@ -650,7 +660,7 @@ test("C1 Evaluate es determinista y no muta sus entradas", function()
     local antes = obs.engagedCount
     local h1 = SC:Evaluate(obs, route, 1, ctxFor("1"))
     local h2 = SC:Evaluate(obs, route, 1, ctxFor("1"))
-    equal(h1.score, h2.score, "mismo total")
+    equal(h1.candidateScore, h2.candidateScore, "mismo candidateScore")
     equal(h1.label, h2.label, "mismo ganador")
     equal(table.concat(h1.reasons, ","), table.concat(h2.reasons, ","), "mismos motivos")
     equal(obs.engagedCount, antes, "la observacion no se toca")
@@ -698,7 +708,7 @@ test("C4 la palabra MATCH no aparece en estados ni motivos", function()
     end
 end)
 
-test("C5 la persistencia solo cuenta para la hipotesis que persiste", function()
+test("C5 la persistencia no altera candidateScore ni ranking", function()
     local route = mkRoute({ { { A, 2 } }, { { Z, 9 } } })
     local obs = mkObs(2, { [A] = 2 })
     local sin = SC:Evaluate(obs, route, 1, { persistLabel = nil, persistMs = 0 })
@@ -707,7 +717,44 @@ test("C5 la persistencia solo cuenta para la hipotesis que persiste", function()
     equal(sin.components.temporalPersistence, 0, "sin persistencia")
     equal(con.components.temporalPersistence, 1, "persistida")
     equal(otra.components.temporalPersistence, 0, "la persistencia de otro no cuenta")
-    greater(con.score, sin.score, "persistir suma")
+    equal(con.candidateScore, sin.candidateScore, "persistir no cambia candidateScore")
+    equal(con.label, sin.label, "persistir no cambia ganador")
+    equal(con.candidateMargin, sin.candidateMargin, "persistir no cambia margen")
+end)
+
+test("C5b episodeConfidence no cambia ranking ni candidateMargin", function()
+    local route = mkRoute({ { { A, 2 } }, { { B, 2 } }, { { Z, 7 } } })
+    local low = mkObs(2, { [A] = 2 }, {
+        engagementConsistency = 0.10, castActivity = 0,
+        eventEngagement = 0, tokenLinkage = 0,
+    })
+    local high = mkObs(2, { [A] = 2 }, {
+        engagementConsistency = 1, castActivity = 1,
+        eventEngagement = 1, tokenLinkage = 1,
+    })
+    local a = SC:Evaluate(low, route, 1, ctxFor("1"))
+    local b = SC:Evaluate(high, route, 1, ctxFor("1"))
+    equal(a.label, b.label, "mismo bestCandidate")
+    equal(a.runnerUpLabel, b.runnerUpLabel, "mismo runnerUp")
+    equal(a.candidateMargin, b.candidateMargin, "mismo candidateMargin")
+    equal(#a.candidates, #b.candidates, "misma lista")
+    for i = 1, #a.candidates do
+        equal(a.candidates[i].label, b.candidates[i].label, "mismo orden " .. i)
+        equal(a.candidates[i].candidateScore, b.candidates[i].candidateScore,
+            "mismo candidateScore " .. i)
+    end
+    greater(b.episodeConfidence, a.episodeConfidence,
+        "solo cambia episodeConfidence")
+    equal(a.confidenceState, "WEAK", "confidence baja")
+    equal(b.confidenceState, "STRONG", "confidence alta")
+end)
+
+test("C5c una senal candidato-especifica si puede cambiar ranking", function()
+    local route = mkRoute({ { { A, 2 } }, { { B, 2 } }, { { Z, 7 } } })
+    local a = SC:Evaluate(mkObs(2, { [A] = 2 }), route, 1, ctxFor("1"))
+    local b = SC:Evaluate(mkObs(2, { [B] = 2 }), route, 1, ctxFor("1"))
+    equal(a.label, "1", "composicion A elige pull 1")
+    equal(b.label, "2", "composicion B elige pull 2")
 end)
 
 test("C6 solo se evaluan N-1, N, N+1, N+2 y sus cadenas", function()
@@ -860,6 +907,35 @@ test("D7 cast, evento reciente y linkage quedan como observacion agregada", func
     near(o.tokenLinkage, 1, 0.001, "linkage agregado")
 end)
 
+test("D7b EventCast respeta TTL y no queda fijado en el episodio", function()
+    resetAll()
+    world.plates.nameplate1 = { unitToken = "nameplate1" }
+    world.visible = { "nameplate1" }
+    world.engagement.nameplate1 = "ENGAGED"
+    world.time = 200
+    fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    fire("UNIT_SPELLCAST_START", "nameplate1", "cast-guid", 12345)
+
+    local function observeAt(t)
+        world.time = t
+        local obs = AD:_Observe(t)
+        EET:Observe(obs, t * 1000)
+        return EET:Observation()
+    end
+
+    local atStart = observeAt(200)
+    equal(atStart.recentEventUnits, 1, "t0 contribuye")
+    near(atStart.eventEngagement, 1, 0.001, "confidence recibe evento en t0")
+
+    local beforeTTL = observeAt(200 + ECE.TTL - 0.001)
+    equal(beforeTTL.recentEventUnits, 1, "TTL-epsilon contribuye")
+
+    local afterTTL = observeAt(200 + ECE.TTL + 0.001)
+    equal(afterTTL.recentEventUnits, 0, "TTL+epsilon deja de contribuir")
+    near(afterTTL.eventEngagement, 0, 0.001, "confidence actual ya no recibe evento")
+    equal(afterTTL.everSawEventUnits, 1, "historial separado conserva el hecho")
+end)
+
 test("D8 un evento de cast sin engagement no abre un episodio", function()
     resetAll()
     EET:Observe({ {
@@ -949,6 +1025,54 @@ test("E4 apagar la inferencia no observa nada", function()
     TEL:EndSession("TEST")
 end)
 
+test("E4b off-on durante episodio empieza completamente limpio", function()
+    resetAll()
+    startSession()
+    world.time = 300
+    world.plates.nameplate1 = { unitToken = "nameplate1" }
+    world.visible = { "nameplate1" }
+    world.engagement.nameplate1 = "ENGAGED"
+    world.pointed.nameplate1 = { TARGET = true }
+    fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    fire("UNIT_SPELLCAST_START", "nameplate1", "cast-guid", 23456)
+    RAl:Feed(AD:_Observe(world.time), world.time)
+    world.time = 301.1
+    RAl:Feed(AD:_Observe(world.time), world.time)
+    truthy(EET:Current(), "episodio previo activo")
+    truthy(RAl:Get(), "score previo presente")
+    truthy(next(ECE._cache), "evento previo en cache")
+
+    RAl:SetEnabled(false)
+    equal(EET:Current(), nil, "episodio cerrado")
+    equal(EET:GetState(), "IDLE", "tracker idle")
+    equal(#EET:History(), 0, "historial del tracker limpio")
+    equal(RAl:Get(), nil, "score limpio")
+    equal(RAl._persistLabel, nil, "persistencia limpia")
+    equal(RAl._lastEvalMs, nil, "reloj limpio")
+    equal(next(ECE._cache), nil, "recent events limpios")
+
+    RAl:SetEnabled(true)
+    world.visible = { "nameplate2" }
+    world.plates.nameplate1 = nil
+    world.plates.nameplate2 = { unitToken = "nameplate2" }
+    world.engagement.nameplate1 = nil
+    world.engagement.nameplate2 = "ENGAGED"
+    world.pointed = {}
+    fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    world.time = 400
+    RAl:Feed(AD:_Observe(world.time), world.time)
+    local ep = EET:Current()
+    truthy(ep, "episodio nuevo activo")
+    equal(ep.memberCount, 1, "solo miembro nuevo")
+    equal(ep.members[NG:Current("nameplate2")].everSawEvent, false,
+        "no hereda evento")
+    local obs = EET:Observation()
+    equal(obs.recentEventUnits, 0, "sin recent event heredado")
+    equal(obs.linkedUnits, 0, "sin token link heredado")
+    TEL:EndSession("TEST")
+end)
+
 test("E5 un wipe queda anotado como POSSIBLE_WIPE, no como pull hecho", function()
     resetAll()
     startSession()
@@ -980,6 +1104,61 @@ test("E6 el tick de ArrowDemo alimenta la alineacion de verdad", function()
     truthy(RAl:Get() ~= nil, "y produjo una hipotesis")
     truthy(findLine("PHYSICAL_EPISODE_START"), "con su rastro en la telemetria")
     AD:SetEnabled(false)
+end)
+
+test("E6b alignment ON y OFF producen salida autoritativa identica", function()
+    local function snapshot(alignmentOn)
+        resetAll()
+        RAl:SetEnabled(alignmentOn)
+        world.plates.nameplate1 = { unitToken = "nameplate1" }
+        world.plates.nameplate2 = { unitToken = "nameplate2" }
+        world.visible = { "nameplate1", "nameplate2" }
+        world.engagement.nameplate1 = "ENGAGED"
+        world.engagement.nameplate2 = "ENGAGED"
+        fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+        fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+        local writesBefore = rpTotal()
+        local resolverBefore = guidanceResolveCalls
+        AD:SetEnabled(true)
+        local plan = AD._lastPlan
+        local orders = {}
+        for _, a in ipairs(plan.add or {}) do
+            orders[#orders + 1] = "ADD:" .. a.token .. ":" .. a.reason
+        end
+        for _, r in ipairs(plan.remove or {}) do
+            orders[#orders + 1] = "REMOVE:" .. r.token .. ":" .. r.reason
+        end
+        local marks = {}
+        for _, m in ipairs(AD:GetMarks()) do
+            marks[#marks + 1] = m.token .. ":" .. m.reason
+        end
+        local resolverAuthorityCalls = guidanceResolveCalls - resolverBefore
+        local matchState = AR.LiveEnemyResolver:ResolveForGuidance("nameplate1")
+        local result = {
+            routeCurrentPull = world.pull,
+            progressWrites = rpTotal() - writesBefore,
+            resolverAuthorityCalls = resolverAuthorityCalls,
+            matchState = matchState,
+            arrowOrders = table.concat(orders, "|"),
+            arrowState = table.concat(marks, "|"),
+            phase = plan.phase,
+        }
+        AD:SetEnabled(false)
+        return result
+    end
+
+    local on = snapshot(true)
+    local off = snapshot(false)
+    equal(on.routeCurrentPull, off.routeCurrentPull, "mismo routeCurrentPull")
+    equal(on.progressWrites, 0, "ON no escribe progreso")
+    equal(off.progressWrites, 0, "OFF no escribe progreso")
+    equal(on.resolverAuthorityCalls, 0, "ON no invoca identidad autoritativa")
+    equal(off.resolverAuthorityCalls, 0, "OFF no invoca identidad autoritativa")
+    equal(on.matchState, off.matchState, "mismo estado de identidad")
+    equal(on.matchState, "UNKNOWN", "nunca fabrica MATCH")
+    equal(on.arrowOrders, off.arrowOrders, "mismas ordenes de flechas")
+    equal(on.arrowState, off.arrowState, "mismo estado de flechas")
+    equal(on.phase, off.phase, "mismo output autoritativo")
 end)
 
 test("E7 al apagar la demo se cierra el episodio abierto", function()
@@ -1018,17 +1197,22 @@ test("E8b alignmentdetail combina señales sin autoridad lateral", function()
     RAl:Feed(pack, 2.1)
     local h = RAl:Get()
     truthy(h, "hay hipotesis diagnostica")
-    near(h.components.castActivity, 1, 0.001, "cast combinado")
-    near(h.components.eventEngagement, 1, 0.001, "evento combinado")
-    near(h.components.tokenLinkage, 1, 0.001, "linkage combinado")
+    near(h.confidenceSignals.castActivity, 1, 0.001, "cast en confidence")
+    near(h.confidenceSignals.eventEngagement, 1, 0.001, "evento en confidence")
+    near(h.confidenceSignals.tokenLinkage, 1, 0.001, "linkage en confidence")
     equal(rpTotal(), antesPull, "sin autoridad de progreso")
     equal(RAmock._stats.acquired, antesFlechas, "sin efecto en flechas")
 
     local detalle = table.concat(RAl:DetailLines(), "\n")
     truthy(detalle:find("bestCandidate=", 1, true), "best candidate")
     truthy(detalle:find("runnerUp=", 1, true), "runner up")
-    truthy(detalle:find("margin=", 1, true), "margen")
-    truthy(detalle:find("signal.eventEngagement", 1, true), "breakdown evento")
+    truthy(detalle:find("candidateMargin=", 1, true), "margen de candidatos")
+    truthy(detalle:find("candidate.npcComposition", 1, true), "breakdown completo")
+    truthy(detalle:find("candidate.1.size value=", 1, true),
+        "breakdown por candidato")
+    truthy(detalle:find("contribution=", 1, true), "contribuciones visibles")
+    truthy(detalle:find("episodeConfidence=", 1, true), "confidence separada")
+    truthy(detalle:find("episode.recentEvent", 1, true), "breakdown evento")
     truthy(detalle:find("TEMPORAL_ACTIVITY_ONLY", 1, true), "rol temporal explicito")
     truthy(detalle:find("reasons=", 1, true), "razones")
     TEL:EndSession("TEST")
@@ -1074,7 +1258,7 @@ local function pelear(indice, t)
     return RAl:History()[#RAl:History()]
 end
 
-test("E10 con RouteProgress clavado en 1, el ancla propia sigue la ruta", function()
+test("E10 el ancla diagnostica no cruza una ambiguedad", function()
     resetAll()
     startSession()
     local t = 10
@@ -1091,13 +1275,18 @@ test("E10 con RouteProgress clavado en 1, el ancla propia sigue la ruta", functi
         local r = resultados[pull]
         truthy(r, "hay hipotesis del episodio " .. pull)
         equal(r.label, tostring(pull), "episodio " .. pull .. " apunta al pull " .. pull)
-        truthy(r.state == "STRONG" or r.state == "PROBABLE",
-            "episodio " .. pull .. " en " .. r.state)
+        -- El pull 4 comparte casi toda su evidencia con el 6. Antes las
+        -- señales globales inflaban artificialmente el margen; ahora puede
+        -- quedar AMBIGUOUS aunque el bestCandidate siga siendo correcto.
+        truthy(r.state == "STRONG" or r.state == "PROBABLE" or r.state == "AMBIGUOUS",
+            "episodio " .. pull .. " en " .. r.state ..
+            " margin=" .. tostring(r.candidateMargin) ..
+            " runner=" .. tostring(r.runnerUpLabel))
     end
-    equal(RAl._inferredPull, 6, "el ancla queda en el pull siguiente")
+    equal(RAl._inferredPull, 4, "el ancla se detiene antes del empate 4/6")
     local c = TEL:GetRun(nil).counters
     equal(c.automaticRouteProgress, 0, "sin progreso automatico")
-    truthy(c.alignmentAnchorAdvances >= 4, "el ancla avanzo sola")
+    truthy(c.alignmentAnchorAdvances >= 3, "el ancla avanzo hasta la ambiguedad")
     TEL:EndSession("TEST")
 end)
 
@@ -1310,7 +1499,7 @@ test("G3 el scorer es puro: sin estado propio ni acceso al cliente", function()
         if type(v) ~= "function" and type(k) == "string" then
             truthy(k == "CONFIG" or k == "STATES" or k == "STATE_ORDER"
                    or k == "REASONS" or k == "COMPONENTS"
-                   or k == "EVIDENCE_COMPONENTS",
+                   or k == "EVIDENCE_COMPONENTS" or k == "CONFIDENCE_COMPONENTS",
                    "campo inesperado en el scorer: " .. k)
         end
     end
@@ -1322,9 +1511,14 @@ test("G4 todos los umbrales viven en AlignmentConfig", function()
     for _, comp in ipairs(SC.COMPONENTS) do
         truthy(type(C.weights[comp]) == "number", "peso de " .. comp)
     end
+    for _, comp in ipairs(SC.CONFIDENCE_COMPONENTS) do
+        truthy(type(C.confidenceWeights[comp]) == "number",
+            "peso de confidence " .. comp)
+    end
     for _, k in ipairs({ "strongThreshold", "probableThreshold", "weakThreshold",
                          "ambiguousMargin", "minPersistenceMs",
-                         "minCoverageForStrong", "chainMinExcess", "maxCandidates" }) do
+                         "minCoverageForStrong", "chainMinExcess", "maxCandidates",
+                         "confidenceMediumThreshold", "confidenceStrongThreshold" }) do
         truthy(type(C[k]) == "number", "umbral " .. k)
     end
     truthy(C.strongThreshold > C.probableThreshold, "orden de umbrales")

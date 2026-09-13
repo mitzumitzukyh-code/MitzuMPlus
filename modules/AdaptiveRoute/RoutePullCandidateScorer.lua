@@ -60,6 +60,7 @@ local REASON_LIST = {
     "OVERFLOW", "POSSIBLE_WIPE_REPEAT", "SIZE_NOT_UNIQUE",
     "CAST_ACTIVITY", "NO_CAST_ACTIVITY", "RECENT_EVENT_ENGAGEMENT",
     "NO_RECENT_EVENT", "TOKEN_LINKED", "NO_TOKEN_LINK",
+    "CONFIDENCE_WEAK", "CONFIDENCE_MEDIUM", "CONFIDENCE_STRONG",
 }
 Scorer.REASONS = {}
 for _, r in ipairs(REASON_LIST) do Scorer.REASONS[r] = r end
@@ -73,25 +74,30 @@ local R = Scorer.REASONS
 -- ═════════════════════════════════════════════════════════════════════════
 
 Scorer.CONFIG = {
-    -- EVIDENCIA: lo que de verdad se ha observado del pack. Estos pesos se
-    -- renormalizan entre los componentes DISPONIBLES.
+    -- Solo estas señales pueden cambiar el ranking de candidatos. Las cuatro
+    -- primeras forman la media; sequencePrior aplica después una penalización
+    -- máxima acotada, para desempatar sin imponerse a la evidencia física.
     weights = {
         npcComposition        = 0.34,  -- qué mobs, la señal fuerte si existe
         multiplicity          = 0.14,  -- cuántos de cada uno
         sizeSimilarity        = 0.18,  -- cuántos en total
-        engagementConsistency = 0.06,  -- ¿subió junto, como un pack?
-        castActivity          = 0.10,  -- cast actual; actividad, no firma
-        eventEngagement       = 0.08,  -- evento reciente; SOLO engagement temporal
-        tokenLinkage          = 0.06,  -- enlace de punteros, no identidad de ruta
         bossAnchor            = 0.04,  -- ENCOUNTER frente a pull sin tropas
-        -- Los dos de abajo NO son evidencia y no entran en la media. Se
-        -- guardan aquí para que /emp align candidates los pueda enseñar.
-        sequencePrior         = 0,
-        temporalPersistence   = 0,
+        sequencePrior         = 0.15,  -- penalización máxima, no peso aditivo
     },
 
+    -- Calidad global del episodio. Son valores iguales para todos los
+    -- candidatos y por contrato nunca entran en candidateScore ni su margen.
+    confidenceWeights = {
+        engagementConsistency = 0.40,
+        castActivity          = 0.20,
+        eventEngagement       = 0.20,
+        tokenLinkage          = 0.20,
+    },
+    confidenceMediumThreshold = 0.35,
+    confidenceStrongThreshold = 0.70,
+
     -- ═════════════════════════════════════════════════════════════════════
-    -- SECUENCIA Y PERSISTENCIA SON MULTIPLICADORES, NO SUMANDOS
+    -- SECUENCIA ES UNA PENALIZACION ACOTADA, NO UN SUMANDO
     --
     -- BUG ENCONTRADO AL SIMULAR LA RUTA REAL: con los dos como componentes
     -- sumados, un episodio de 12 enganchados estando de verdad en el pull 2
@@ -103,7 +109,7 @@ Scorer.CONFIG = {
     --
     -- Una prioridad es eso: una prioridad. Sirve para DESEMPATAR, no para
     -- fabricar una diferencia. Aplicadas como factor, mueven el resultado
-    -- como mucho un 15% y un 7%, así que entre dos candidatos con evidencia
+    -- como mucho un 15%, así que entre dos candidatos con evidencia
     -- parecida el margen se queda por debajo del umbral y sale AMBIGUOUS,
     -- que es la respuesta correcta cuando no se puede distinguir.
     -- ═════════════════════════════════════════════════════════════════════
@@ -112,9 +118,8 @@ Scorer.CONFIG = {
     sequencePrior = { [0] = 1.00, [1] = 0.85, [2] = 0.62, [-1] = 0.50 },
     -- Una cadena es una hipótesis más cara: se le cobra en la prioridad.
     chainPenalty = 0.90,
-    -- Suelo de los dos multiplicadores: cuánto puede mover cada uno.
+    -- Suelo del multiplicador: cuánto puede mover la secuencia.
     sequenceFloor    = 0.85,
-    persistenceFloor = 0.93,
 
     strongThreshold      = 0.80,
     probableThreshold    = 0.60,
@@ -258,26 +263,19 @@ end
 -- ═════════════════════════════════════════════════════════════════════════
 
 -- Los que forman la media de evidencia.
-local EVIDENCIA = {
-    "npcComposition", "multiplicity", "sizeSimilarity",
-    "engagementConsistency", "castActivity", "eventEngagement",
-    "tokenLinkage", "bossAnchor",
+local CANDIDATE_COMPONENTS = {
+    "npcComposition", "multiplicity", "sizeSimilarity", "bossAnchor",
+    "sequencePrior",
 }
--- Estas señales describen actividad positiva. Un cero no significa que el
--- candidato sea peor: puede significar simplemente que nadie casteó durante
--- la ventana o que el jugador no tenía target. Por eso aportan cuando están
--- presentes y no castigan cuando están ausentes.
-local POSITIVE_ONLY = {
-    castActivity = true, eventEngagement = true, tokenLinkage = true,
+local ADDITIVE_CANDIDATE_COMPONENTS = {
+    "npcComposition", "multiplicity", "sizeSimilarity", "bossAnchor",
 }
--- Todos los que se enseñan en el diagnóstico.
-local COMPONENTES = {
-    "npcComposition", "multiplicity", "sizeSimilarity", "sequencePrior",
-    "temporalPersistence", "engagementConsistency", "castActivity",
-    "eventEngagement", "tokenLinkage", "bossAnchor",
+local CONFIDENCE_COMPONENTS = {
+    "engagementConsistency", "castActivity", "eventEngagement", "tokenLinkage",
 }
-Scorer.COMPONENTS = COMPONENTES
-Scorer.EVIDENCE_COMPONENTS = EVIDENCIA
+Scorer.COMPONENTS = CANDIDATE_COMPONENTS
+Scorer.EVIDENCE_COMPONENTS = ADDITIVE_CANDIDATE_COMPONENTS
+Scorer.CONFIDENCE_COMPONENTS = CONFIDENCE_COMPONENTS
 
 function Scorer:ScoreOne(obs, sig, ctx)
     ctx = ctx or {}
@@ -286,24 +284,14 @@ function Scorer:ScoreOne(obs, sig, ctx)
         pulls = sig.pulls,
         expected = sig.mobCount,
         observed = tonumber(obs.engagedCount) or 0,
-        components = {}, available = {}, total = 0, componentsUsed = 0,
+        components = {}, contributions = {}, available = {},
+        candidateScore = 0, componentsUsed = 0,
     }
 
     s.components.npcComposition        = composicion(obs, sig)
     s.components.multiplicity          = multiplicidad(obs, sig)
     s.components.sizeSimilarity        = tamano(obs, sig)
     s.components.sequencePrior         = secuencia(sig, ctx.currentPull)
-    s.components.engagementConsistency = (s.observed > 0)
-        and limitar(obs.engagementConsistency) or nil
-    s.components.castActivity = (s.observed > 0 and type(obs.castActivity) == "number")
-        and limitar(obs.castActivity) or nil
-    -- No recibe spellID ni firma. Es solo la fracción del episodio con un
-    -- evento reciente observado en el mismo token.
-    s.components.eventEngagement =
-        (s.observed > 0 and type(obs.eventEngagement) == "number")
-        and limitar(obs.eventEngagement) or nil
-    s.components.tokenLinkage = (s.observed > 0 and type(obs.tokenLinkage) == "number")
-        and limitar(obs.tokenLinkage) or nil
     s.components.bossAnchor            = ancla(obs, sig)
 
     -- Persistencia: la aporta quien lleva la cuenta entre ticks, y solo
@@ -317,9 +305,9 @@ function Scorer:ScoreOne(obs, sig, ctx)
     end
 
     local suma, pesos = 0, 0
-    for _, nombre in ipairs(EVIDENCIA) do
+    for _, nombre in ipairs(ADDITIVE_CANDIDATE_COMPONENTS) do
         local v = s.components[nombre]
-        if v ~= nil and (not POSITIVE_ONLY[nombre] or v > 0) then
+        if v ~= nil then
             local w = C.weights[nombre] or 0
             suma = suma + (v * w)
             pesos = pesos + w
@@ -329,18 +317,54 @@ function Scorer:ScoreOne(obs, sig, ctx)
     end
     s.evidence = (pesos > 0) and limitar(suma / pesos) or 0
     s.weightUsed = pesos
+    for _, nombre in ipairs(ADDITIVE_CANDIDATE_COMPONENTS) do
+        local v = s.components[nombre]
+        if v ~= nil and pesos > 0 then
+            s.contributions[nombre] = (v * (C.weights[nombre] or 0)) / pesos
+        end
+    end
 
-    -- Los dos multiplicadores. Ninguno puede inventarse una diferencia:
-    -- solo mueven un poco lo que la evidencia ya dice.
+    -- La secuencia solo puede mover un poco lo que la evidencia ya dice.
     local prior = s.components.sequencePrior
+    if prior ~= nil then
+        s.available.sequencePrior = true
+        s.componentsUsed = s.componentsUsed + 1
+    end
     s.sequenceFactor = (prior == nil) and 1
         or (C.sequenceFloor + (1 - C.sequenceFloor) * prior)
-    s.persistenceFactor =
-        C.persistenceFloor + (1 - C.persistenceFloor) * s.components.temporalPersistence
-
-    s.total = limitar(s.evidence * s.sequenceFactor * s.persistenceFactor)
+    s.candidateScore = limitar(s.evidence * s.sequenceFactor)
+    s.contributions.sequencePrior = s.candidateScore - s.evidence
     s.sizeExact = (s.expected ~= nil and s.observed == s.expected)
     return s
+end
+
+-- Señales globales del episodio. Se calculan una vez, fuera de cada candidato,
+-- para que sea estructuralmente imposible que alteren el ranking o el margen.
+function Scorer:EpisodeConfidence(obs)
+    local signals, contributions = {}, {}
+    local suma, pesos = 0, 0
+    for _, nombre in ipairs(CONFIDENCE_COMPONENTS) do
+        local raw = type(obs) == "table" and obs[nombre] or nil
+        if type(raw) == "number" then
+            local v = limitar(raw)
+            local w = C.confidenceWeights[nombre] or 0
+            signals[nombre] = v
+            contributions[nombre] = v * w
+            suma = suma + contributions[nombre]
+            pesos = pesos + w
+        end
+    end
+    local value = (pesos > 0) and limitar(suma / pesos) or 0
+    if pesos > 0 then
+        for nombre, contribution in pairs(contributions) do
+            contributions[nombre] = contribution / pesos
+        end
+    end
+    local state
+    if value >= C.confidenceStrongThreshold then state = "STRONG"
+    elseif value >= C.confidenceMediumThreshold then state = "MEDIUM"
+    else state = "WEAK" end
+    return value, state, signals, contributions, pesos
 end
 
 -- ═════════════════════════════════════════════════════════════════════════
@@ -405,12 +429,20 @@ local function claveOrden(s)
     return k
 end
 
-local function vacio(razon, pullActual)
+local function vacio(razon, pullActual, obs)
+    local confidence, confidenceState, confidenceSignals,
+          confidenceContributions, confidenceWeightUsed = Scorer:EpisodeConfidence(obs)
     return {
         state = Scorer.STATES.NO_EVIDENCE, candidatePull = nil, label = nil,
-        score = 0, runnerUpPull = nil, runnerUpLabel = nil, margin = 0,
+        candidateScore = 0, runnerUpPull = nil, runnerUpLabel = nil,
+        candidateMargin = 0,
         reasons = { razon }, candidates = {}, currentPull = pullActual,
-        isChain = false,
+        isChain = false, episodeConfidence = confidence,
+        confidenceState = confidenceState,
+        confidenceReasons = { R["CONFIDENCE_" .. confidenceState] },
+        confidenceSignals = confidenceSignals,
+        confidenceContributions = confidenceContributions,
+        confidenceWeightUsed = confidenceWeightUsed,
     }
 end
 
@@ -418,16 +450,16 @@ function Scorer:Evaluate(obs, route, pullActual, ctx)
     ctx = ctx or {}
     ctx.currentPull = tonumber(pullActual)
 
-    if type(obs) ~= "table" then return vacio(R.NO_ENGAGEMENT, ctx.currentPull) end
+    if type(obs) ~= "table" then return vacio(R.NO_ENGAGEMENT, ctx.currentPull, obs) end
     if (tonumber(obs.engagedCount) or 0) <= 0 then
-        return vacio(R.NO_ENGAGEMENT, ctx.currentPull)
+        return vacio(R.NO_ENGAGEMENT, ctx.currentPull, obs)
     end
     if type(route) ~= "table" or not ctx.currentPull then
-        return vacio(R.NO_ROUTE, ctx.currentPull)
+        return vacio(R.NO_ROUTE, ctx.currentPull, obs)
     end
 
     local cands = self:Candidates(route, ctx.currentPull, obs)
-    if #cands == 0 then return vacio(R.NO_CANDIDATES, ctx.currentPull) end
+    if #cands == 0 then return vacio(R.NO_CANDIDATES, ctx.currentPull, obs) end
 
     local puntuados = {}
     for _, sig in ipairs(cands) do
@@ -436,13 +468,16 @@ function Scorer:Evaluate(obs, route, pullActual, ctx)
     -- Orden determinista: por total, y a igualdad por la suma de índices de
     -- pull. Dos ejecuciones con los mismos datos dan el mismo ganador.
     table.sort(puntuados, function(a, b)
-        if a.total ~= b.total then return a.total > b.total end
+        if a.candidateScore ~= b.candidateScore then
+            return a.candidateScore > b.candidateScore
+        end
         return claveOrden(a) < claveOrden(b)
     end)
 
     local mejor = puntuados[1]
     local segundo = puntuados[2]
-    local margen = segundo and (mejor.total - segundo.total) or mejor.total
+    local margen = segundo and
+        (mejor.candidateScore - segundo.candidateScore) or mejor.candidateScore
 
     -- ── Tamaño único: ¿hay otro candidato que espere exactamente lo mismo?
     local tamanoUnico = true
@@ -479,17 +514,17 @@ function Scorer:Evaluate(obs, route, pullActual, ctx)
 
     -- Contexto
     if obs.encounterEverSeen then razon(R.ENCOUNTER_ACTIVE) else razon(R.ENCOUNTER_ABSENT) end
-    if (mejor.components.castActivity or 0) > 0 then
+    if (tonumber(obs.castActivity) or 0) > 0 then
         razon(R.CAST_ACTIVITY)
     else
         razon(R.NO_CAST_ACTIVITY)
     end
-    if (mejor.components.eventEngagement or 0) > 0 then
+    if (tonumber(obs.eventEngagement) or 0) > 0 then
         razon(R.RECENT_EVENT_ENGAGEMENT)
     else
         razon(R.NO_RECENT_EVENT)
     end
-    if (mejor.components.tokenLinkage or 0) > 0 then
+    if (tonumber(obs.tokenLinkage) or 0) > 0 then
         razon(R.TOKEN_LINKED)
     else
         razon(R.NO_TOKEN_LINK)
@@ -506,22 +541,26 @@ function Scorer:Evaluate(obs, route, pullActual, ctx)
                          or (mejor.sizeExact and tamanoUnico)
 
     local estado
-    if mejor.total < C.weakThreshold then
+    if mejor.candidateScore < C.weakThreshold then
         estado = self.STATES.NO_EVIDENCE
         razon(R.LOW_SCORE)
-    elseif mejor.total < C.probableThreshold then
+    elseif mejor.candidateScore < C.probableThreshold then
         estado = self.STATES.WEAK
     elseif segundo and margen < C.ambiguousMargin then
         estado = self.STATES.AMBIGUOUS
         razon(R.TIE_WITH_RUNNER_UP)
-    elseif mejor.total >= C.strongThreshold and persistido and puertaFuerte then
+    elseif mejor.candidateScore >= C.strongThreshold and persistido and puertaFuerte then
         estado = self.STATES.STRONG
     else
         estado = self.STATES.PROBABLE
-        if mejor.total >= C.strongThreshold and not puertaFuerte then
+        if mejor.candidateScore >= C.strongThreshold and not puertaFuerte then
             razon(R.NO_IDENTITY_COVERAGE)
         end
     end
+
+    local episodeConfidence, confidenceState, confidenceSignals,
+          confidenceContributions, confidenceWeightUsed = self:EpisodeConfidence(obs)
+    local confidenceReason = R["CONFIDENCE_" .. confidenceState]
 
     return {
         state         = estado,
@@ -529,15 +568,22 @@ function Scorer:Evaluate(obs, route, pullActual, ctx)
         candidatePulls = mejor.pulls,
         label         = mejor.label,
         isChain       = esCadena,
-        score         = mejor.total,
+        candidateScore = mejor.candidateScore,
         runnerUpPull  = segundo and segundo.pulls and segundo.pulls[1] or nil,
         runnerUpLabel = segundo and segundo.label or nil,
-        runnerUpScore = segundo and segundo.total or nil,
-        margin        = margen,
+        runnerUpScore = segundo and segundo.candidateScore or nil,
+        candidateMargin = margen,
         npcCoverage   = cobertura,
         sizeExact     = mejor.sizeExact,
         sizeUnique    = tamanoUnico,
         components    = mejor.components,
+        contributions = mejor.contributions,
+        episodeConfidence = episodeConfidence,
+        confidenceState = confidenceState,
+        confidenceReasons = { confidenceReason },
+        confidenceSignals = confidenceSignals,
+        confidenceContributions = confidenceContributions,
+        confidenceWeightUsed = confidenceWeightUsed,
         reasons       = razones,
         candidates    = puntuados,
         currentPull   = ctx.currentPull,

@@ -137,8 +137,12 @@ local function nuevoMiembro(o, now)
         linkTicks      = 0,     -- veces vista como target/mouseover/softenemy
         castTicks      = 0,     -- CASTING/CHANNELING observados por sondeo
         eventTicks     = 0,     -- evento de cast reciente; solo actividad temporal
-        everCasting    = false,
-        everRecentEvent = false,
+        castActive       = false,
+        recentEventActive = false,
+        tokenLinkedActive = false,
+        everSawCast      = false, -- historial diagnóstico; nunca score/confidence
+        everSawEvent     = false, -- historial diagnóstico; nunca score/confidence
+        everSawTokenLink = false, -- historial diagnóstico; nunca score/confidence
         npcID          = nil,
         npcIDState     = EET.NPCID_STATES.UNKNOWN,
         npcIDTriedAt   = nil,
@@ -298,6 +302,15 @@ end
 
 -- Mete en el episodio lo que se ve ahora mismo.
 function EET:_Absorber(ep, obs, now, inicial)
+    -- Estas tres señales describen el tick actual. Se limpian antes de
+    -- absorber la foto nueva para que un cast, evento o enlace antiguo no se
+    -- quede fijado durante todo el episodio. EventCastEvidence aplica su TTL
+    -- de 5 s antes de producir RECENT_EVENT; aquí solo respetamos su salida.
+    for _, m in pairs(ep.members) do
+        m.castActive = false
+        m.recentEventActive = false
+        m.tokenLinkedActive = false
+    end
     for i = 1, #obs do
         local o = obs[i]
         local gen = tonumber(campo(o, "gen"))
@@ -342,16 +355,22 @@ function EET:_Absorber(ep, obs, now, inicial)
                     -- La identidad solo se busca en lo que de verdad peleó.
                     self:_Identify(m, now)
                 end
-                if enlace then m.linkTicks = m.linkTicks + 1 end
+                if enlace then
+                    m.linkTicks = m.linkTicks + 1
+                    m.tokenLinkedActive = true
+                    m.everSawTokenLink = true
+                end
                 if castState == "CASTING" or castState == "CHANNELING" then
                     m.castTicks = m.castTicks + 1
-                    m.everCasting = true
+                    m.castActive = true
+                    m.everSawCast = true
                 end
                 -- Nunca se copia el payload del evento. Esta señal solo dice
                 -- que hubo actividad temporal reciente en ese token.
                 if recentEvent == "RECENT_EVENT" then
                     m.eventTicks = m.eventTicks + 1
-                    m.everRecentEvent = true
+                    m.recentEventActive = true
+                    m.everSawEvent = true
                 end
             end
         end
@@ -368,6 +387,9 @@ function EET:OnGenerationRemoved(gen)
     local m = ep.members[g]
     if m and not m.removed then
         m.removed = true
+        m.castActive = false
+        m.recentEventActive = false
+        m.tokenLinkedActive = false
         ep.removedDuringExecution = ep.removedDuringExecution + 1
     end
 end
@@ -405,6 +427,7 @@ function EET:Observation(ep)
         linkedUnits    = 0,
         castingUnits   = 0,
         recentEventUnits = 0,
+        everSawEventUnits = 0,
         encounterActive = ep.encounterActive == true,
         encounterEverSeen = ep.encounterEverSeen == true,
         routePullAtStart = ep.routePullAtStart,
@@ -425,11 +448,12 @@ function EET:Observation(ep)
             else
                 obsv.unavailableUnits = obsv.unavailableUnits + 1
             end
-            if m.linkTicks > 0 then obsv.linkedUnits = obsv.linkedUnits + 1 end
-            if m.everCasting then obsv.castingUnits = obsv.castingUnits + 1 end
-            if m.everRecentEvent then
+            if m.tokenLinkedActive then obsv.linkedUnits = obsv.linkedUnits + 1 end
+            if m.castActive then obsv.castingUnits = obsv.castingUnits + 1 end
+            if m.recentEventActive then
                 obsv.recentEventUnits = obsv.recentEventUnits + 1
             end
+            if m.everSawEvent then obsv.everSawEventUnits = obsv.everSawEventUnits + 1 end
         end
     end
     table.sort(obsv.generations)
