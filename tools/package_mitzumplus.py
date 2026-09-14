@@ -95,14 +95,15 @@ def validate(target: Path) -> list[str]:
             if f"{ADDON}/{entry}" not in members:
                 problems.append(f"TOC entry not in zip: {entry}")
         for required in [f"{ADDON}/LICENSE", f"{ADDON}/Bindings.xml",
-                         f"{ADDON}/Media/Icons/logo_64.tga"]:
+                         f"{ADDON}/Media/Icons/mitzu_logo_small_32.tga"]:
             if required not in members:
                 problems.append(f"missing {required}")
-        for retired in ["1_addon.tga", "10_minimap.tga"]:
+        for retired in ["1_addon.tga", "10_minimap.tga", "logo_64.tga", "2_settings.tga", "3_close.tga",
+                        "5a_tab_historial.tga", "5b_tab_stats.tga", "5e_tab_config.tga"]:
             if f"{ADDON}/Media/Icons/{retired}" in members:
                 problems.append(f"retired icon still packaged: {retired}")
-        if "IconTexture: Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\logo_64" not in toc_text:
-            problems.append("TOC IconTexture does not point to logo_64")
+        if "IconTexture: Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\mitzu_logo_small_32" not in toc_text:
+            problems.append("TOC IconTexture does not point to mitzu_logo_small_32")
         for name in names:
             lowered = name.lower()
             if any(f"/{part}/" in f"/{lowered}" for part in ("tests", "docs", "tools", ".git", ".github")):

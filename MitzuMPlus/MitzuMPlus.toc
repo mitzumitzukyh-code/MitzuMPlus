@@ -4,7 +4,7 @@
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzukyhs
 ## Version: 1.0.0-rc1
-## IconTexture: Interface\AddOns\MitzuMPlus\Media\MitzuMPlus_Logo_512.png
+## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO
 ## X-License: MIT

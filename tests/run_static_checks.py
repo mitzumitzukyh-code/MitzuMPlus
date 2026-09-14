@@ -46,7 +46,7 @@ def check_manifest(c, lua_files):
     c.check("MythicDungeonTools" not in optional, "MDT remains an optional runtime dependency")
     c.check("MitzuRouteArrows" not in optional, "MitzuRouteArrows remains a runtime dependency")
     c.check(meta.get("X-License") == "MIT", "package license metadata is not MIT")
-    c.check(meta.get("IconTexture", "").endswith("Media\\Icons\\logo_64"), "official logo is not configured")
+    c.check(meta.get("IconTexture", "").endswith("Media\\Icons\\mitzu_logo_small_32"), "official logo is not configured")
     for entry in entries: c.check((ADDON / entry).exists(), f"missing TOC entry: {entry}")
     listed = {(ADDON / entry).resolve() for entry in entries if entry.lower().endswith(".lua")}
     for path in lua_files: c.check(path.resolve() in listed, f"orphan Lua file outside TOC: {relative(path)}")
@@ -92,10 +92,27 @@ def check_savedvariables_and_media(c):
         c.check(legacy not in defaults, f"obsolete default remains initialized: {legacy}")
     for active in ["activeRunSession", "dungeonRegistry", "lootTracking", "showConfidence", "showETA"]:
         c.check(active in defaults, f"active setting/storage missing: {active}")
-    expected = {"logo_64.tga", "2_settings.tga", "3_close.tga", "5a_tab_historial.tga",
-                "5b_tab_stats.tga", "5e_tab_config.tga"}
+    expected = {"mitzu_logo_header_64.tga", "mitzu_logo_minimap_64.tga", "mitzu_logo_small_32.tga",
+                "tab_history_64.tga", "tab_statistics_64.tga", "tab_players_64.tga", "tab_settings_64.tga",
+                "btn_minimize_64.tga", "btn_options_64.tga", "btn_close_64.tga"}
     actual = {p.name for p in (ADDON / "Media" / "Icons").iterdir() if p.is_file()}
     c.check(actual == expected, f"media set differs from referenced assets: {sorted(actual)}")
+    sources = [TOC] + sorted(p for p in ADDON.rglob("*.lua") if "libs" not in p.relative_to(ADDON).parts)
+    referenced = set()
+    for path in sources:
+        text = read(path)
+        referenced |= {m.lower() for m in re.findall(r"Media\\+Icons\\+(\w+)", text)}
+        referenced |= {m.lower() for m in re.findall(r"ICON_PATH\s*\.\.\s*\"(\w+)\"", text)}
+    missing = sorted(name for name in referenced if f"{name}.tga" not in {a.lower() for a in actual})
+    c.check(not missing, f"referenced icon texture missing from Media/Icons: {missing}")
+    c.check(expected - {"btn_minimize_64.tga"} <= {f"{name}.tga" for name in referenced},
+            "approved icon asset is not referenced by the UI")
+    icon_ui = [ADDON / "Init.lua", ADDON / "UI" / "Tabs.lua", ADDON / "modules" / "MinimapIcon.lua"]
+    emoji = re.compile("[\U0001F000-\U0001FFFF☀-➿️]")
+    for path in icon_ui:
+        for number, line in enumerate(read(path).splitlines(), 1):
+            code = line.split("--", 1)[0]
+            c.check(not emoji.search(code), f"emoji in WoW UI code: {relative(path)}:{number}")
 
 def main():
     c = Checks(); lua_files = compile_lua(c)

@@ -9,7 +9,7 @@ not authorization to publish.
 - No required dependencies.
 - Optional dependency: `LibSharedMedia-3.0` only.
 - SavedVariables: `MitzuMPlusDB` only.
-- Official icon: `Media/Icons/logo_64.tga`.
+- Official icons: the approved `Media/Icons/` set (`mitzu_logo_*`, `tab_*_64`, `btn_*_64`); the addon list uses `mitzu_logo_small_32.tga`.
 - No route modules, route datasets, MDT-derived datasets or MitzuRouteArrows files.
 - Package license: MIT; `GPL_BLOCKER_PRESENT=false` for this package.
 

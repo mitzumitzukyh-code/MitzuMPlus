@@ -37,25 +37,25 @@ local ICON_PATH = "Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\"
 local TAB_DEFS = {
     {
         id   = "historial",
-        icon = ICON_PATH .. "5a_tab_historial",
+        icon = ICON_PATH .. "tab_history_64",
         text = "HISTORIAL",
         badge = nil,
     },
     {
         id   = "stats",
-        icon = ICON_PATH .. "5b_tab_stats",
+        icon = ICON_PATH .. "tab_statistics_64",
         text = "ESTADÍSTICAS",
         badge = nil,
     },
     {
         id   = "players",
-        icon = "Interface\\Icons\\INV_Misc_GroupLooking",
+        icon = ICON_PATH .. "tab_players_64",
         text = "JUGADORES",
         badge = nil,
     },
     {
         id   = "settings",
-        icon = ICON_PATH .. "5e_tab_config",
+        icon = ICON_PATH .. "tab_settings_64",
         text = "CONFIGURACIÓN",
         badge = nil,
     },
@@ -121,13 +121,12 @@ function Tabs:CreateTabButton(parent, tabDef, index)
     Theme:SetVertexColor(rightBorder, Theme.BORDER.separator)
 
     local iconTex = btn:CreateTexture(nil, "OVERLAY")
-    iconTex:SetSize(22, 22)   -- MEJORA: 16→22px, iconos claramente visibles
+    iconTex:SetSize(17, 17)   -- textura 64x64 mostrada a 17px
     iconTex:SetPoint("LEFT", btn, "LEFT", 10, 0)
     iconTex:SetTexture(tabDef.icon)
-    iconTex:SetTexCoord(0.05, 0.95, 0.05, 0.95)
 
     local text = btn:CreateFontString(nil, "OVERLAY")
-    text:SetPoint("LEFT", iconTex, "RIGHT", 7, 0)
+    text:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
     Theme:ApplyFont(text, "normal", 13)
     text:SetText(tabDef.text)
     Theme:SetTextColor(text, Theme.TEXT.tertiary)
@@ -137,7 +136,7 @@ function Tabs:CreateTabButton(parent, tabDef, index)
     btn.tabId   = tabDef.id
 
     local textWidth = text:GetStringWidth()
-    btn:SetWidth(textWidth + 46)  -- MEJORA: +10 para icono 22px
+    btn:SetWidth(textWidth + 43)  -- 10 + icono 17 + 6 + texto + 10
 
     if tabDef.badge then
         local badge = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate")

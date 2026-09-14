@@ -35,7 +35,7 @@ function MitzuMPlus:InitMinimapIcon()
     self._ldbObject = LDB:NewDataObject("MitzuMPlus", {
         type = "data source",
         text = "MitzuMPlus M+",
-        icon = "Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\logo_64",
+        icon = "Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\mitzu_logo_minimap_64",
 
         OnClick = function(anchorFrame, button)
             if button == "LeftButton" then
