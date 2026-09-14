@@ -31,7 +31,7 @@ _G.MitzuMPlusColors = {
     t4 = (Theme and Theme.TEXT and Theme.TEXT.dim)       or { r = 0.471, g = 0.471, b = 0.471 },
 }
 
-MitzuMPlus.WatermarkText = "By Mutzukyhs  |  MitzuMPlus M+ HISTORIAL"
+MitzuMPlus.WatermarkText = "By Mutzuki Mizt  |  MitzuMPlus M+ HISTORIAL"
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- UTILIDADES GLOBALES

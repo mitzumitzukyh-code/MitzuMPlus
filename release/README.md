@@ -43,8 +43,8 @@ MitzuMPlus does not automate gameplay, does not play the game for you, and does 
 
 ## Distribution status
 
-Current build: **1.0.0-rc1** (release candidate). Recommended public file type: **Beta** first, then promote to **Release** after live validation across several Mythic+ runs.
+Current build: **1.0.0-beta.1** (first public beta). Public file type: **Beta**; it will be promoted to **Release** after live validation across several Mythic+ runs.
 
 ## License
 
-MIT. See [`LICENSE`](../LICENSE). The distributed ZIP includes the same `LICENSE` file.
+MIT. Copyright (c) 2026 Mutzuki Mizt. See [`LICENSE`](../LICENSE). The distributed ZIP includes the same `LICENSE` file.

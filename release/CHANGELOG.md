@@ -1,44 +1,26 @@
 # Changelog
 
-## 1.0.0-rc1
-
-### Changed
-- On-screen notifications are now floating text only: no panel, border, backdrop or background texture. Readability comes from a thin outline and a light shadow.
-- Notification text colors by type: run completed (soft green), new record (gold), personal best (light gold), out of time (soft red).
-- Short fade-in and fade-out inside the existing duration; queue, timers, position and triggers are unchanged.
-- New approved icon set: Mitzu "M" logo in the title bar (30 px), minimap button and addon list; History / Statistics / Players / Settings tab icons (20 px); options and close title-bar buttons (22 px, no background, subtle hover). Icon textures are cropped so the artwork fills about 90% of the texture. The old logo and tab/button textures were removed.
-- The addon folder now contains runtime files only. The ZIP carries the addon plus `LICENSE`; README, changelog, CurseForge page and the 512 px logo live in the repository `release/` folder.
-- Removed the unloaded `modules/SpecDatabase.lua` scaffold from the addon folder.
-
-### Fixed
-- Long notifications such as "NUEVO RECORD! Mejor llave en ..." were cut at 80 characters. They now use up to 640 px and wrap to a second line when needed.
-
 ## 1.0.0-beta.1
 
-Initial CurseForge beta candidate.
+First public beta of MitzuMPlus, a Mythic+ companion for World of Warcraft Retail.
 
-### Added
-- Mythic+ history interface with search, filters, sorting, pagination, favorites, notes, copy/export, and delete actions.
-- Player profile interface based on previous Mythic+ group members.
-- Optional Mythic score display using Raider.IO when available.
-- Live key prediction HUD with configurable appearance and behavior.
-- End-of-run notifications and chat summaries.
-- Group loot tracking with minimum quality and item level filters.
-- Bug report window for live testing and issue collection.
-- Original MitzuMPlus logo asset for distribution.
+### Features
+- **Mythic+ History:** search, filters, sorting and pagination over your recorded runs, with a detail view for each key.
+- **Notes, Favorites, Copy and Delete:** annotate runs, mark favorites, copy or export run data and remove entries with confirmation.
+- **Statistics:** completion rate, best key, recent results and role-based performance where the data was captured.
+- **Player profiles:** the players you have grouped with, runs together, in-time rate, best key and recorded loot.
+- **Puntaje mítico (optional):** shown for players when the Raider.IO addon is installed.
+- **Live key prediction HUD:** discreet `+3 / +2 / +1 / OVERTIME` estimate with optional confidence and estimated finish; configurable scale, opacity, lock and preview.
+- **Personal bests:** best key, timed improvements and clean runs.
+- **Notifications:** floating end-of-run text colored by result, plus optional chat summaries.
+- **Loot tracking:** group loot seen during a run, with minimum quality and item level filters.
+- **Bug Report tooling:** a copyable, sanitized report for live testing and issue reports.
 
-### Changed
-- Removed an unused SpecDatabase development scaffold from the public package.
-- Internal metric-source names remain available in Bug Report/QA but are no longer printed in normal run-start chat.
-- Removed the placeholder CurseForge project URL until the project has a real approved page.
-- Route-arrow functionality is intentionally kept out of this addon and should remain in a separate development addon.
-- Player interface uses the user-facing label **Puntaje mítico** instead of the technical Raider.IO label.
-- Technical data-source labels are hidden from normal UI and should remain in debug/bug reports only.
+### Interface
+- New MitzuMPlus icon set: "M" logo in the title bar, minimap button and addon list; icons for the History, Statistics, Players and Settings tabs; options and close buttons.
+- UI polish: consistent icon sizes and spacing, header alignment, readable tab states and restrained hover effects in the dark and gold theme.
+- Minimap integration through LibDBIcon: left click opens the window, right click opens the menu, and the button can be dragged or hidden.
 
-### Fixed
-- Multiple History UI layout issues: truncated headers, oversized role icons, long metric numbers, and small dungeon icon presentation.
-- Minimap right-click menu opacity and positioning.
-- Notification placement, visibility, and queueing.
-- Bug Report window layering so it opens above the main addon.
-- Loot item-level filtering using detailed item level information when available.
-- Filter refresh behavior and stale filter state.
+### Scope
+- MitzuRouteArrows is **not** part of this package. Experimental route arrows and route tools are kept in a separate addon.
+- MitzuMPlus does not automate gameplay.

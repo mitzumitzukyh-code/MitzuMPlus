@@ -1,6 +1,6 @@
 # Local release-candidate checklist
 
-Current candidate: `1.0.0-rc1`. This checklist is not authorization to publish.
+Current candidate: `1.0.0-beta.1` (first public beta). This checklist is not authorization to publish.
 
 The version lives in `## Version` of `MitzuMPlus/MitzuMPlus.toc`; the packager
 names the ZIP from it, and `tests/run_static_checks.py` checks that this file,

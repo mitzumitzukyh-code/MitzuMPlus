@@ -175,6 +175,13 @@ def check_version_consistency(c):
             f"docs/RELEASE.md does not name candidate {version}")
     c.check(f"MitzuMPlus-{version}.zip" in read(ROOT / "release" / "CURSEFORGE_PAGE.md"),
             f"release/CURSEFORGE_PAGE.md does not name MitzuMPlus-{version}.zip")
+    author = "Mutzuki Mizt"
+    c.check(metadata().get("Author") == author, f"TOC Author is not {author}")
+    c.check(f"Copyright (c) 2026 {author}" in read(ROOT / "LICENSE"), f"LICENSE copyright holder is not {author}")
+    identity_files = [ROOT / "LICENSE", ROOT / "README.md", ROOT / "docs" / "RELEASE.md", TOC]
+    identity_files += sorted((ROOT / "release").glob("*.md")) + [ADDON / "modules" / "UI_Common.lua"]
+    for path in identity_files:
+        c.check("Mutzukyhs" not in read(path), f"old author name remains: {relative(path)}")
     for asset in ["README.md", "CURSEFORGE_PAGE.md", "assets/MitzuMPlus_Logo_512.png"]:
         c.check((ROOT / "release" / asset).is_file(), f"release material missing: release/{asset}")
 

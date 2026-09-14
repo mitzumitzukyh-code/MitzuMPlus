@@ -1,17 +1,23 @@
 # Changelog
 
 Dos addons, dos historiales. Las versiones marcan la diferencia de estabilidad:
-MitzuMPlus es un candidato a release; MitzuRouteArrows es desarrollo (`-dev`).
+MitzuMPlus es una beta pública; MitzuRouteArrows es desarrollo (`-dev`).
 
 El historial anterior a la separación está en `docs/history/CHANGELOG_legacy.txt`.
 
 ## MitzuMPlus
 
-Numeración: tras `7.14.0-rc1` el producto pasó a la serie pública `1.0.0`
-(`1.0.0-beta.1` → `1.0.0-rc1`). Las entradas `7.x` quedan como historial.
+Numeración: tras `7.14.0-rc1` el producto pasó a la serie pública `1.0.0`.
+Durante la preparación hubo dos builds internas sin publicar, etiquetadas
+`1.0.0-beta.1` y después `1.0.0-rc1`. La primera versión pública es
+`1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
-### 1.0.0-rc1 — notificaciones, iconos e higiene de release
+### 1.0.0-beta.1 — primera beta pública
+
+Reúne la limpieza de producto (build interna) y el trabajo de la build interna
+`1.0.0-rc1`. Autor y copyright unificados como `Mutzuki Mizt` (LICENSE, TOC,
+marca de agua y documentación de release).
 
 - Notificaciones como texto flotante, sin panel.
 - Set de iconos aprobado (header 30 px, pestañas 20 px, opciones y cerrar
@@ -25,11 +31,11 @@ El changelog público (CurseForge) está en `release/CHANGELOG.md`.
   (el empaquetador copia el `LICENSE` raíz al ZIP).
 - Retirado `modules/SpecDatabase.lua` (fuera del TOC y sin consumidores) y
   `tools/convert_logo.py` (generaba el `logo_64.tga` obsoleto).
-- Tests alineados con cambios intencionales de 1.0.0-beta.1: resultado
+- Tests alineados con cambios intencionales de la limpieza de producto: resultado
   `Incompleta` para runs sin tiempo final, separador ASCII `  -  ` en el HUD y
   flecha ASCII `v` en los desplegables. Sin emoji en el código.
 
-### 1.0.0-beta.1 (sobre 7.14.0-rc1) — limpieza final de producto
+### Build interna (sobre 7.14.0-rc1) — limpieza final de producto
 
 Simplificación de producto en feature freeze.
 

@@ -53,9 +53,13 @@ MitzuMPlus es un compañero ligero para Míticas+ en World of Warcraft. Está pe
 
 MitzuMPlus no automatiza gameplay. Las flechas de ruta y herramientas experimentales de rutas se mantienen separadas en otro addon de desarrollo.
 
+## Author
+
+Mutzuki Mizt
+
 ## License
 
-MIT
+MIT. Copyright (c) 2026 Mutzuki Mizt.
 
 ## Recommended CurseForge categories/tags
 
@@ -82,12 +86,12 @@ Use clean screenshots from the current build, without white arrows or debug anno
 Recommended first public file type: **Beta**.
 
 Suggested file name:
-`MitzuMPlus-1.0.0-rc1.zip`
+`MitzuMPlus-1.0.0-beta.1.zip`
 
-Suggested changelog for CurseForge:
+Changelog for the CurseForge upload: paste the `1.0.0-beta.1` section of `release/CHANGELOG.md`. Short version:
 
-Initial release candidate for MitzuMPlus (1.0.0-rc1).
+First public beta of MitzuMPlus (1.0.0-beta.1).
 
-Includes Mythic+ history, filters, player profiles, optional Puntaje mítico through Raider.IO, live key prediction HUD, notifications, group loot tracking, notes, favorites, copy/export actions, and bug report tooling.
+Includes Mythic+ history, statistics, player profiles, optional Puntaje mítico through Raider.IO, live key prediction HUD, personal bests, notifications, group loot tracking, notes, favorites, copy/delete actions, bug report tooling, the new MitzuMPlus icon set, UI polish and minimap integration.
 
 Route-arrow functionality is intentionally excluded from this package and remains in a separate development addon.
