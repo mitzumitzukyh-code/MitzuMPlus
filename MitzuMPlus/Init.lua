@@ -535,10 +535,10 @@ function MitzuMPlus:HandleSlashCommand(input)
             self:ShowToast("Prueba: run completada", "ok", 2, true)
         end
         if states.record and self.ShowToast then
-            self:ShowToast("Prueba: nuevo record", "ok", 2, true)
+            self:ShowToast("Prueba: nuevo record", "record", 2, true)
         end
         if states.personal and self.ShowToast then
-            self:ShowToast("Prueba: marca personal", "ok", 2, true)
+            self:ShowToast("Prueba: marca personal", "personal", 2, true)
         end
         if states.chat and self.Print then
             self:Print("Prueba de resumen en chat: OK")

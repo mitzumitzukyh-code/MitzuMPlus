@@ -519,7 +519,37 @@ end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- TOAST
+--
+-- Solo texto flotante: sin backdrop, borde ni textura. El contraste lo dan el
+-- outline y la sombra de la fuente. El frame contenedor existe únicamente para
+-- posición, alpha y fundidos; la cola y los timers viven en ShowToast y en el
+-- temporizador de abajo, igual que antes.
 -- ─────────────────────────────────────────────────────────────────────────────
+
+local TOAST_MAX_WIDTH = 640
+local TOAST_FONT_SIZE = 20
+local TOAST_FADE_IN   = 0.15
+local TOAST_FADE_OUT  = 0.35
+
+-- Colores de texto por tipo de aviso. Tonos suaves, no neón.
+local TOAST_COLORS = {
+    ok       = { r = 0.47, g = 0.90, b = 0.55 },  -- run completada / éxito
+    record   = { r = 1.00, g = 0.80, b = 0.30 },  -- nuevo récord
+    personal = { r = 1.00, g = 0.89, b = 0.58 },  -- marca personal
+    warn     = { r = 1.00, g = 0.68, b = 0.35 },
+    bad      = { r = 1.00, g = 0.44, b = 0.40 },  -- error / fuera de tiempo
+}
+
+local function NewToastFade(tf, fromAlpha, toAlpha, seconds)
+    if not tf.CreateAnimationGroup then return nil end
+    local group = tf:CreateAnimationGroup()
+    local a = group:CreateAnimation("Alpha")
+    a:SetFromAlpha(fromAlpha)
+    a:SetToAlpha(toAlpha)
+    a:SetDuration(seconds)
+    if group.SetToFinalAlpha then group:SetToFinalAlpha(true) end
+    return group
+end
 
 function MitzuMPlus:_ShowToastNow(entry)
     entry = entry or {}
@@ -527,36 +557,40 @@ function MitzuMPlus:_ShowToastNow(entry)
     local toastType = entry.toastType or "ok"
     local duration = tonumber(entry.duration) or 3
 
-    if #message > 80 then message = message:sub(1, 77) .. "..." end
-
     if not self._toastFrame then
         local uiParent = UIParent
-        local tf = CreateFrame("Frame", nil, uiParent, "BackdropTemplate")
-        if not tf.SetBackdrop then Mixin(tf, BackdropTemplateMixin) end
+        -- Frame plano, sin BackdropTemplate: no hay nada que pintar detrás.
+        local tf = CreateFrame("Frame", nil, uiParent)
         -- Los avisos no deben competir con barras de acción, bolsas o addons
         -- anclados al borde inferior.  La zona superior central queda visible
         -- tanto con la ventana de MitzuMPlus abierta como cerrada.
-        tf:SetSize(460, 54)
+        tf:SetSize(TOAST_MAX_WIDTH + 20, 54)
         tf:SetPoint("TOP", uiParent, "TOP", 0, -105)
-        tf:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 2,
-        })
         tf:SetFrameStrata("FULLSCREEN_DIALOG")
         tf:SetFrameLevel(200)
         tf:SetClampedToScreen(true)
         tf:EnableMouse(false)
 
         local t2 = tf:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        local fontFile = (t2.GetFont and t2:GetFont()) or STANDARD_TEXT_FONT
+        if fontFile and t2.SetFont then
+            t2:SetFont(fontFile, TOAST_FONT_SIZE, "OUTLINE")
+        end
         t2:SetPoint("CENTER")
-        t2:SetWidth(430)
+        t2:SetWidth(TOAST_MAX_WIDTH)
         t2:SetJustifyH("CENTER")
-        t2:SetWordWrap(false)
-        t2:SetShadowColor(0, 0, 0, 1)
+        t2:SetJustifyV("MIDDLE")
+        -- Una línea si cabe; si no, dos. Solo con más de dos líneas recorta
+        -- el propio cliente con "...".
+        t2:SetWordWrap(true)
+        if t2.SetNonSpaceWrap then t2:SetNonSpaceWrap(false) end
+        if t2.SetMaxLines then t2:SetMaxLines(2) end
+        t2:SetShadowColor(0, 0, 0, 0.85)
         t2:SetShadowOffset(1, -1)
-        t2:SetTextColor(C(_G.MitzuMPlusColors.t1))
         tf.text = t2
+
+        tf._fadeIn  = NewToastFade(tf, 0, 1, TOAST_FADE_IN)
+        tf._fadeOut = NewToastFade(tf, 1, 0, TOAST_FADE_OUT)
 
         tf:Hide()
         self._toastFrame = tf
@@ -565,33 +599,39 @@ function MitzuMPlus:_ShowToastNow(entry)
     local tf = self._toastFrame
     tf.text:SetText(message)
 
-    if toastType == "ok" then
-        if Theme and Theme.STATUS and Theme.STATUS.okBg then
-            tf:SetBackdropColor(Theme.STATUS.okBg.r, Theme.STATUS.okBg.g, Theme.STATUS.okBg.b, 0.95)
-        else
-            tf:SetBackdropColor(0.04, 0.12, 0.06, 0.95)
-        end
-        tf:SetBackdropBorderColor(C(_G.MitzuMPlusColors.ok))
-        tf.text:SetTextColor(C(_G.MitzuMPlusColors.ok))
-    else
-        if Theme and Theme.STATUS and Theme.STATUS.badBg then
-            tf:SetBackdropColor(Theme.STATUS.badBg.r, Theme.STATUS.badBg.g, Theme.STATUS.badBg.b, 0.95)
-        else
-            tf:SetBackdropColor(0.12, 0.04, 0.04, 0.95)
-        end
-        tf:SetBackdropBorderColor(C(_G.MitzuMPlusColors.bad))
-        tf.text:SetTextColor(C(_G.MitzuMPlusColors.bad))
-    end
+    local col = TOAST_COLORS[toastType] or TOAST_COLORS.ok
+    tf.text:SetTextColor(col.r, col.g, col.b, 1)
+
+    -- Alto dinámico según ocupe una o dos líneas.
+    local textHeight = (tf.text.GetStringHeight and tf.text:GetStringHeight()) or 0
+    tf:SetHeight(math.max(textHeight, TOAST_FONT_SIZE) + 10)
+
+    if tf._fadeOut and tf._fadeOut:IsPlaying() then tf._fadeOut:Stop() end
+    if tf._fadeIn and tf._fadeIn:IsPlaying() then tf._fadeIn:Stop() end
+    tf:SetAlpha(1)
 
     self._toastActive = true
     tf:Show()
+    if tf._fadeIn then tf._fadeIn:Play() end
 
     if tf._toastTimer then
         tf._toastTimer:Cancel()
         tf._toastTimer = nil
     end
+    if tf._fadeTimer then
+        tf._fadeTimer:Cancel()
+        tf._fadeTimer = nil
+    end
 
     if C_Timer and C_Timer.NewTimer then
+        -- El fundido de salida ocurre dentro de la duración, así que el
+        -- momento en que se oculta y pasa al siguiente de la cola no cambia.
+        if tf._fadeOut and duration > TOAST_FADE_OUT then
+            tf._fadeTimer = C_Timer.NewTimer(duration - TOAST_FADE_OUT, function()
+                tf._fadeTimer = nil
+                if tf._fadeOut then tf._fadeOut:Play() end
+            end)
+        end
         tf._toastTimer = C_Timer.NewTimer(duration, function()
             tf._toastTimer = nil
             tf:Hide()

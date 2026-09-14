@@ -388,10 +388,10 @@ function PersonalBest:AnnounceResults(results)
     -- toast por categoria. ShowToast mantiene una cola para no pisarlos entre
     -- si ni pisar el aviso de run completada.
     if recordToast and MitzuMPlus.ShowToast then
-        MitzuMPlus:ShowToast(recordToast, "ok", 4, true)
+        MitzuMPlus:ShowToast(recordToast, "record", 4, true)
     end
     if personalToast and MitzuMPlus.ShowToast then
-        MitzuMPlus:ShowToast(personalToast, "ok", 4, true)
+        MitzuMPlus:ShowToast(personalToast, "personal", 4, true)
     end
 
     if MitzuMPlus.EventBus then

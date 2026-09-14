@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc1
+
+### Changed
+- On-screen notifications are now floating text only: no panel, border, backdrop or background texture. Readability comes from a thin outline and a light shadow.
+- Notification text colors by type: run completed (soft green), new record (gold), personal best (light gold), out of time (soft red).
+- Short fade-in and fade-out inside the existing duration; queue, timers, position and triggers are unchanged.
+
+### Fixed
+- Long notifications such as "NUEVO RECORD! Mejor llave en ..." were cut at 80 characters. They now use up to 640 px and wrap to a second line when needed.
+
 ## 1.0.0-beta.1
 
 Initial CurseForge beta candidate.
