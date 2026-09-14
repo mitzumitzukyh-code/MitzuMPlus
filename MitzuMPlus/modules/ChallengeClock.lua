@@ -1,12 +1,12 @@
--- ═══════════════════════════════════════════════════════════════════════════
--- MitzuMPlus · ChallengeClock v1  —  el reloj de la llave, y solo uno
+-- ===========================================================================
+-- MitzuMPlus  -  ChallengeClock v1  -  el reloj de la llave, y solo uno
 --
--- ═════════════════════════════════════════════════════════════════════════
--- BUG CLK-1 — el Coach contaba desde el /reload
+-- =========================================================================
+-- BUG CLK-1 - el Coach contaba desde el /reload
 --
 -- Visto en vivo, Guarida de Nalorakk +13:
 --     reload a los 9:35 (challengeElapsed=575s)
---     Coach mostrando "Tiempo 21:33 / 32:00 · quedan 9:12 · +1"
+--     Coach mostrando "Tiempo 21:33 / 32:00  -  quedan 9:12  -  +1"
 --     la llave acabó en 34:34, fuera de tiempo por 2:34
 -- Y 9:35 + 21:33 = 31:08, que era el tiempo REAL en ese momento. El Coach no
 -- iba retrasado: contaba desde cero desde el reload.
@@ -15,7 +15,7 @@
 -- `_startTime` viene de `run.startTime`, que Core fija con `Now()` al crear la
 -- run (Core.lua:633). Tras un /reload la run se recrea y ese instante es el
 -- del reload, no el del inicio de la llave. Todo lo que cuelga de ahí
--- —proyección, margen, tiempo restante, predicción de subida— heredaba el
+-- -proyección, margen, tiempo restante, predicción de subida- heredaba el
 -- error sin saberlo.
 --
 -- ARREGLO: el servidor ya lleva la cuenta y sobrevive al /reload. Es la misma
@@ -23,17 +23,17 @@
 --     GetWorldElapsedTimers()  ->  ids
 --     GetWorldElapsedTime(id)  ->  _, elapsedTime, type
 --     type == LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE
--- ═════════════════════════════════════════════════════════════════════════
+-- =========================================================================
 --
 -- REGLA: si no se sabe el tiempo, se dice que no se sabe. NUNCA se devuelve 0
--- fingiendo que la llave acaba de empezar — eso es justo lo que produjo un
+-- fingiendo que la llave acaba de empezar - eso es justo lo que produjo un
 -- "+1" sobre una llave que ya estaba fuera de tiempo.
 --
 -- SUAVIDAD: el temporizador del servidor tiene resolución de un segundo. Para
 -- que el HUD no vaya a saltos se interpola con GetTime() desde la última
 -- lectura, y se recalibra en cada lectura nueva. La precisión la pone el
 -- servidor; la fluidez, la interpolación.
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
@@ -81,9 +81,9 @@ local function leerServidor()
     return nil
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- API
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 -- Segundos jugados, o nil si no se saben. nil es una respuesta legítima.
 function ChallengeClock:GetElapsed()
@@ -171,12 +171,12 @@ function ChallengeClock:IsOvertime()
     return r <= 0
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- INFORME
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 local function fmt(s)
-    if not s then return "—" end
+    if not s then return "-" end
     local neg = s < 0
     s = math.abs(math.floor(s))
     return string.format("%s%d:%02d", neg and "-" or "", math.floor(s / 60), s % 60)
@@ -215,7 +215,7 @@ function ChallengeClock:StatusLines()
         L[#L + 1] = "driftVsLocal=" .. fmt(e - localElapsed) ..
                     "  |cFF999999(si no es ~0, el reloj local va desincronizado)|r"
     else
-        L[#L + 1] = "driftVsLocal=—"
+        L[#L + 1] = "driftVsLocal=-"
     end
     return L
 end

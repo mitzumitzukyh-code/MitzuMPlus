@@ -1,12 +1,12 @@
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- MitzuMPlus M+ Historial - UI/WidgetsCompat.lua  (FIX v2)
 -- Reemplaza Widgets.lua.
 -- API idéntica al Widgets.lua original para que los paneles no cambien.
 --
 -- BUG CORREGIDO: CreateScrollFrame usaba UIPanelScrollFrameTemplate que
---   sobreescribía los SetScript/HookScript de los paneles → paneles blancos.
+--   sobreescribía los SetScript/HookScript de los paneles -> paneles blancos.
 --   Ahora crea un ScrollFrame plano + scrollbar manual, igual que el original.
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
@@ -20,9 +20,9 @@ local function ApplyReadableFont(region, fontType, size)
     if region and theme and theme.ApplyFont then theme:ApplyFont(region,fontType or "normal",size) end
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- BUTTON  →  UIPanelButtonTemplate
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
+-- BUTTON  ->  UIPanelButtonTemplate
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateButton(parent, text, width, height, style)
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -41,10 +41,10 @@ function Widgets:CreateButton(parent, text, width, height, style)
     return btn
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- TOGGLE  →  UICheckButtonTemplate
+-- -------------------------------------------------------------------------
+-- TOGGLE  ->  UICheckButtonTemplate
 -- API: :SetState(bool)  /  .onChange callback
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateToggle(parent, defaultState, onChange)
     local btn = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -58,9 +58,9 @@ function Widgets:CreateToggle(parent, defaultState, onChange)
     return btn
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- SLIDER  →  OptionsSliderTemplate
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
+-- SLIDER  ->  OptionsSliderTemplate
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateSlider(parent, min, max, defaultValue, onChange)
     local s = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
@@ -80,9 +80,9 @@ function Widgets:CreateSlider(parent, min, max, defaultValue, onChange)
     return s
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- NUMBER INPUT
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 local _numN = 0
 function Widgets:CreateNumberInput(parent, minVal, maxVal, defaultValue, onChange)
@@ -110,9 +110,9 @@ function Widgets:CreateNumberInput(parent, minVal, maxVal, defaultValue, onChang
     return f
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- BADGE
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateBadge(parent, text, badgeType)
     local f = CreateFrame("Frame", nil, parent, BackdropTemplateMixin and "BackdropTemplate")
@@ -137,9 +137,9 @@ function Widgets:CreateBadge(parent, text, badgeType)
     return f
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- INPUT  →  EditBox + InputBoxTemplate
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
+-- INPUT  ->  EditBox + InputBoxTemplate
+-- -------------------------------------------------------------------------
 
 local _inN = 0
 function Widgets:CreateInput(parent, width, placeholder)
@@ -160,19 +160,19 @@ function Widgets:CreateInput(parent, width, placeholder)
     return eb
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- DROPDOWN  →  UIDropDownMenuTemplate
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
+-- DROPDOWN  ->  UIDropDownMenuTemplate
+-- -------------------------------------------------------------------------
 
--- ─────────────────────────────────────────────────────────────────────────
--- DROPDOWN — Implementación nativa sin UIDropDownMenuTemplate
+-- -------------------------------------------------------------------------
+-- DROPDOWN - Implementación nativa sin UIDropDownMenuTemplate
 -- API-1 FIX: UIDropDownMenuTemplate + UIDropDownMenu_* fueron deprecados en
 -- patch 11.0 (The War Within) y eliminados definitivamente en Midnight.
 -- Reemplazado por un dropdown 100% propio: Frame + Button items, sin
 -- dependencia de ninguna API de Blizzard de dropdown.
 -- API pública idéntica: CreateDropdown(parent, width, items, defaultIndex, onChange)
---   onChange(value, text) — value = índice 1-based, text = label del item
--- ─────────────────────────────────────────────────────────────────────────
+--   onChange(value, text) - value = índice 1-based, text = label del item
+-- -------------------------------------------------------------------------
 
 local _ddN = 0
 
@@ -215,8 +215,8 @@ function Widgets:CreateDropdown(parent, width, items, defaultIndex, onChange)
                              edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
     menuFrame:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
     menuFrame:SetBackdropBorderColor(0.30, 0.26, 0.18, 1)
-    -- ═════════════════════════════════════════════════════════════════════
-    -- BUG DD-1 (v7.4.0) — el menu no tenia scroll y "se recortaba".
+    -- =====================================================================
+    -- BUG DD-1 (v7.4.0) - el menu no tenia scroll y "se recortaba".
     --
     -- menuFrame:SetHeight(min(#items, MAX_VIS) * BTN_H) limitaba la ALTURA a 8
     -- filas, pero el bucle de abajo creaba una fila POR CADA item, colocadas en
@@ -227,7 +227,7 @@ function Widgets:CreateDropdown(parent, width, items, defaultIndex, onChange)
     --
     -- Afecta a CUALQUIER desplegable del addon con mas de 8 opciones, no solo
     -- al de fuentes: el filtro de mazmorras del Historial tiene el mismo fallo.
-    -- ═════════════════════════════════════════════════════════════════════
+    -- =====================================================================
     menuFrame:SetClipsChildren(true)
     menuFrame:EnableMouseWheel(true)
     menuFrame.offset = 0
@@ -405,16 +405,16 @@ function Widgets:CreateDropdown(parent, width, items, defaultIndex, onChange)
     return mainBtn
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- PROGRESS BAR  →  StatusBar nativa
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
+-- PROGRESS BAR  ->  StatusBar nativa
+-- -------------------------------------------------------------------------
 
--- ─────────────────────────────────────────────────────────────────────────
--- PROGRESS BAR  →  Frame + fill texture
+-- -------------------------------------------------------------------------
+-- PROGRESS BAR  ->  Frame + fill texture
 -- API original:
 --   bar:SetProgress(percent)    -- 0..100
 --   bar:SetColor(colorType)     -- "ok" | "bad" | "info" | default=gold
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateProgressBar(parent, width, height)
     local w = width  or 200
@@ -497,7 +497,7 @@ function Widgets:CreateProgressBar(parent, width, height)
     return bar
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- SCROLL FRAME  ← BUG FIX: ya no usa UIPanelScrollFrameTemplate
 --
 -- Crea un ScrollFrame plano + scrollbar manual, igual que el Widgets.lua
@@ -507,7 +507,7 @@ end
 --   scrollFrame:SetScript("OnSizeChanged")← los paneles setean esto
 --   scrollFrame:HookScript("OnShow")      ← los paneles hookean esto
 --   scrollFrame:UpdateScrollRange()       ← los paneles llaman esto
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateScrollFrame(parent, width, height)
     local sf = CreateFrame("ScrollFrame", nil, parent)
@@ -566,9 +566,9 @@ function Widgets:CreateScrollFrame(parent, width, height)
     return sf
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- LABEL
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateLabel(parent, text, fontType, fontSize, colorType)
     local f = CreateFrame("Frame", nil, parent)
@@ -584,9 +584,9 @@ function Widgets:CreateLabel(parent, text, fontType, fontSize, colorType)
     return f
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- SECTION HEADER
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateSectionHeader(parent, text)
     local f = CreateFrame("Frame", nil, parent)
@@ -602,9 +602,9 @@ function Widgets:CreateSectionHeader(parent, text)
     return f
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- STAT ROW
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateStatRow(parent, labelText, valueText, valueColor)
     -- Resolver nombres de color a tablas {r,g,b,a}
@@ -626,14 +626,14 @@ function Widgets:CreateStatRow(parent, labelText, valueText, valueColor)
     lbl:SetPoint("LEFT",f,"LEFT",0,0) ; lbl:SetText(labelText or "") ; lbl:SetTextColor(0.75,0.75,0.75,1)
     local val = f:CreateFontString(nil,"OVERLAY","GameFontHighlight")
     ApplyReadableFont(val,"mono",13)
-    val:SetPoint("RIGHT",f,"RIGHT",0,0) ; val:SetText(valueText or "—")
+    val:SetPoint("RIGHT",f,"RIGHT",0,0) ; val:SetText(valueText or "-")
     if valueColor then val:SetTextColor(valueColor.r,valueColor.g,valueColor.b,valueColor.a or 1) end
     f.labelText=lbl ; f.valueText=val
     -- Alias para compatibilidad con código que usa row.value / row.label
     -- (p.ej. Detail.lua PopulateStats). Sin esto los guiones nunca se reemplazaban.
     f.value = val ; f.label = lbl
     f.SetValue=function(self,t,c)
-        val:SetText(t or "—")
+        val:SetText(t or "-")
         if c then
             if type(c) == "string" then c = COLOR_NAMES[c] or COLOR_NAMES.white end
             val:SetTextColor(c.r,c.g,c.b,c.a or 1)
@@ -642,9 +642,9 @@ function Widgets:CreateStatRow(parent, labelText, valueText, valueColor)
     return f
 end
 
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 -- EMPTY STATE
--- ─────────────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------------
 
 function Widgets:CreateEmptyState(parent, iconPath, titleText, descText, ctaText, ctaCallback)
     local f = CreateFrame("Frame", nil, parent)

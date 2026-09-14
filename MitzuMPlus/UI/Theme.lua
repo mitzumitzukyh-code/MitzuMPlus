@@ -129,12 +129,12 @@ Theme.ROLE = {
 -- ═══════════════════════════════════════════════════════════════════════════
 
 Theme.LAYOUT = {
-    -- Window (tamaño fijo — no redimensionable)
-    windowWidth  = 1160,     -- fuentes extra grandes
-    windowHeight = 700,      -- fuentes extra grandes
+    -- Window: contrato compartido con RenderizadoNuevo y Constants.
+    windowWidth  = 1280,
+    windowHeight = 760,
     
     -- Titlebar
-    titlebarHeight = 56,     -- fuentes extra grandes
+    titlebarHeight = 64,
 
     -- Tabs
     tabHeight = 40,          -- fuentes extra grandes
@@ -143,7 +143,7 @@ Theme.LAYOUT = {
     sidebarWidth = 230,      -- fuentes extra grandes
     
     -- Footer
-    footerHeight = 32,       -- fuentes extra grandes
+    footerHeight = 36,
     
     -- Spacing
     padding      = 12,
@@ -357,6 +357,11 @@ end
 -- traia), se devuelve el fallback sin ruido.
 function Theme:ResolveFontPath(fallback)
     fallback = fallback or "Fonts\\FRIZQT__.TTF"
+    -- Spanish labels require the client font's Latin glyph coverage. Old
+    -- arbitrary LSM font choices are not a reliable fallback for this UI.
+    if GetLocale and (GetLocale() == "esMX" or GetLocale() == "esES") then
+        return "Fonts\\FRIZQT__.TTF"
+    end
     local st = MitzuMPlus.db and MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings
     local name = st and st.uiFont
     if type(name) ~= "string" or name == "" then return fallback end

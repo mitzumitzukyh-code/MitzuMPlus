@@ -1,17 +1,17 @@
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- MitzuMPlus M+ Historial - Export Module (v2.2)
 -- Funciones de exportación CSV, clipboard y código de importación web.
 --
 -- NUEVO v2.2:
---   • ExportToCode()  — serializa todas las runs a un JSON compacto con el
+--   • ExportToCode()  - serializa todas las runs a un JSON compacto con el
 --     prefijo "MPLUS2:" para identificar y versionar el formato.
 --     Incluye: runs completas, stats, composición de grupo e info del char.
---   • JSONEncode()    — serializador JSON mínimo en Lua puro (WoW no tiene
+--   • JSONEncode()    - serializador JSON mínimo en Lua puro (WoW no tiene
 --     JSON nativo). Soporta: string, number, boolean, nil, table (array/map).
 --
 -- FIX BUG-T2: usa MitzuMPlus:FormatDate() / FormatTime() en lugar del
 --   inexistente MitzuMPlus.Formatters (error original de crash en CSV).
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
@@ -19,21 +19,21 @@ local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 local Export = {}
 MitzuMPlus.Export = Export
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- VERSIÓN DEL FORMATO DE EXPORTACIÓN
 -- Cambiar si se modifica la estructura de datos para poder detectar versiones
 -- incompatibles en el lado web.
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 Export.CODE_VERSION = 2
 Export.CODE_PREFIX  = "MPLUS2:"
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- JSON SERIALIZER MINIMALISTA
 -- WoW Lua no incluye ninguna librería JSON. Este serializer cubre los tipos
 -- que genera el addon: string, number, boolean, nil y table (arrays/maps).
 -- No soporta valores circulares ni metatables.
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 local function jsonEscapeString(s)
     s = tostring(s)
@@ -98,7 +98,7 @@ jsonEncode = function(val)
             return "{" .. table.concat(items, ",") .. "}"
         end
     else
-        -- function, userdata, thread → null
+        -- function, userdata, thread -> null
         return "null"
     end
 end
@@ -106,9 +106,9 @@ end
 -- Exponer para uso interno o debug
 Export.JSONEncode = jsonEncode
 
--- ─────────────────────────────────────────────────────────────────────────────
--- CLIPBOARD — abre una EditBox pre-rellenada para copiar con Ctrl+A / Ctrl+C
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
+-- CLIPBOARD - abre una EditBox pre-rellenada para copiar con Ctrl+A / Ctrl+C
+-- -----------------------------------------------------------------------------
 
 -- opts (opcional, v7.14.0; sin opts el comportamiento es el de siempre):
 --   title       titulo de la ventana          (por defecto "EXPORTAR DATOS")
@@ -126,7 +126,12 @@ function Export:CopyToClipboard(text, opts)
                               BackdropTemplateMixin and "BackdropTemplate")
         f:SetSize(700, 500)
         f:SetPoint("CENTER")
-        f:SetFrameStrata("DIALOG")
+        -- Debe quedar por encima de la ventana principal (DIALOG nivel 100).
+        -- Bug Report y exportaciones usan este mismo visor.
+        f:SetFrameStrata("FULLSCREEN_DIALOG")
+        f:SetFrameLevel(500)
+        f:SetToplevel(true)
+        f:SetClampedToScreen(true)
 
         if Theme and Theme.StyleWindow then
             Theme:StyleWindow(f)
@@ -216,7 +221,14 @@ function Export:CopyToClipboard(text, opts)
     cf.editBox:SetText(text)
     cf.editBox:HighlightText()
     cf.editBox:SetFocus()
+
+    -- Reafirmar la capa en cada apertura: el frame se reutiliza entre
+    -- exportaciones y Bug Report y no debe quedar detrás de MitzuMPlus.
+    cf:SetFrameStrata("FULLSCREEN_DIALOG")
+    cf:SetFrameLevel(500)
+    if cf.SetToplevel then cf:SetToplevel(true) end
     cf:Show()
+    if cf.Raise then cf:Raise() end
 
     -- Auto-cerrar tras 60 segundos para no quedar abierto indefinidamente.
     -- Con una marca por apertura: el temporizador de una exportacion anterior
@@ -230,13 +242,13 @@ function Export:CopyToClipboard(text, opts)
     end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- EXPORT TO CODE — formato "MPLUS2:{json}"
+-- -----------------------------------------------------------------------------
+-- EXPORT TO CODE - formato "MPLUS2:{json}"
 --
 -- Estructura del JSON exportado (claves cortas para minimizar tamaño):
---   v    → versión del formato (int)
---   c    → info del personaje { n, r, cl, sp, ro, il }
---   runs → array de runs, cada una:
+--   v    -> versión del formato (int)
+--   c    -> info del personaje { n, r, cl, sp, ro, il }
+--   runs -> array de runs, cada una:
 --          { d, k, i, t, tl, s, st:{dt,pk,de,ki,di,cc,bz}, g:[{n,c,r}] }
 --
 -- Abreviaturas:
@@ -245,7 +257,7 @@ end
 --   ki=kicks, di=dispels, cc=cc, bz=brez), g=group
 --   c.n=name, c.r=realm, c.cl=class, c.sp=spec, c.ro=role, c.il=ilvl
 --   g[i].n=name, g[i].c=class, g[i].r=role
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function Export:ExportToCode()
     local runs = MitzuMPlus:GetAllRuns() or {}
@@ -255,7 +267,7 @@ function Export:ExportToCode()
         return
     end
 
-    -- ── Info del personaje (de la run más reciente disponible) ──────────────
+    -- -- Info del personaje (de la run más reciente disponible) --------------
     local charInfo = {
         n  = "",  -- name
         r  = "",  -- realm
@@ -274,7 +286,7 @@ function Export:ExportToCode()
         charInfo.il = tonumber(r0.playerIlvl) or 0
     end
 
-    -- ── Serializar runs ─────────────────────────────────────────────────────
+    -- -- Serializar runs -----------------------------------------------------
     local serialized = {}
     for _, run in ipairs(runs) do
         local st = run.stats or {}
@@ -314,7 +326,7 @@ function Export:ExportToCode()
         }
     end
 
-    -- ── Ensamblar payload ────────────────────────────────────────────────────
+    -- -- Ensamblar payload ----------------------------------------------------
     local payload = {
         v    = Export.CODE_VERSION,
         c    = charInfo,
@@ -326,15 +338,15 @@ function Export:ExportToCode()
     self:CopyToClipboard(code)
     MitzuMPlus:Print(string.format(
         "Código de exportación generado: |cFFe8b84a%d runs|r. " ..
-        "Pulsa |cFF21de66Ctrl+A → Ctrl+C|r para copiar y pégalo en el dashboard web.",
+        "Pulsa |cFF21de66Ctrl+A -> Ctrl+C|r para copiar y pégalo en el dashboard web.",
         #runs
     ))
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- EXPORTAR A DISCORD — formato markdown para pegar en un canal de Discord
+-- -----------------------------------------------------------------------------
+-- EXPORTAR A DISCORD - formato markdown para pegar en un canal de Discord
 -- Recibe UNA run y devuelve el texto formateado (no abre clipboard).
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function MitzuMPlus:ExportToDiscord(run)
     if not run then return "" end
@@ -351,7 +363,7 @@ function MitzuMPlus:ExportToDiscord(run)
     -- Header
     add("```")
     add("[M+] MitzuMPlus Report")
-    add("═══════════════════════════════════════")
+    add("=======================================")
     add(string.format("%s +%d  -  %s", dName, kLvl, inT and "[OK] EN TIEMPO" or "[X] FUERA DE TIEMPO"))
     add("")
 
@@ -379,7 +391,7 @@ function MitzuMPlus:ExportToDiscord(run)
     local dispels= tonumber(st.dispels) or 0
 
     add("Estadísticas")
-    add("───────────────────────────────────────")
+    add("---------------------------------------")
     add(string.format("  DPS promedio:  %s", self:FormatNumber(dps)))
     add(string.format("  Daño total:    %s", self:FormatNumber(dmg)))
     add(string.format("  Muertes:       %d", deaths))
@@ -410,7 +422,7 @@ function MitzuMPlus:ExportToDiscord(run)
     local members = run.groupMembers or run.group or {}
     if #members > 0 then
         add("Grupo")
-        add("───────────────────────────────────────")
+        add("---------------------------------------")
         for _, m in ipairs(members) do
             local mn = m.name or m.playerName or "?"
             local mr = m.role or m.playerRole or ""
@@ -436,15 +448,15 @@ function MitzuMPlus:ExportToDiscord(run)
         end
     end
 
-    add("— Generado por MitzuMPlus M+ Historial")
+    add("- Generado por MitzuMPlus M+ Historial")
     add("```")
 
     return table.concat(lines, "\n")
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- EXPORTAR CSV (sin cambios funcionales respecto a v2.1)
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function Export:ExportToCSV(runList)
     local runs = type(runList)=="table" and runList or (MitzuMPlus:GetAllRuns() or {})

@@ -25,8 +25,8 @@ DIST = ROOT / "dist"
 
 # Runtime file types WoW loads from an addon folder.
 ALLOWED_SUFFIXES = {".lua", ".toc", ".xml", ".tga", ".blp", ".ogg", ".mp3", ".ttf", ".otf"}
-# Documentation that must travel with the addon (licensing / attribution).
-ALLOWED_NAMES = {"DATA_SOURCES.md", "LICENSE.txt"}
+# License files may travel with the addon; internal documentation may not.
+ALLOWED_NAMES = {"LICENSE.txt"}
 # Never packaged, whatever their extension.
 EXCLUDED_PARTS = {".git", ".github", "tests", "docs", "tools", "dist", "screenshots",
                   "__pycache__", ".vscode", ".idea"}
@@ -94,7 +94,7 @@ def validate(target: Path) -> list[str]:
         for entry in toc_entries(toc_text):
             if f"{ADDON}/{entry}" not in members:
                 problems.append(f"TOC entry not in zip: {entry}")
-        for required in [f"{ADDON}/LICENSE", f"{ADDON}/DATA_SOURCES.md", f"{ADDON}/Bindings.xml",
+        for required in [f"{ADDON}/LICENSE", f"{ADDON}/Bindings.xml",
                          f"{ADDON}/Media/Icons/logo_64.tga"]:
             if required not in members:
                 problems.append(f"missing {required}")
@@ -111,7 +111,9 @@ def validate(target: Path) -> list[str]:
                 problems.append(f"experimental addon file in zip: {name}")
             if lowered.endswith((".py", ".spec.lua", ".bak", ".tmp", ".log")):
                 problems.append(f"development file in zip: {name}")
-        experimental = ("RouteArrows", "PullUnitResolver", "GuidanceEngine", "Evidence",
+        experimental = ("RouteArrows", "RouteProgress", "RouteManager", "RouteAdvisor",
+                        "RouteSchema", "AdaptiveRoute", "MDTImporter", "MDTEnemyData",
+                        "CoachAdvice", "PullUnitResolver", "GuidanceEngine", "Evidence",
                         "RouteAlignment", "ArrowDemo", "NameplateAnchorProvider",
                         "MDTPhysicalGroupData")
         for name in names:

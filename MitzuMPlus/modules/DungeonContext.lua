@@ -133,34 +133,16 @@ end
 
 
 -- ─────────────────────────────────────────────────────────────────────────
--- SOPORTE DE MAZMORRA
---
--- "Soportada" = tenemos ruta guardada para ella. No se inventa una lista de la
--- temporada a mano: la lista de verdad es la de perfiles importados, que es lo
--- que el addon puede usar.
+-- IDENTIDAD DE MAZMORRA
 -- ─────────────────────────────────────────────────────────────────────────
 
 function DungeonContext:IsSupportedDungeon(mapID)
     mapID = mapID or self._dungeonKey
-    if not mapID then return false end
-    local AR = MitzuMPlus.AdaptiveRoute
-    local PM = AR and AR.ProfileManager
-    local db = PM and PM.DB and PM:DB()
-    local profiles = db and db.profiles
-    if type(profiles) ~= "table" then return false end
-    return profiles[tostring(mapID)] ~= nil
+    return mapID ~= nil
 end
 
--- §43 — "la reconozco" y "tengo ruta para ella" son cosas distintas.
--- Una mazmorra de la temporada sin ruta importada es recognized=true,
--- routeAvailable=false. Meterlas en un solo `supported` obligaria a mentir en
--- una de las dos en cuanto haya mazmorras sin ruta.
 function DungeonContext:IsRecognizedDungeon()
     return self._dungeonKey ~= nil
-end
-
-function DungeonContext:IsRouteAvailable()
-    return self:IsSupportedDungeon()
 end
 
 -- La identidad canonica de la mazmorra: existe con y sin llave puesta.
@@ -377,8 +359,7 @@ function DungeonContext:StatusLines()
     L[#L + 1] = "challengeActive=" .. tostring(challengeActive())
     L[#L + 1] = "keystoneLevel=" .. tostring(self._keystoneLevel)
     L[#L + 1] = "recognizedDungeon=" .. tostring(self:IsRecognizedDungeon())
-    L[#L + 1] = "routeAvailable=" .. tostring(self:IsRouteAvailable())
-    L[#L + 1] = "supported=" .. tostring(self:IsSupportedDungeon())
+    L[#L + 1] = "recognized=" .. tostring(self:IsRecognizedDungeon())
     return L
 end
 

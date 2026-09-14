@@ -365,12 +365,17 @@ end
 -- ELIMINAR RUN
 -- ─────────────────────────────────────────────────────────────────────────────
 
-function MitzuMPlus:DeleteRun(runID)
+function MitzuMPlus:DeleteRun(runID, deferPBRebuild)
     if not self.db then return end
     runID=tonumber(runID)
     for key,run in pairs(self.db.global.runs or {}) do
         if type(run)=="table" and tonumber(run.runID)==runID then
             self.db.global.runs[key]=nil
+            -- personalBests es una caché derivada del historial. Una run
+            -- eliminada no puede seguir influyendo en récords futuros.
+            if not deferPBRebuild and self.PersonalBest and self.PersonalBest.RebuildFromHistory then
+                self.PersonalBest:RebuildFromHistory()
+            end
             return true
         end
     end

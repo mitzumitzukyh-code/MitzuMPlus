@@ -1,5 +1,5 @@
 -- MitzuMPlus PredictionEngine v7.0.0
--- Predicts +3/+2/+1/depleted and remaining pulls using only readable M+ state.
+-- Predicts +3/+2/+1/overtime using only readable M+ state.
 local MitzuMPlus = _G.MitzuMPlus
 if not MitzuMPlus then return end
 local Engine = {}
@@ -77,8 +77,14 @@ local function bracketWithHysteresis(projected,p3,p2,limit,current)
         local edge = bounds[oc]
         if edge and projected <= edge + BRACKET_HYST then return current end
     else
-        -- Mejora: el umbral es el del bracket nuevo.
-        local edge = bounds[ob]
+        -- Mejora: el umbral que se acaba de cruzar es el limite superior del
+        -- bracket ACTUAL (bounds[oc-1]), no el del bracket nuevo.
+        -- v7.14 (BUG PRED-HYST): antes se usaba bounds[ob]. Con un salto de
+        -- varios niveles eso comparaba contra el umbral mas lejano: FUERA ->
+        -- proyeccion 17:50 con limite 30:00 (+3 = 18:00) se quedaba en FUERA
+        -- porque 17:50 estaba a menos de 20 s del umbral de +3. Para un salto
+        -- de un nivel ob == oc-1 y el comportamiento no cambia.
+        local edge = bounds[oc - 1]
         if edge and projected >= edge - BRACKET_HYST then return current end
     end
     return b
@@ -192,8 +198,6 @@ local function getPB(run)
 end
 
 function Engine:GetSnapshot(run)
-    local st = MitzuMPlus.db and MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings
-    if st and st.predictionEnabled == false then return nil end
     run = run or _G.MitzuMPlusCurrentRun
     local kt=MitzuMPlus.KeystoneTracker
     if not run or not kt or not kt:IsActive() then return nil end
@@ -213,17 +217,6 @@ function Engine:GetSnapshot(run)
     end
     p2=tonumber(p2) or (limit*0.8); p3=tonumber(p3) or (limit*0.6)
     local deaths,timeLost=kt:GetDeathInfo(); deaths=tonumber(deaths) or 0; timeLost=tonumber(timeLost) or 0
-
-    -- v5.4.2 (BUG M5): RouteAdvisor:Update ya NO se llama desde aqui. Este
-    -- snapshot solo corre cuando el Coach esta visible, asi que el aprendizaje
-    -- de ruta moria al desactivar el overlay. Ahora lo alimenta
-    -- KeystoneTracker:Update, que vive durante toda la key.
-    local pullsLeft, routeMode = nil, 'auto'
-    local nextPullPct, nextMode, pullSamples = nil, 'auto', 0
-    if MitzuMPlus.RouteAdvisor then
-        pullsLeft,routeMode=MitzuMPlus.RouteAdvisor:GetRemainingPulls(pct)
-        nextPullPct,nextMode,pullSamples=MitzuMPlus.RouteAdvisor:GetNextPullTarget(pct)
-    end
 
     -- v5.4.4: el tiempo perdido por muertes cuenta contra el limite exactamente
     -- igual que el tiempo de reloj. Proyectar solo con el reloj infravaloraba la
@@ -357,8 +350,6 @@ function Engine:GetSnapshot(run)
         confidence = confidence + (clamp(progress,0,1) * 30)          -- avance real
         if bossesDone > 0 then confidence = confidence + 10 end
         if bossesDone >= 2 then confidence = confidence + 5 end
-        confidence = confidence + math.min(15,(pullSamples or 0) * 3)
-        if routeMode == 'route' then confidence = confidence + 10 end
         -- Penalizacion por inestabilidad: 3 s de vaiven = 1 punto, hasta 30.
         confidence = confidence - math.min(30, (drift or 0) / 3)
         confidence = clamp(math.floor(confidence + 0.5), 15, 95)
@@ -486,8 +477,6 @@ function Engine:GetSnapshot(run)
         hasBasis=hasBasis, progress=progress,
         projectedTime=projected, result=result, margin=margin,
         resultConfident=resultConfident, nearBoundary=nearBoundary,
-        pullsLeft=pullsLeft or 0, routeMode=routeMode,
-        nextPullPct=nextPullPct or 0, nextPullMode=nextMode,
         confidence=confidence, pbTime=pb, pbDelta=pbDelta,
         timeRemaining=timeRemaining, pacePct=pacePct, neededPct=neededPct,
         deathBudget=deathBudget, realPerDeath=realPerDeath,

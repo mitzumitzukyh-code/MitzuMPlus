@@ -1,0 +1,31 @@
+# Changelog
+
+## 1.0.0-beta.1
+
+Initial CurseForge beta candidate.
+
+### Added
+- Mythic+ history interface with search, filters, sorting, pagination, favorites, notes, copy/export, and delete actions.
+- Player profile interface based on previous Mythic+ group members.
+- Optional Mythic score display using Raider.IO when available.
+- Live key prediction HUD with configurable appearance and behavior.
+- End-of-run notifications and chat summaries.
+- Group loot tracking with minimum quality and item level filters.
+- Bug report window for live testing and issue collection.
+- Original MitzuMPlus logo asset for distribution.
+
+### Changed
+- Removed an unused SpecDatabase development scaffold from the public package.
+- Internal metric-source names remain available in Bug Report/QA but are no longer printed in normal run-start chat.
+- Removed the placeholder CurseForge project URL until the project has a real approved page.
+- Route-arrow functionality is intentionally kept out of this addon and should remain in a separate development addon.
+- Player interface uses the user-facing label **Puntaje mítico** instead of the technical Raider.IO label.
+- Technical data-source labels are hidden from normal UI and should remain in debug/bug reports only.
+
+### Fixed
+- Multiple History UI layout issues: truncated headers, oversized role icons, long metric numbers, and small dungeon icon presentation.
+- Minimap right-click menu opacity and positioning.
+- Notification placement, visibility, and queueing.
+- Bug Report window layering so it opens above the main addon.
+- Loot item-level filtering using detailed item level information when available.
+- Filter refresh behavior and stale filter state.

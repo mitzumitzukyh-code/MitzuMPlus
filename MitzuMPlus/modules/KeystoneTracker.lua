@@ -453,14 +453,6 @@ function KeystoneTracker:Update(force)
         end
     end
 
-    -- v5.4.2 (BUG M5): el aprendizaje AUTO de ruta se alimentaba desde
-    -- PredictionEngine:GetSnapshot, que solo corre si el Coach esta visible.
-    -- Con el Coach desactivado, "Aprendizaje automatico de ruta" quedaba
-    -- encendido en la config pero no aprendia nada. Ahora cuelga de este poll,
-    -- que existe durante toda la key sea cual sea el estado del overlay.
-    if MitzuMPlus.RouteAdvisor and MitzuMPlus.RouteAdvisor.Update then
-        pcall(MitzuMPlus.RouteAdvisor.Update, MitzuMPlus.RouteAdvisor, self._enemyForces.pct)
-    end
 end
 
 -- ─────────────────────────────────────────────────────────────────────────

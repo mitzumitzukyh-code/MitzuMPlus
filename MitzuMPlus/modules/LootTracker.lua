@@ -129,13 +129,22 @@ local function OnLootMessage(msg, arg2)
     local itemLink, itemID = ParseLootMessage(msg)
     if not itemLink or not itemID then return end
 
-    -- Filtrar por calidad mínima (config > campo > default 2)
-    local minQ = cfg.lootMinQuality or LootTracker.minQuality or 2
-    local itemName, _, quality, _, _, _, _, _, _, iconID, _, _, _, ilvl = GetItemInfo(itemLink)
+    -- Filtrar por calidad mínima (config > campo > default 2).
+    -- GetItemInfo devuelve itemLevel como 4.º valor; la versión anterior
+    -- leía por error el 14.º retorno (bindType) como si fuera el ilvl.
+    local minQ = tonumber(cfg.lootMinQuality or LootTracker.minQuality) or 2
+    local itemName, _, quality, baseIlvl, _, _, _, _, _, iconID = GetItemInfo(itemLink)
+    quality = tonumber(quality)
     if quality and quality < minQ then return end
 
-    -- Filtrar por ilvl mínimo (0 = sin filtro)
-    local minIlvl = cfg.lootMinIlvl or LootTracker.minIlvl or 0
+    -- Filtrar por ilvl mínimo (0 = sin filtro). Para variantes escaladas
+    -- (M+, raid, upgrade tracks, etc.) preferimos el ilvl detallado del link.
+    local minIlvl = tonumber(cfg.lootMinIlvl or LootTracker.minIlvl) or 0
+    local ilvl = tonumber(baseIlvl)
+    if C_Item and C_Item.GetDetailedItemLevelInfo then
+        local ok, detailed = pcall(C_Item.GetDetailedItemLevelInfo, itemLink)
+        if ok and tonumber(detailed) then ilvl = tonumber(detailed) end
+    end
     if minIlvl > 0 and ilvl and ilvl < minIlvl then return end
 
     local playerName = ParseLooterName(msg, arg2)

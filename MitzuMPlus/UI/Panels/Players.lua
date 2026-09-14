@@ -29,16 +29,16 @@ local QUALITY_COLOR = {
 }
 
 local LIST_COLS = {
-    {key="identity",text="JUGADOR",w=.30}, {key="role",text="ROL",w=.09},
-    {key="runs",text="RUNS",w=.08,numeric=true}, {key="success",text="ÉXITO",w=.10,numeric=true},
-    {key="best",text="MEJOR",w=.09,numeric=true}, {key="deaths",text="MUERTES",w=.11,numeric=true},
-    {key="kicks",text="KICKS",w=.10,numeric=true}, {key="last",text="ÚLTIMA",w=.13,numeric=true},
+    {key="identity",text="JUGADOR",w=.27}, {key="role",text="ROL",w=.08},
+    {key="rio",text="PUNTAJE MÍTICO",w=.12,numeric=true}, {key="runs",text="RUNS",w=.07,numeric=true},
+    {key="success",text="ÉXITO",w=.09,numeric=true}, {key="best",text="MEJOR",w=.08,numeric=true},
+    {key="deaths",text="MUERTES",w=.12,numeric=true}, {key="last",text="ÚLTIMA",w=.17,numeric=true},
 }
 local RUN_COLS = {
-    {key="dungeon",text="MAZMORRA",w=.27}, {key="level",text="NIVEL",w=.08,numeric=true},
-    {key="result",text="RESULTADO",w=.13}, {key="duration",text="TIEMPO",w=.10,numeric=true},
-    {key="metric",text="RENDIMIENTO",w=.15,numeric=true}, {key="utility",text="UTILIDAD",w=.12,numeric=true},
-    {key="deaths",text="MUERTES",w=.08,numeric=true}, {key="date",text="FECHA",w=.07,numeric=true},
+    {key="dungeon",text="MAZMORRA",w=.28}, {key="level",text="NIVEL",w=.08,numeric=true},
+    {key="result",text="RESULTADO",w=.13}, {key="duration",text="TIEMPO",w=.11,numeric=true},
+    {key="metric",text="DPS/HPS/DTPS",w=.18,numeric=true}, {key="deaths",text="MUERTES",w=.10,numeric=true},
+    {key="date",text="FECHA",w=.12,numeric=true},
 }
 local ROW_H, RUN_ROW_H = 40, 34
 
@@ -73,6 +73,63 @@ local function PlayerKey(name, realm)
     end
     return string.lower(name.."-"..realm), name, realm
 end
+
+local function RaiderIOScore(player)
+    if type(player) ~= "table" then return nil, "NO_PLAYER" end
+    if player._rioChecked then return player.rioScore, player.rioState end
+    player._rioChecked = true
+
+    local function SavedOr(state)
+        local saved = tonumber(player.savedRaiderIOScore) or 0
+        if saved > 0 then
+            player.rioScore = saved
+            player.rioState = "SAVED"
+            return saved, player.rioState
+        end
+        player.rioState = state
+        return nil, player.rioState
+    end
+
+    local rio = _G.RaiderIO
+    if type(rio) ~= "table" or type(rio.GetProfile) ~= "function" then
+        return SavedOr("NO_ADDON")
+    end
+
+    local realm = tostring(player.realm or "")
+    if realm == "" and GetNormalizedRealmName then
+        realm = tostring(GetNormalizedRealmName() or "")
+    end
+    if tostring(player.name or "") == "" or realm == "" then
+        return SavedOr("NO_IDENTITY")
+    end
+
+    -- Raider.IO exposes a supported in-game API backed by its local snapshot.
+    local ok, profile = pcall(rio.GetProfile, player.name, realm)
+    if not ok or type(profile) ~= "table" or profile.success == false then
+        return SavedOr("NO_PROFILE")
+    end
+    local mplus = profile.mythicKeystoneProfile
+    if type(mplus) ~= "table" or mplus.hasRenderableData == false then
+        return SavedOr("NO_DATA")
+    end
+    local score = tonumber(mplus.currentScore)
+    if not score then return SavedOr("NO_SCORE") end
+    player.rioScore = score
+    player.rioProfile = profile
+    player.rioState = "OK"
+    return score, player.rioState
+end
+
+local function RaiderIOColor(score)
+    local rio = _G.RaiderIO
+    if score and type(rio) == "table" and type(rio.GetScoreColor) == "function" then
+        local ok, r, g, b = pcall(rio.GetScoreColor, score)
+        if ok and tonumber(r) and tonumber(g) and tonumber(b) then
+            return {r=r,g=g,b=b}
+        end
+    end
+    return Theme.GOLD.gold4
+end
 local function IsLocal(member, run)
     if member.isPlayer then return true end
     local _, mn, mr = PlayerKey(member.name or member.playerName, member.realm)
@@ -103,11 +160,12 @@ local function NormalizeMember(raw, run, lookup)
         key=key,name=name,realm=realm,class=raw.class or s.class or "",role=Role(raw.role or s.role),
         spec=raw.spec or s.spec or "",specID=tonumber(raw.specID or s.specID) or 0,
         rating=tonumber(raw.mythicRating or s.mythicRating) or 0,
+        raiderIOScore=tonumber(raw.raiderIOScore or s.raiderIOScore) or 0,
         damage=Pick("damage","damageDone","damageTotal"), healing=Pick("healing","healingDone","healingTotal"),
         taken=Pick("damageTaken","damageReceived","takenDamage"), deaths=Pick("deaths"),
-        kicks=Pick("kicks"),dispels=Pick("dispels"),run=run,isPlayer=IsLocal(raw,run),
+        run=run,isPlayer=IsLocal(raw,run),
     }
-    m.hasMetrics = m.damage>0 or m.healing>0 or m.taken>0 or m.deaths>0 or m.kicks>0 or m.dispels>0
+    m.hasMetrics = m.damage>0 or m.healing>0 or m.taken>0 or m.deaths>0
     return m
 end
 local function RunMembers(run)
@@ -300,7 +358,7 @@ function PanelPlayers:CreateProfileView(parent)
         card.value=value; self.cards[i]=card
     end
     local hint=view:CreateFontString(nil,"OVERLAY"); hint:SetPoint("TOPLEFT",top,"BOTTOMLEFT",12,-8)
-    Theme:ApplyFont(hint,"mono",10); Theme:SetTextColor(hint,Theme.TEXT.dim); hint:SetText("Encabezados ordenables · K = kicks · D = dispels")
+    Theme:ApplyFont(hint,"mono",10); Theme:SetTextColor(hint,Theme.TEXT.dim); hint:SetText("Encabezados ordenables · Puntaje mítico opcional")
     local header=SortHeader(view,RUN_COLS,function(key)
         if self.runSortKey==key then self.runSortDesc=not self.runSortDesc else self.runSortKey=key;self.runSortDesc=key~="dungeon" and key~="result" end
         self:RenderProfile()
@@ -337,7 +395,8 @@ function PanelPlayers:BuildIndex()
                 local p=map[m.key]
                 if not p then
                     p={key=m.key,name=m.name,realm=m.realm,class=m.class,role=m.role,spec=m.spec,specID=m.specID,runs=0,inTime=0,best=0,
-                       deaths=0,kicks=0,dispels=0,damage=0,healing=0,taken=0,measured=0,duration=0,last=0,entries={},loot=0}
+                       deaths=0,damage=0,healing=0,taken=0,measured=0,duration=0,last=0,entries={},loot=0,
+                       savedRaiderIOScore=0,savedRaiderIOAt=0}
                     map[m.key]=p
                 end
                 if p.class=="" and m.class~="" then p.class=m.class end
@@ -345,10 +404,14 @@ function PanelPlayers:BuildIndex()
                 if (p.specID or 0)==0 and (m.specID or 0)>0 then p.specID=m.specID end
                 if p.role=="DAMAGER" and m.role~="DAMAGER" then p.role=m.role end
                 p.runs=p.runs+1; if run.inTime then p.inTime=p.inTime+1 end
-                p.best=math.max(p.best,tonumber(run.keyLevel) or 0); p.deaths=p.deaths+m.deaths; p.kicks=p.kicks+m.kicks; p.dispels=p.dispels+m.dispels
+                p.best=math.max(p.best,tonumber(run.keyLevel) or 0); p.deaths=p.deaths+m.deaths
                 p.damage=p.damage+m.damage;p.healing=p.healing+m.healing;p.taken=p.taken+m.taken;p.duration=p.duration+duration
                 if m.hasMetrics then p.measured=p.measured+1 end
                 p.last=math.max(p.last,tonumber(run.startTime) or 0)
+                local runTime=tonumber(run.startTime) or 0
+                if (tonumber(m.raiderIOScore) or 0)>0 and runTime>=(p.savedRaiderIOAt or 0) then
+                    p.savedRaiderIOScore=tonumber(m.raiderIOScore) or 0;p.savedRaiderIOAt=runTime
+                end
                 local loot=MemberLoot(run,m);p.loot=p.loot+#loot;p.entries[#p.entries+1]={run=run,member=m,loot=loot}
             end
         end
@@ -356,7 +419,8 @@ function PanelPlayers:BuildIndex()
     local out={}
     for _,p in pairs(map) do
         p.success=p.runs>0 and p.inTime/p.runs*100 or 0
-        p.deathsAvg=p.measured>0 and p.deaths/p.measured or nil;p.kicksAvg=p.measured>0 and p.kicks/p.measured or nil
+        p.deathsAvg=p.measured>0 and p.deaths/p.measured or nil
+        RaiderIOScore(p)
         out[#out+1]=p
     end
     return out,#runs
@@ -376,7 +440,7 @@ function PanelPlayers:ComparePlayers(a,b)
     elseif k=="role" then av,bv=ROLE_SORT[a.role] or 9,ROLE_SORT[b.role] or 9
     elseif k=="runs" then av,bv=a.runs,b.runs elseif k=="success" then av,bv=a.success,b.success
     elseif k=="best" then av,bv=a.best,b.best elseif k=="deaths" then av,bv=a.deathsAvg or -1,b.deathsAvg or -1
-    elseif k=="kicks" then av,bv=a.kicksAvg or -1,b.kicksAvg or -1 else av,bv=a.last,b.last end
+    elseif k=="rio" then av,bv=a.rioScore or -1,b.rioScore or -1 else av,bv=a.last,b.last end
     if av==bv then return string.lower(a.name)<string.lower(b.name) end
     return self.listSortDesc and av>bv or (not self.listSortDesc and av<bv)
 end
@@ -404,13 +468,25 @@ function PanelPlayers:CreateListRow(p,index)
     cells.runs:SetText(p.runs);Theme:SetTextColor(cells.runs,Theme.TEXT.primary)
     cells.success:SetText(string.format("%.0f%%",p.success));Theme:SetTextColor(cells.success,p.success>=60 and Theme.STATUS.ok or (p.success>=40 and Theme.STATUS.warn or Theme.STATUS.bad))
     cells.best:SetText(p.best>0 and ("+"..p.best) or "-");Theme:SetTextColor(cells.best,Theme.GOLD.gold4)
+    local rioScore=RaiderIOScore(p);cells.rio:SetText(rioScore and string.format("%.0f",rioScore) or "-")
+    local rioColor=RaiderIOColor(rioScore);Theme:SetTextColor(cells.rio,rioScore and rioColor or Theme.TEXT.dim)
     cells.deaths:SetText(p.deathsAvg and string.format("%.1f/run",p.deathsAvg) or "-");Theme:SetTextColor(cells.deaths,p.deathsAvg and (p.deathsAvg<=.5 and Theme.STATUS.ok or Theme.STATUS.bad) or Theme.TEXT.dim)
-    cells.kicks:SetText(p.kicksAvg and string.format("%.1f/run",p.kicksAvg) or "-");Theme:SetTextColor(cells.kicks,p.kicksAvg and Theme.STATUS.info or Theme.TEXT.dim)
     cells.last:SetText(ShortDate(p.last));Theme:SetTextColor(cells.last,Theme.TEXT.secondary);row.cells=cells
     row:SetScript("OnEnter",function(f)
         Theme:SetBackdropColor(f,Theme.BG.rowHover);accent:Show()
-        GameTooltip:SetOwner(f,"ANCHOR_RIGHT");GameTooltip:SetText(p.name, color.r,color.g,color.b)
+        GameTooltip:SetOwner(f,"ANCHOR_RIGHT");GameTooltip:SetText(p.name..(p.realm~="" and (" - "..p.realm) or ""), color.r,color.g,color.b)
         GameTooltip:AddLine(string.format("%d runs juntos · %.0f%% en tiempo",p.runs,p.success),1,1,1)
+        local rioScore,rioState=RaiderIOScore(p)
+        if rioScore then
+            local rc=RaiderIOColor(rioScore)
+            local suffix=rioState=="SAVED" and " (guardado)" or ""
+            GameTooltip:AddLine("Puntaje mítico: "..string.format("%.0f",rioScore)..suffix,rc.r,rc.g,rc.b)
+        elseif rioState=="NO_ADDON" then
+            GameTooltip:AddLine("Puntaje mítico: no disponible.",.65,.65,.65,true)
+        else
+            GameTooltip:AddLine("Puntaje mítico: sin datos disponibles.",.65,.65,.65,true)
+        end
+        GameTooltip:AddLine("Éxito = porcentaje de runs terminadas en tiempo con este jugador.",.75,.75,.75,true)
         if p.measured<p.runs then GameTooltip:AddLine(string.format("Métricas disponibles en %d de %d runs.",p.measured,p.runs),.7,.7,.7,true) end
         GameTooltip:AddLine("Clic para abrir el perfil.",.9,.75,.3);GameTooltip:Show()
     end)
@@ -448,7 +524,8 @@ function PanelPlayers:ShowProfile(p)
     local cc=GetClassColor(p.class);self.profileTitle:SetText(p.name..(p.realm~="" and (" - "..p.realm) or ""));self.profileTitle:SetTextColor(cc.r,cc.g,cc.b,1)
     local identity=CLASS_ES[p.class] or p.class or "Clase desconocida";if p.spec~="" then identity=identity.." · "..p.spec end
     identity=identity.." · "..(ROLE_LABEL[p.role] or "DPS")
-    if p.measured<p.runs then identity=identity..string.format("  |cFF888888· métricas en %d/%d runs|r",p.measured,p.runs) end
+    local rioScore=RaiderIOScore(p)
+    if rioScore then identity=identity.." · Puntaje mítico "..string.format("%.0f",rioScore) end
     self.profileSubtitle:SetText(identity);self.cards[1].value:SetText(p.runs);self.cards[2].value:SetText(string.format("%.0f%%",p.success));self.cards[3].value:SetText(p.best>0 and ("+"..p.best) or "-");self.cards[4].value:SetText(ShortDate(p.last))
     local latest
     for _,e in ipairs(p.entries)do if not latest or (tonumber(e.run.startTime)or 0)>(tonumber(latest.startTime)or 0)then latest=e.run end end
@@ -467,7 +544,6 @@ function PanelPlayers:CompareRuns(a,b)
     elseif k=="result"then av,bv=ar.inTime and 1 or 0,br.inTime and 1 or 0
     elseif k=="duration"then av,bv=tonumber(ar.completionTime)or 0,tonumber(br.completionTime)or 0
     elseif k=="metric"then av,bv=self:Metric(a),self:Metric(b)
-    elseif k=="utility"then av,bv=a.member.kicks+a.member.dispels,b.member.kicks+b.member.dispels
     elseif k=="deaths"then av,bv=a.member.deaths,b.member.deaths else av,bv=tonumber(ar.startTime)or 0,tonumber(br.startTime)or 0 end
     if av==bv then return (tonumber(ar.startTime)or 0)>(tonumber(br.startTime)or 0) end
     return self.runSortDesc and av>bv or (not self.runSortDesc and av<bv)
@@ -482,7 +558,6 @@ function PanelPlayers:CreateRunRow(entry,index)
     else cells.result:SetText("INCOMPLETA");Theme:SetTextColor(cells.result,Theme.TEXT.dim)end
     cells.duration:SetText(MMSS(run.completionTime));Theme:SetTextColor(cells.duration,Theme.TEXT.secondary)
     local metric,label=self:Metric(entry);cells.metric:SetText(m.hasMetrics and (FNum(metric).." "..label)or"-");Theme:SetTextColor(cells.metric,m.hasMetrics and (m.role=="HEALER"and Theme.STATUS.ok or Theme.GOLD.gold4)or Theme.TEXT.dim)
-    cells.utility:SetText(m.hasMetrics and string.format("%dK · %dD",m.kicks,m.dispels)or"-");Theme:SetTextColor(cells.utility,(m.kicks+m.dispels)>0 and Theme.STATUS.info or Theme.TEXT.dim)
     cells.deaths:SetText(m.hasMetrics and m.deaths or "-");Theme:SetTextColor(cells.deaths,m.hasMetrics and (m.deaths>0 and Theme.STATUS.bad or Theme.STATUS.ok)or Theme.TEXT.dim)
     cells.date:SetText(ShortDate(run.startTime));Theme:SetTextColor(cells.date,Theme.TEXT.dim);row.cells=cells;return row
 end

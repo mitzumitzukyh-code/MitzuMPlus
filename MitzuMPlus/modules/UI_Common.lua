@@ -521,34 +521,40 @@ end
 -- TOAST
 -- ─────────────────────────────────────────────────────────────────────────────
 
-function MitzuMPlus:ShowToast(message, toastType, duration)
-    if not self.db or not self.db.profile or not self.db.profile.settings
-       or not self.db.profile.settings.showToasts then
-        return
-    end
+function MitzuMPlus:_ShowToastNow(entry)
+    entry = entry or {}
+    local message = tostring(entry.message or "")
+    local toastType = entry.toastType or "ok"
+    local duration = tonumber(entry.duration) or 3
 
-    duration = duration or 3
-    message  = message or ""
     if #message > 80 then message = message:sub(1, 77) .. "..." end
 
     if not self._toastFrame then
-        local uiParent = UIParent  -- API-6 FIX: GetUIParent() deprecated → UIParent global
+        local uiParent = UIParent
         local tf = CreateFrame("Frame", nil, uiParent, "BackdropTemplate")
         if not tf.SetBackdrop then Mixin(tf, BackdropTemplateMixin) end
-        tf:SetSize(360, 44)
-        tf:SetPoint("BOTTOMRIGHT", uiParent, "BOTTOMRIGHT", -22, 22)
+        -- Los avisos no deben competir con barras de acción, bolsas o addons
+        -- anclados al borde inferior.  La zona superior central queda visible
+        -- tanto con la ventana de MitzuMPlus abierta como cerrada.
+        tf:SetSize(460, 54)
+        tf:SetPoint("TOP", uiParent, "TOP", 0, -105)
         tf:SetBackdrop({
             bgFile   = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\Buttons\\WHITE8X8",
             edgeSize = 2,
         })
-        tf:SetFrameStrata("DIALOG")
+        tf:SetFrameStrata("FULLSCREEN_DIALOG")
+        tf:SetFrameLevel(200)
+        tf:SetClampedToScreen(true)
+        tf:EnableMouse(false)
 
-        local t2 = tf:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local t2 = tf:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         t2:SetPoint("CENTER")
-        t2:SetWidth(340)
+        t2:SetWidth(430)
         t2:SetJustifyH("CENTER")
         t2:SetWordWrap(false)
+        t2:SetShadowColor(0, 0, 0, 1)
+        t2:SetShadowOffset(1, -1)
         t2:SetTextColor(C(_G.MitzuMPlusColors.t1))
         tf.text = t2
 
@@ -577,6 +583,7 @@ function MitzuMPlus:ShowToast(message, toastType, duration)
         tf.text:SetTextColor(C(_G.MitzuMPlusColors.bad))
     end
 
+    self._toastActive = true
     tf:Show()
 
     if tf._toastTimer then
@@ -586,7 +593,43 @@ function MitzuMPlus:ShowToast(message, toastType, duration)
 
     if C_Timer and C_Timer.NewTimer then
         tf._toastTimer = C_Timer.NewTimer(duration, function()
+            tf._toastTimer = nil
             tf:Hide()
+            MitzuMPlus._toastActive = false
+            local queue = MitzuMPlus._toastQueue
+            if queue and #queue > 0 then
+                local nextEntry = table.remove(queue, 1)
+                MitzuMPlus:_ShowToastNow(nextEntry)
+            end
         end)
     end
+end
+
+function MitzuMPlus:ShowToast(message, toastType, duration, force)
+    -- Normal toasts still respect the legacy master switch. Notifications
+    -- explicitly enabled by the user can pass force=true so a stale hidden
+    -- showToasts=false from an old profile cannot silently disable them.
+    if not force then
+        if not self.db or not self.db.profile or not self.db.profile.settings
+           or self.db.profile.settings.showToasts == false then
+            return
+        end
+    end
+
+    local entry = {
+        message = tostring(message or ""),
+        toastType = toastType or "ok",
+        duration = tonumber(duration) or 3,
+    }
+
+    if self._toastActive then
+        self._toastQueue = self._toastQueue or {}
+        -- Avoid an unbounded queue if several PB signals fire from one run.
+        if #self._toastQueue < 6 then
+            self._toastQueue[#self._toastQueue + 1] = entry
+        end
+        return
+    end
+
+    self:_ShowToastNow(entry)
 end

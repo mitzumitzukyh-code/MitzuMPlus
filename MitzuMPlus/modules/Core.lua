@@ -1,4 +1,4 @@
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- MitzuMPlus M+ Historial - Core (v4.0.0)
 -- Sistema central de eventos y tracking
 --
@@ -6,19 +6,19 @@
 --           El tracking ahora usa C_DamageMeter API como fuente primaria,
 --           con fallback a CLEU para clientes pre-12.0 (TWW).
 --   ROLE-1  GetCurrentSpecIndex/GetCurrentRole completamente reescritos.
---           Midnight usa PlayerUtil.GetCurrentSpecID() → specID directo.
+--           Midnight usa PlayerUtil.GetCurrentSpecID() -> specID directo.
 --           GetSpecializationInfoByID(specID) obtiene nombre + rol.
---   API-FIX GetAverageItemLevel → C_PaperDollInfo.GetAverageItemLevels()
--- ═══════════════════════════════════════════════════════════════════════════
+--   API-FIX GetAverageItemLevel -> C_PaperDollInfo.GetAverageItemLevels()
+-- ===========================================================================
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 
 _G.MitzuMPlusCurrentRun = nil
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- DETECCIÓN DE VERSIÓN: ¿Estamos en Midnight (12.0+)?
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 local IS_MIDNIGHT = false
 do
@@ -32,25 +32,12 @@ MitzuMPlus.IS_MIDNIGHT = IS_MIDNIGHT
 -- handlers to detect opaque Secret Values that crash on table-key or comparison.
 local _issecretvalue = rawget(_G, "issecretvalue")
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- UTILIDADES INTERNAS
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 local function Now()
     return time and time() or 0
-end
-
-local function BuildFullPlayerName(name, realm)
-    name = tostring(name or "")
-    realm = tostring(realm or "")
-    if name == "" then return "" end
-    if realm == "" then
-        realm = (GetRealmName and GetRealmName()) or ""
-    end
-    if realm ~= "" and not string.find(name, "%-", 1, true) then
-        return name .. "-" .. realm
-    end
-    return name
 end
 
 local function ExtractRatingNumber(value)
@@ -84,6 +71,29 @@ local function ExtractRatingNumber(value)
     return 0
 end
 
+local function GetRaiderIOScore(unitName, unitRealm)
+    local rio = rawget(_G, "RaiderIO")
+    if type(rio) ~= "table" or type(rio.GetProfile) ~= "function" then return 0 end
+
+    local name = tostring(unitName or "")
+    local realm = tostring(unitRealm or "")
+    if realm == "" then
+        local parsedName, parsedRealm = name:match("^(.-)%-(.+)$")
+        if parsedName and parsedRealm then name, realm = parsedName, parsedRealm end
+    end
+    if realm == "" and GetNormalizedRealmName then realm = tostring(GetNormalizedRealmName() or "") end
+    if realm == "" and GetRealmName then realm = tostring(GetRealmName() or "") end
+    if name == "" or realm == "" then return 0 end
+
+    -- API pública y soportada por Raider.IO. La información procede del
+    -- snapshot local del addon; no realiza peticiones web desde el cliente.
+    local ok, profile = pcall(rio.GetProfile, name, realm)
+    if not ok or type(profile) ~= "table" or profile.success == false then return 0 end
+    local mplus = profile.mythicKeystoneProfile
+    if type(mplus) ~= "table" or mplus.hasRenderableData == false then return 0 end
+    return ExtractRatingNumber(mplus)
+end
+
 local function GetUnitMythicRating(unit, unitName, unitRealm)
     -- Fuente 1: API Blizzard (funciona seguro para player, y en algunos
     -- clientes también para party/raid units).
@@ -95,54 +105,11 @@ local function GetUnitMythicRating(unit, unitName, unitRealm)
         end
     end
 
-    -- Fuente 2 (opcional): API del addon RaiderIO si está cargado.
-    local fullName = BuildFullPlayerName(unitName, unitRealm)
-    if fullName == "" then return 0 end
-
-    local rio = rawget(_G, "RaiderIO")
-    if type(rio) == "table" then
-
-        local probes = {
-            function()
-                if type(rio.GetScore) == "function" then
-                    return rio:GetScore(fullName)
-                end
-            end,
-            function()
-                if type(rio.GetScore) == "function" then
-                    return rio.GetScore(fullName)
-                end
-            end,
-            function()
-                if type(rio.GetPlayerScore) == "function" then
-                    return rio:GetPlayerScore(fullName)
-                end
-            end,
-            function()
-                if type(rio.GetPlayerScore) == "function" then
-                    return rio.GetPlayerScore(fullName)
-                end
-            end,
-            function()
-                if type(rio.GetProfile) == "function" then
-                    return rio:GetProfile(fullName)
-                end
-            end,
-            function()
-                if type(rio.GetProfile) == "function" then
-                    return rio.GetProfile(fullName)
-                end
-            end,
-        }
-
-        for _, probe in ipairs(probes) do
-            local ok, result = pcall(probe)
-            if ok then
-                local score = ExtractRatingNumber(result)
-                if score > 0 then return score end
-            end
-        end
-    end
+    -- Fuente 2 (opcional): Raider.IO. Se mantiene separada al guardar la run,
+    -- pero puede actuar como fallback del rating visible si Blizzard no expone
+    -- el valor para esa unidad.
+    local rioScore = GetRaiderIOScore(unitName, unitRealm)
+    if rioScore > 0 then return rioScore end
 
     return 0
 end
@@ -207,9 +174,9 @@ end
 MitzuMPlus.GetPlayerSpecID = GetPlayerSpecID
 MitzuMPlus.GetPlayerRoleAndSpec = GetPlayerRoleAndSpec
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- REGISTRO DE EVENTOS PRINCIPALES
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function MitzuMPlus:RegisterCoreEvents()
     if self._eventsRegistered then
@@ -297,7 +264,7 @@ function MitzuMPlus:RegisterCoreEvents()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- BUG FIX (ADDON_ACTION_FORBIDDEN en /reload con ChatCopyPaste):
 --
 -- La v1 del fix (creaba _combatFrame dentro de DoRegister) seguía fallando
@@ -311,7 +278,7 @@ end
 -- cadena de llamadas iniciada por AceAddon:InitializeAddon. Tanto el
 -- call-stack como cualquier taint que venga de la lib compartida quedan
 -- limpios al procesar el OnUpdate timer.
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 function MitzuMPlus:_SetupCombatFrameDeferred()
     if MitzuMPlus._combatFrame then return end
     if not (C_Timer and C_Timer.After) then
@@ -340,9 +307,9 @@ function MitzuMPlus:_DoSetupCombatFrame()
     end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- ESTRUCTURA DE RUN VACÍA
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function MitzuMPlus:NewRunData()
     return {
@@ -397,9 +364,9 @@ function MitzuMPlus:NewRunData()
     }
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- CHALLENGE MODE — INICIO
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
+-- CHALLENGE MODE - INICIO
+-- -----------------------------------------------------------------------------
 
 function MitzuMPlus:OnPlayerEnteringWorld()
     if self.LoadActiveSeason then
@@ -409,12 +376,6 @@ function MitzuMPlus:OnPlayerEnteringWorld()
         C_Timer.After(3.0, function()
             if MitzuMPlus.BackgroundSeasonScan then
                 MitzuMPlus:BackgroundSeasonScan()
-            end
-        end)
-        -- Resume overlay after /reload if M+ is active
-        C_Timer.After(1.5, function()
-            if MitzuMPlus.ResumeOverlayIfActive then
-                MitzuMPlus:ResumeOverlayIfActive()
             end
         end)
         -- Detectar auto-abandono: run activa pero ya no estamos en M+
@@ -444,9 +405,9 @@ function MitzuMPlus:OnPlayerEnteringWorld()
     end
 end
 
--- ───────────────────────────────────────────────────────────────────────────
+-- ---------------------------------------------------------------------------
 -- ABANDONO DE GRUPO DURANTE RUN ACTIVA
--- ───────────────────────────────────────────────────────────────────────────
+-- ---------------------------------------------------------------------------
 function MitzuMPlus:OnGroupRosterUpdate()
     local run = _G.MitzuMPlusCurrentRun
     if not run then return end
@@ -502,8 +463,8 @@ function MitzuMPlus:OnGroupRosterUpdate()
 end
 
 function MitzuMPlus:OnChallengeStart()
-    -- ─────────────────────────────────────────────────────────────────────
-    -- BUG CTX-1 (v7.11.0) — este handler colgaba de CHALLENGE_MODE_START, y
+    -- ---------------------------------------------------------------------
+    -- BUG CTX-1 (v7.11.0) - este handler colgaba de CHALLENGE_MODE_START, y
     -- ese evento NO significa que la llave haya empezado: se dispara al
     -- ENTRAR a la mazmorra en modo piedra. Resultado visto en vivo:
     -- "M+ Iniciada: Estanques de Vida Rubi +4" antes de insertar la piedra, y
@@ -512,7 +473,7 @@ function MitzuMPlus:OnChallengeStart()
     -- La autoridad es IsChallengeModeActive(). Si todavia no lo esta, no se
     -- arranca nada: DungeonContext vuelve a llamar aqui por MITZU_KEY_STARTED
     -- cuando la llave arranca de verdad (ver el final de este fichero).
-    -- ─────────────────────────────────────────────────────────────────────
+    -- ---------------------------------------------------------------------
     local activa = C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive
                    and C_ChallengeMode.IsChallengeModeActive()
     if not activa then
@@ -630,9 +591,25 @@ function MitzuMPlus:OnChallengeStart()
         run.equippedItems[slotID] = GetInventoryItemLink("player", slotID)
     end
 
-    run.startTime = Now()
+    -- La identidad viene del reloj persistente, no del instante de carga del
+    -- addon. Así /reload conserva el inicio real y una finalización antigua no
+    -- puede crear una segunda run de duración cero.
+    if self.RunSession and self.RunSession.StartOrRestore then
+        local session, sessionState = self.RunSession:StartOrRestore(run.dungeonID, run.keyLevel)
+        if not session then
+            if self.Print then
+                self:Print("|cFFFF9922Inicio ignorado:|r el cliente aún expone la llave ya completada.")
+            end
+            return
+        end
+        run.sessionID = session.id
+        run.sessionRecovered = sessionState == "RESTORED"
+        run.startTime = tonumber(session.startedAt) or Now()
+    else
+        run.startTime = Now()
+    end
 
-    -- ── Capturar miembros del grupo ──────────────────────────────────────────
+    -- -- Capturar miembros del grupo ------------------------------------------
     run.group = {}
     local isRaid = IsInRaid and IsInRaid()
     local groupSize = GetNumGroupMembers and GetNumGroupMembers() or 0
@@ -656,6 +633,7 @@ function MitzuMPlus:OnChallengeStart()
         local memberSpec = isPlayer and (run.playerSpec or "") or ""
         local memberSpecID = isPlayer and (run.playerSpecID or 0) or 0
         local memberRating = GetUnitMythicRating(unit, unitName, unitRealm)
+        local memberRaiderIO = GetRaiderIOScore(unitName, unitRealm)
         table.insert(run.group, {
             class  = cls or "",
             role   = unitRole,
@@ -664,6 +642,7 @@ function MitzuMPlus:OnChallengeStart()
             spec   = memberSpec,
             specID = memberSpecID,
             mythicRating = memberRating,
+            raiderIOScore = memberRaiderIO,
         })
     end
     CaptureUnit("player")
@@ -682,7 +661,7 @@ function MitzuMPlus:OnChallengeStart()
         pcall(function() self.InspectQueue:StartForRun(run) end)
     end
 
-    -- ── LootTracker: items que caen a cada miembro (CHAT_MSG_LOOT) ──────
+    -- -- LootTracker: items que caen a cada miembro (CHAT_MSG_LOOT) ------
     if self.LootTracker then
         self.LootTracker:Start()
     end
@@ -695,13 +674,10 @@ function MitzuMPlus:OnChallengeStart()
     if self.KeystoneTracker and self.KeystoneTracker.Start then
         pcall(self.KeystoneTracker.Start, self.KeystoneTracker, run)
     end
-    if self.RouteAdvisor and self.RouteAdvisor.Start then
-        pcall(self.RouteAdvisor.Start, self.RouteAdvisor, run)
-    end
 
     self._currentRunRole = run.playerRole
 
-    -- ── ACTIVAR TRACKING ────────────────────────────────────────────────────
+    -- -- ACTIVAR TRACKING ----------------------------------------------------
     -- BUG FIX (ADDON_ACTION_FORBIDDEN): antes hacíamos self:RegisterEvent
     -- vía AceEvent-3.0 aquí, lo que disparaba taint con HandyNotes. Ahora
     -- los eventos ya están registrados en _combatFrame (frame privado) desde
@@ -722,14 +698,8 @@ function MitzuMPlus:OnChallengeStart()
 
     _G.MitzuMPlusCurrentRun = run
 
-    -- v5.4.2: ShowOverlay arranca el ticker externo del Coach. Ya NO hace falta
-    -- acertar con el instante exacto: si IsChallengeModeActive() todavia es
-    -- false (cuenta atras), el ticker sigue sondeando y el overlay aparece solo
-    -- en cuanto la key arranca de verdad. Antes, ese unico intento a +0.20s
-    -- podia caer en la vista de PRUEBA y quedarse ahi toda la key.
-    if self.ShowOverlay then
-        self:ShowOverlay()
-    end
+    -- v7.14: aqui se arrancaba el overlay clasico del Coach. Ya no existe: el
+    -- Key Prediction HUD se muestra solo por DungeonContext (RUNNING).
     -- Reset per-run diagnostic flags
     self._meterNoSessionLogged = nil
     self._meterFirstPollLogged = nil
@@ -741,7 +711,7 @@ function MitzuMPlus:OnChallengeStart()
     self._lastMeterExploreTime = nil
     self._meterSingleArgLogged = nil
 
-    -- ── DIAGNOSTIC LOG: run start context ────────────────────────────────
+    -- -- DIAGNOSTIC LOG: run start context --------------------------------
     if self.ErrorLogger and self.ErrorLogger.LogEvent then
         -- Enumerate C_DamageMeter keys to discover available methods
         local meterKeys = "N/A"
@@ -775,844 +745,23 @@ function MitzuMPlus:OnChallengeStart()
 
     if self.Print then
         self:Print(string.format(
-            "|cFF21de66M+ Iniciada:|r %s +%d | Rol: %s (%s) | Fuente: %s",
+            "|cFF21de66M+ Iniciada:|r %s +%d | Rol: %s (%s)",
             run.dungeonName, run.keyLevel,
-            run.playerRole, run.playerSpec,
-            run.dataSource))
+            run.playerRole, run.playerSpec))
     end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- MIDNIGHT 12.0: TRACKING VÍA C_DamageMeter + UNIT_COMBAT
--- ─────────────────────────────────────────────────────────────────────────────
--- En Midnight, CLEU no existe para addons. Usamos:
---   1. C_DamageMeter API para obtener totales de daño/healing al final
---   2. UNIT_COMBAT para tracking en tiempo real (limitado a eventos del jugador)
---   3. UNIT_HEALTH para detectar muertes propias
---   4. SPELL_UPDATE_COOLDOWN + aura events para kicks/dispels/defensivos
--- ─────────────────────────────────────────────────────────────────────────────
-
-function MitzuMPlus:RegisterMidnightCombatTracking()
-    -- BUG FIX (ADDON_ACTION_FORBIDDEN): los eventos UNIT_COMBAT, UNIT_HEALTH,
-    -- DAMAGE_METER_COMBAT_SESSION_UPDATED y UNIT_SPELLCAST_SUCCEEDED YA están
-    -- registrados en _combatFrame. Aquí solo activamos el gate.
-    self._trackingActive = true
-
-    -- Polling periódico: C_DamageMeter no emite eventos en cada hit,
-    -- así que polleamos cada 5 segundos para mantener los trackers actualizados.
-    -- Check for REAL Midnight API (GetCombatSessionSourceFromType) or legacy (GetPartyData)
-    if C_DamageMeter
-        and (C_DamageMeter.GetCombatSessionSourceFromType or C_DamageMeter.GetPartyData)
-        and C_Timer and C_Timer.NewTicker then
-        self._meterPollTicker = C_Timer.NewTicker(5.0, function()
-            local run = _G.MitzuMPlusCurrentRun
-            if run then
-                MitzuMPlus:PollDamageMeterData(run)
-            end
-        end)
-    end
-end
-
-function MitzuMPlus:UnregisterMidnightCombatTracking()
-    -- BUG FIX (ADDON_ACTION_FORBIDDEN): no llamamos UnregisterEvent porque
-    -- nuestro _combatFrame ya gatea via _trackingActive. Solo paramos el
-    -- polling periódico de C_DamageMeter.
-    if self._meterPollTicker then
-        self._meterPollTicker:Cancel()
-        self._meterPollTicker = nil
-    end
-end
-
--- ── Interrupt Spell IDs (para detectar kicks vía UNIT_SPELLCAST_SUCCEEDED) ───
-local INTERRUPT_SPELL_IDS = {
-    [47528]  = true,  -- Mind Freeze (DK)
-    [183752] = true,  -- Disrupt (DH)
-    [106839] = true,  -- Skull Bash (Druid)
-    [147362] = true,  -- Counter Shot (Hunter)
-    [187707] = true,  -- Muzzle (Hunter)
-    [2139]   = true,  -- Counterspell (Mage)
-    [116705] = true,  -- Spear Hand Strike (Monk)
-    [96231]  = true,  -- Rebuke (Paladin)
-    [15487]  = true,  -- Silence (Priest)
-    [1766]   = true,  -- Kick (Rogue)
-    [57994]  = true,  -- Wind Shear (Shaman)
-    [19647]  = true,  -- Spell Lock (Warlock)
-    [6552]   = true,  -- Pummel (Warrior)
-    [351338] = true,  -- Quell (Evoker)
-}
-
--- Handler: detectar kicks cuando el jugador castea un spell de interrupt.
--- En Midnight (IS_MIDNIGHT=true) CLEU no está disponible, así que contamos
--- kicks aquí vía UNIT_SPELLCAST_SUCCEEDED. En pre-Midnight, los kicks se
--- cuentan vía SPELL_INTERRUPT (CLEU) y este handler no hace nada.
-function MitzuMPlus:OnSpellcastSucceeded(event, unit, castGUID, spellID)
-    if unit ~= "player" then return end
-    local run = _G.MitzuMPlusCurrentRun
-    if not run then return end
-
-    -- Un secreto no se convierte ni se compara. Este handler es solo para
-    -- casts del jugador, pero comparte la misma politica fail-closed.
-    if type(_issecretvalue) ~= "function" then return end
-    local okSecret, isSecret = pcall(_issecretvalue, spellID)
-    if not okSecret or isSecret ~= false then return end
-    if spellID == nil then return end
-    spellID = tonumber(spellID) -- ya demostrado no secreto
-    if not spellID then return end
-
-    if IS_MIDNIGHT and INTERRUPT_SPELL_IDS[spellID] then
-        run.stats.kicks      = (run.stats.kicks      or 0) + 1
-        run.stats.kicksGroup = (run.stats.kicksGroup or 0) + 1
-        run.timeline[#run.timeline + 1] = { timestamp = Now(), type = "kick", note = "Interrupción" }
-    end
-end
-
--- UNIT_COMBAT: solo conserva daño recibido del jugador (WOUND).
--- No se usa HEAL como proxy porque en Midnight no identifica de forma fiable
--- quién originó la sanación y podría fabricar estadísticas incorrectas.
-function MitzuMPlus:OnUnitCombat(event, unitTarget, action, descriptor, damage, damageType)
-    local run = _G.MitzuMPlusCurrentRun
-    if not run or unitTarget ~= "player" then return end
-
-    if _issecretvalue then
-        if action ~= nil and _issecretvalue(action) then
-            local ok, plain = pcall(string.format, "%s", action)
-            action = (ok and plain) or nil
-        end
-        if damage ~= nil and _issecretvalue(damage) then
-            local ok, plain = pcall(tonumber, damage)
-            damage = (ok and plain) or 0
-        end
-    end
-
-    damage = tonumber(damage) or 0
-    if action == "WOUND" and damage > 0 then
-        run.stats.damageTaken = (run.stats.damageTaken or 0) + damage
-    end
-end
-
--- Detectar muerte del jugador
--- FIX BUG-TAINT-1: En Midnight 12.0, UnitHealth() retorna un "secret number"
--- que no puede compararse con operadores estándar (==, >, <). Usar
--- UnitIsDeadOrGhost() en su lugar, que retorna un booleano limpio.
-function MitzuMPlus:OnUnitHealth(event, unit)
-    if unit ~= "player" then return end
-    local run = _G.MitzuMPlusCurrentRun
-    if not run then return end
-
-    local isDead = UnitIsDeadOrGhost("player")
-    if isDead and not self._playerDeadFlag then
-        self._playerDeadFlag = true
-        run.stats.deaths = (run.stats.deaths or 0) + 1
-        -- BUG FIX (verify reporte: timestamps mezclados epoch/GetTime):
-        -- unificamos a epoch con Now().
-        run.timeline[#run.timeline + 1] = {
-            timestamp = Now(), type = "death", note = "Muerte"
-        }
-        if self.EventBus then
-            self.EventBus:Emit("PLAYER_DIED", GetTime())
-        end
-    elseif not isDead then
-        self._playerDeadFlag = false
-    end
-end
-
--- C_DamageMeter: obtener datos oficiales del meter integrado de Blizzard
--- Real API (Midnight 12.0.5): session-based model
---   IsDamageMeterAvailable() → bool
---   GetAvailableCombatSessions() → table of session objects
---   GetCombatSessionFromType(sessionType) → session data
---   GetCombatSessionSourceFromType(sessionType) → per-player breakdown
---   GetCombatSessionFromID(sessionID) → session data
---   GetCombatSessionSourceFromID(sessionID) → per-player breakdown
---   GetSessionDurationSeconds(sessionType) → number
---   ResetAllCombatSessions() → void
-
-function MitzuMPlus:OnDamageMeterUpdate(event, ...)
-    local run = _G.MitzuMPlusCurrentRun
-    if not run then return end
-    if not C_DamageMeter then return end
-
-    local _EL = self.ErrorLogger
-    local function diag(msg, data)
-        if _EL and _EL.LogEvent then _EL:LogEvent("METER_EVENT", msg, data) end
-    end
-
-    -- Log event firing (once per run)
-    if not self._meterEventLogged then
-        self._meterEventLogged = true
-        local nArgs = select("#", ...)
-        local argDump = ""
-        if nArgs > 0 then
-            local parts = {}
-            for i = 1, math.min(nArgs, 5) do
-                local a = select(i, ...)
-                parts[#parts + 1] = tostring(a) .. "(" .. type(a) .. ")"
-            end
-            argDump = table.concat(parts, ", ")
-        end
-        diag("Event fired", { nArgs = nArgs, args = argDump ~= "" and argDump or "none" })
-    end
-
-    -- Auto-explore: dump full API response to SavedVariables
-    -- Rate-limit to once per 30s (not once-per-run — first call may be too early)
-    local now = GetTime()
-    if not self._lastMeterExploreTime or (now - self._lastMeterExploreTime) > 30 then
-        self._lastMeterExploreTime = now
-        self:_ExploreDamageMeterAPI(run)
-    end
-
-    -- Poll actual data using the real API (TWO-arg model)
-    self:PollDamageMeterDataV2(run)
-end
-
--- Full API exploration — dumps to db.global.meterExploreData for diagnostic review
--- KEY INSIGHT: GetCombatSessionSourceFromType likely takes TWO args:
---   (damageMeterType, sessionType) where:
---     damageMeterType = Enum.DamageMeterType (0=DamageDone..10=EnemyDamageTaken)
---     sessionType     = Enum.DamageMeterSessionType (0=Overall, 1=Current, 2=Expired)
-function MitzuMPlus:_ExploreDamageMeterAPI(run)
-    local cdm = C_DamageMeter
-    if not cdm then return end
-
-    local _isSecret = rawget(_G, "issecretvalue")
-    local function safe(v, depth)
-        depth = depth or 0
-        if v == nil then return nil end
-        if _isSecret and _isSecret(v) then return "<SECRET>" end
-        if type(v) == "table" then
-            if depth > 3 then return "<DEEP>" end
-            local t = {}
-            local n = 0
-            for k, val in pairs(v) do
-                n = n + 1
-                if n > 50 then t["_TRUNCATED"] = true; break end
-                t[tostring(k)] = safe(val, depth + 1)
-            end
-            return t
-        end
-        return v
-    end
-
-    local explore = { timestamp = time(), dungeon = run.dungeonName or "?", version = 2 }
-
-    -- 1) GetAvailableCombatSessions
-    if cdm.GetAvailableCombatSessions then
-        local ok, res = pcall(cdm.GetAvailableCombatSessions)
-        explore.sessions = ok and safe(res) or { error = tostring(res) }
-    end
-
-    -- 2) GetSessionDurationSeconds with sessionType 0-2
-    explore.durationBySessionType = {}
-    if cdm.GetSessionDurationSeconds then
-        for st = 0, 2 do
-            local ok, res = pcall(cdm.GetSessionDurationSeconds, st)
-            if ok and res ~= nil then
-                explore.durationBySessionType[st] = res
-            end
-        end
-    end
-
-    -- 3) TWO-ARG exploration: GetCombatSessionSourceFromType(damageMeterType, sessionType)
-    --    damageMeterType: 0-10, sessionType: 0-2
-    explore.source2arg = {}
-    local source2argCount = 0
-    if cdm.GetCombatSessionSourceFromType then
-        for dmgType = 0, 10 do
-            for sessType = 0, 2 do
-                local ok, res = pcall(cdm.GetCombatSessionSourceFromType, dmgType, sessType)
-                if ok and res ~= nil then
-                    local key = "t" .. dmgType .. "_s" .. sessType
-                    explore.source2arg[key] = safe(res)
-                    source2argCount = source2argCount + 1
-                end
-            end
-        end
-    end
-
-    -- 4) TWO-ARG: GetCombatSessionFromType(damageMeterType, sessionType)
-    explore.session2arg = {}
-    local session2argCount = 0
-    if cdm.GetCombatSessionFromType then
-        for dmgType = 0, 10 do
-            for sessType = 0, 2 do
-                local ok, res = pcall(cdm.GetCombatSessionFromType, dmgType, sessType)
-                if ok and res ~= nil then
-                    local key = "t" .. dmgType .. "_s" .. sessType
-                    explore.session2arg[key] = safe(res)
-                    session2argCount = session2argCount + 1
-                end
-            end
-        end
-    end
-
-    -- 5) SINGLE-ARG fallback: GetCombatSessionSourceFromType(type) with 0-10
-    explore.source1arg = {}
-    local source1argCount = 0
-    if cdm.GetCombatSessionSourceFromType then
-        for t = 0, 10 do
-            local ok, res = pcall(cdm.GetCombatSessionSourceFromType, t)
-            if ok and res ~= nil then
-                explore.source1arg[t] = safe(res)
-                source1argCount = source1argCount + 1
-            end
-        end
-    end
-
-    -- 6) SINGLE-ARG fallback: GetCombatSessionFromType(type) with 0-10
-    explore.session1arg = {}
-    if cdm.GetCombatSessionFromType then
-        for t = 0, 10 do
-            local ok, res = pcall(cdm.GetCombatSessionFromType, t)
-            if ok and res ~= nil then
-                explore.session1arg[t] = safe(res)
-            end
-        end
-    end
-
-    -- 7) ID-BASED exploration (the correct API path!)
-    --    GetCombatSessionFromID(sessionID, damageMeterType) → session info
-    --    GetCombatSessionSourceFromID(sessionID, damageMeterType) → per-player sources
-    --    Error messages confirmed: both need (sessionID: number, type: number)
-    local sessionFromIDCount = 0
-    local sourceFromIDCount = 0
-    if cdm.GetAvailableCombatSessions then
-        local ok, sessions = pcall(cdm.GetAvailableCombatSessions)
-        if ok and type(sessions) == "table" and #sessions > 0 then
-            explore.sessionFromID = {}
-            explore.sourceFromID = {}
-            -- Key dmgTypes: 0=DamageDone, 2=HealingDone, 5=Interrupts, 6=Dispels, 7=DamageTaken
-            local probeDmgTypes = { 0, 2, 5, 6, 7 }
-            -- Probe first 3 sessions to limit overhead
-            local maxSessions = math.min(#sessions, 3)
-            for i = 1, maxSessions do
-                local s = sessions[i]
-                local sid = type(s) == "table" and (s.sessionID or s.id or s.sessionId) or s
-                if sid and type(sid) == "number" then
-                    for _, dmgType in ipairs(probeDmgTypes) do
-                        local key = "sid" .. sid .. "_t" .. dmgType
-                        -- GetCombatSessionFromID(sessionID, damageMeterType)
-                        if cdm.GetCombatSessionFromID then
-                            local ok2, r2 = pcall(cdm.GetCombatSessionFromID, sid, dmgType)
-                            if ok2 and r2 ~= nil then
-                                explore.sessionFromID[key] = safe(r2)
-                                sessionFromIDCount = sessionFromIDCount + 1
-                            end
-                        end
-                        -- GetCombatSessionSourceFromID(sessionID, damageMeterType)
-                        if cdm.GetCombatSessionSourceFromID then
-                            local ok3, r3 = pcall(cdm.GetCombatSessionSourceFromID, sid, dmgType)
-                            if ok3 and r3 ~= nil then
-                                explore.sourceFromID[key] = safe(r3)
-                                sourceFromIDCount = sourceFromIDCount + 1
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- 8) Scan for Enum.DamageMeter*
-    if _G.Enum then
-        for enumName, enumVal in pairs(_G.Enum) do
-            if type(enumName) == "string" and enumName:find("DamageMeter") then
-                explore["Enum_" .. enumName] = safe(enumVal)
-            end
-        end
-    end
-
-    -- Save to db.global for diagnostic review
-    if self.db and self.db.global then
-        self.db.global.meterExploreData = explore
-    end
-
-    -- Log summary
-    local _EL = self.ErrorLogger
-    if _EL and _EL.LogEvent then
-        local durParts = {}
-        for st, d in pairs(explore.durationBySessionType) do
-            durParts[#durParts + 1] = "s" .. st .. "=" .. tostring(d) .. "s"
-        end
-        _EL:LogEvent("METER_EXPLORE", "Auto-explore during M+", {
-            sessionsAvailable = type(explore.sessions) == "table" and #explore.sessions or 0,
-            source2argHits = source2argCount,
-            session2argHits = session2argCount,
-            source1argHits = source1argCount,
-            sessionFromIDHits = sessionFromIDCount,
-            sourceFromIDHits = sourceFromIDCount,
-            durations = #durParts > 0 and table.concat(durParts, ", ") or "none",
-        })
-    end
-end
-
--- New V2 polling: ID-BASED API
--- 1. GetAvailableCombatSessions() → [{sessionID, name, durationSeconds}, ...]
--- 2. GetCombatSessionSourceFromID(sessionID, damageMeterType) → per-player sources
--- DamageMeterType: DamageDone=0, HealingDone=2, Interrupts=5, Dispels=6, DamageTaken=7
-local DMT_DAMAGE_DONE    = 0
-local DMT_HEALING_DONE   = 2
-local DMT_INTERRUPTS     = 5
-local DMT_DISPELS        = 6
-local DMT_DAMAGE_TAKEN   = 7
-
--- Value field names the API might use per source entry
-local VALUE_FIELDS = { "amount", "value", "total", "totalAmount",
-    "damageDone", "damage", "damageTotal", "healingDone", "healing",
-    "healTotal", "damageTaken", "interrupts", "dispels" }
--- Identity field names for matching players
-local GUID_FIELDS_V2 = { "guid", "unitGUID", "GUID", "playerGUID", "unitToken" }
-local NAME_FIELDS_V2 = { "name", "playerName", "unitName", "sourceName" }
-
-function MitzuMPlus:PollDamageMeterDataV2(run)
-    local cdm = C_DamageMeter
-    if not cdm then return end
-
-    local _isSecret = rawget(_G, "issecretvalue")
-    local function safeNum(v)
-        if v == nil then return 0 end
-        if _isSecret and _isSecret(v) then return 0 end
-        return tonumber(v) or 0
-    end
-    local function pickField(tbl, fields)
-        for _, f in ipairs(fields) do
-            local ok2, v = pcall(function() return tbl[f] end)
-            if ok2 and v ~= nil then
-                if _isSecret and _isSecret(v) then return nil end
-                return v
-            end
-        end
-        return nil
-    end
-    local function pickValue(tbl)
-        for _, f in ipairs(VALUE_FIELDS) do
-            local ok2, v = pcall(function() return tbl[f] end)
-            if ok2 and v ~= nil then
-                if _isSecret and _isSecret(v) then return 0 end
-                return tonumber(v) or 0
-            end
-        end
-        return 0
-    end
-
-    local playerGUID = UnitGUID("player")
-    local playerName = UnitName("player")
-
-    -- ── PRIMARY PATH: ID-based ──────────────────────────────────────────
-    -- GetAvailableCombatSessions() → session list
-    -- GetCombatSessionSourceFromID(sessionID, damageMeterType) → per-player data
-    local sessions = nil
-    if cdm.GetAvailableCombatSessions then
-        local ok, res = pcall(cdm.GetAvailableCombatSessions)
-        if ok and type(res) == "table" and #res > 0 then
-            sessions = res
-        end
-    end
-
-    -- Accumulate per-player totals across ALL sessions for each stat type
-    -- Key = GUID or name, Value = {guid, name, damage, healing, taken, kicks, dispels}
-    local playerTotals = {}  -- keyed by GUID or name
-    local anyData = false
-
-    local function addSourceData(sessionID, dmgType, statField)
-        if not cdm.GetCombatSessionSourceFromID then return end
-        local ok, sources = pcall(cdm.GetCombatSessionSourceFromID, sessionID, dmgType)
-        if not ok or type(sources) ~= "table" then return end
-
-        for _, entry in ipairs(sources) do
-            if type(entry) == "table" then
-                local eGUID = pickField(entry, GUID_FIELDS_V2)
-                local eName = pickField(entry, NAME_FIELDS_V2)
-                local eVal  = pickValue(entry)
-                local key   = eGUID or eName
-                if key then
-                    if not playerTotals[key] then
-                        playerTotals[key] = { guid = eGUID, name = eName or "?",
-                            damage = 0, healing = 0, taken = 0, kicks = 0, dispels = 0 }
-                    end
-                    playerTotals[key][statField] = (playerTotals[key][statField] or 0) + eVal
-                    if eVal > 0 then anyData = true end
-                end
-            end
-        end
-    end
-
-    if sessions then
-        for _, s in ipairs(sessions) do
-            local sid = type(s) == "table" and (s.sessionID or s.id or s.sessionId) or s
-            if sid and type(sid) == "number" then
-                addSourceData(sid, DMT_DAMAGE_DONE,  "damage")
-                addSourceData(sid, DMT_HEALING_DONE, "healing")
-                addSourceData(sid, DMT_DAMAGE_TAKEN, "taken")
-                addSourceData(sid, DMT_INTERRUPTS,   "kicks")
-                addSourceData(sid, DMT_DISPELS,      "dispels")
-            end
-        end
-    end
-
-    -- ── FALLBACK: Type-based (in case SourceFromID returns nothing) ─────
-    if not anyData and cdm.GetCombatSessionSourceFromType then
-        for _, sessType in ipairs({1, 0, 2}) do  -- Current, Overall, Expired
-            local function queryFallback(dmgType, statField)
-                local ok, sources = pcall(cdm.GetCombatSessionSourceFromType, dmgType, sessType)
-                if not ok or type(sources) ~= "table" then return end
-                for _, entry in ipairs(sources) do
-                    if type(entry) == "table" then
-                        local eGUID = pickField(entry, GUID_FIELDS_V2)
-                        local eName = pickField(entry, NAME_FIELDS_V2)
-                        local eVal  = pickValue(entry)
-                        local key   = eGUID or eName
-                        if key and eVal > 0 then
-                            if not playerTotals[key] then
-                                playerTotals[key] = { guid = eGUID, name = eName or "?",
-                                    damage = 0, healing = 0, taken = 0, kicks = 0, dispels = 0 }
-                            end
-                            if eVal > (playerTotals[key][statField] or 0) then
-                                playerTotals[key][statField] = eVal
-                            end
-                            anyData = true
-                        end
-                    end
-                end
-            end
-            queryFallback(DMT_DAMAGE_DONE,  "damage")
-            queryFallback(DMT_HEALING_DONE, "healing")
-            queryFallback(DMT_DAMAGE_TAKEN, "taken")
-            queryFallback(DMT_INTERRUPTS,   "kicks")
-            queryFallback(DMT_DISPELS,      "dispels")
-            if anyData then break end  -- stop at first sessType that has data
-        end
-    end
-
-    -- ── Extract player stats from accumulated totals ────────────────────
-    local dmgVal, healVal, takenVal, kicksVal, dispelsVal = 0, 0, 0, 0, 0
-    for key, p in pairs(playerTotals) do
-        local isPlayer = false
-        if p.guid and p.guid == playerGUID then isPlayer = true
-        elseif p.name and p.name == playerName then isPlayer = true end
-        if isPlayer then
-            dmgVal     = p.damage  or 0
-            healVal    = p.healing or 0
-            takenVal   = p.taken   or 0
-            kicksVal   = p.kicks   or 0
-            dispelsVal = p.dispels or 0
-            break
-        end
-    end
-
-    -- Update run stats (only increase, never decrease)
-    if anyData then
-        if dmgVal > 0 then run._dmgSource = "C_DamageMeter" end
-        if healVal > 0 then run._healSource = "C_DamageMeter" end
-
-        if dmgVal > (run.stats.damageTotal or 0) then
-            run.stats.damageTotal = dmgVal
-        end
-        if healVal > (run.stats.healingTotal or 0) then
-            run.stats.healingTotal = healVal
-        end
-        if takenVal > (run.stats.damageTaken or 0) then
-            run.stats.damageTaken = takenVal
-        end
-        if kicksVal > (run.stats.kicks or 0) then
-            run.stats.kicks = kicksVal
-        end
-        if dispelsVal > (run.stats.dispels or 0) then
-            run.stats.dispels = dispelsVal
-        end
-
-        -- Log first successful poll
-        if not self._meterValuesLogged and self.ErrorLogger and self.ErrorLogger.LogEvent then
-            self._meterValuesLogged = true
-            self.ErrorLogger:LogEvent("METER", "V2 poll success (ID-based)", {
-                dmg = dmgVal,
-                heal = healVal,
-                taken = takenVal,
-                kicks = kicksVal,
-                dispels = dispelsVal,
-                sessions = sessions and #sessions or 0,
-                source = "C_DamageMeter",
-            })
-        end
-    else
-        -- Log first poll with no data (once per run)
-        if not self._meterNoMatchLogged and self.ErrorLogger and self.ErrorLogger.LogEvent then
-            self._meterNoMatchLogged = true
-            self.ErrorLogger:LogEvent("METER", "V2 poll: no data", {
-                playerGUID = playerGUID or "nil",
-                playerName = playerName or "nil",
-                sessions = sessions and #sessions or 0,
-                hasSourceFromID = cdm.GetCombatSessionSourceFromID and true or false,
-                hasSourceFromType = cdm.GetCombatSessionSourceFromType and true or false,
-            })
-        end
-    end
-end
-
--- BUG FIX (verify reporte Run #10: damageTotal=0, healingTotal=0):
--- Antes matcheábamos al jugador estrictamente con `memberData.guid == playerGUID`.
--- En Midnight, C_DamageMeter.GetPartyData puede usar otros nombres (GUID,
--- playerGUID, unitToken). Ahora:
---   1) probamos múltiples nombres para GUID
---   2) fallback: match por UnitName("player")
---   3) multi-field para damageDone/healingDone/interrupts/dispels/damageTaken
--- Además, la PRIMERA vez que matcheamos hacemos un dump raw a SavedVariables
--- para diagnóstico (se limpia tras /reload).
-local POLL_GUID_FIELDS    = { "guid", "unitGUID", "GUID", "playerGUID", "unitToken", "unit" }
-local POLL_NAME_FIELDS    = { "name", "playerName", "unitName" }
-local POLL_DMG_FIELDS     = { "damageDone", "damage", "damageTotal", "totalDamage" }
-local POLL_HEAL_FIELDS    = { "healingDone", "healing", "healTotal", "totalHealing" }
-local POLL_TAKEN_FIELDS   = { "damageTaken", "damageReceived", "takenDamage" }
-local POLL_KICKS_FIELDS   = { "interrupts", "kicks", "interruptCount" }
-local POLL_DISPELS_FIELDS = { "dispels", "dispelCount" }
-
--- FIX BUG-SECRET-2: C_DamageMeter fields may be Secret Values in Midnight 12.0.5.
--- issecretvalue() check prevents crashes when reading opaque wrapped values.
--- NOTE: _issecretvalue is defined at module scope (line ~32) for use across all handlers.
-
-local function _pollPickNum(tbl, fields)
-    for _, f in ipairs(fields) do
-        local ok, v = pcall(function() return tbl[f] end)
-        if ok and v ~= nil then
-            if _issecretvalue and _issecretvalue(v) then
-                -- Secret value: can't use as number, skip
-            else
-                local n = tonumber(v)
-                if n and n > 0 then return n end
-            end
-        end
-    end
-    return 0
-end
-
-local function _pollPickStr(tbl, fields)
-    for _, f in ipairs(fields) do
-        local ok, v = pcall(function() return tbl[f] end)
-        if ok and v ~= nil then
-            if _issecretvalue and _issecretvalue(v) then
-                -- Secret value: can't use as string, skip
-            elseif type(v) == "string" and v ~= "" then
-                return v
-            end
-        end
-    end
-    return nil
-end
-
--- Dump un snapshot raw de partyData al SavedVariables para que el usuario
--- pueda mandarnos la estructura si nada matchea. Se hace UNA sola vez por
--- sesión del juego.
-local function _dumpPartyDataOnce(partyData)
-    if MitzuMPlus._partyDataDumped then return end
-    MitzuMPlus._partyDataDumped = true
-    local sv = _G.MitzuMPlusDB
-    if not sv then return end
-    sv._diag = sv._diag or {}
-    sv._diag.partyDataDump = {
-        timestamp = time(),
-        sample = {}
-    }
-    -- Copia superficial de hasta 6 entries con todos sus campos
-    -- FIX BUG-SECRET-2: guard against secret values when copying fields
-    local count = 0
-    for k, m in pairs(partyData) do
-        if count >= 6 then break end
-        if type(m) == "table" then
-            local copy = {}
-            for kk, vv in pairs(m) do
-                local skip = false
-                if _issecretvalue and _issecretvalue(vv) then
-                    copy[kk] = "<secret>"
-                    skip = true
-                end
-                if not skip and type(vv) ~= "table" and type(vv) ~= "function" then
-                    copy[kk] = vv
-                end
-            end
-            sv._diag.partyDataDump.sample[tostring(k)] = copy
-            count = count + 1
-        end
-    end
-end
-
--- Leer datos de C_DamageMeter y aplicarlos al run actual
--- Routes to V2 (session-based API) first, then legacy GetPartyData fallback
-function MitzuMPlus:PollDamageMeterData(run)
-    if not run then return end
-    if not C_DamageMeter then return end
-
-    -- PRIMARY: Use V2 session-based API (the REAL Midnight 12.0.5 API)
-    if C_DamageMeter.GetCombatSessionSourceFromType then
-        self:PollDamageMeterDataV2(run)
-        return
-    end
-
-    -- LEGACY FALLBACK: GetPartyData path (never executes in Midnight)
-    local _log = self.ErrorLogger and self.ErrorLogger.LogEvent
-    local function diag(msg, data)
-        if _log then self.ErrorLogger:LogEvent("METER", msg, data) end
-    end
-
-    if not C_DamageMeter.GetPartyData or not C_DamageMeter.GetCurrentSessionID then
-        if not self._meterMissingLogged then
-            diag("C_DamageMeter sin GetPartyData ni GetCombatSessionSourceFromType", {
-                hasGetPartyData = C_DamageMeter.GetPartyData ~= nil,
-                hasGetCurrentSessionID = C_DamageMeter.GetCurrentSessionID ~= nil,
-                hasSourceFromType = C_DamageMeter.GetCombatSessionSourceFromType ~= nil,
-            })
-            self._meterMissingLogged = true
-        end
-        return
-    end
-
-    local sessionID
-    local okSid, sidResult = pcall(C_DamageMeter.GetCurrentSessionID)
-    if okSid then sessionID = sidResult end
-    if not sessionID then
-        -- Log once per run to avoid spam
-        if not self._meterNoSessionLogged then
-            diag("GetCurrentSessionID retornó nil", { pcallOk = okSid })
-            self._meterNoSessionLogged = true
-        end
-        return
-    end
-
-    local playerGUID = UnitGUID("player")
-    local playerName = UnitName("player")
-    if not playerGUID then return end
-
-    local ok, partyData = pcall(C_DamageMeter.GetPartyData, sessionID)
-    if not ok then
-        diag("GetPartyData pcall falló", { sessionID = tostring(sessionID), error = tostring(partyData) })
-        return
-    end
-    if not partyData then
-        diag("GetPartyData retornó nil", { sessionID = tostring(sessionID) })
-        return
-    end
-
-    -- Count entries and check for secret values in the top-level structure
-    local entryCount = 0
-    local hasSecretKeys = false
-    for k, v in pairs(partyData) do
-        entryCount = entryCount + 1
-        if _issecretvalue and type(k) ~= "number" and type(k) ~= "string" then
-            hasSecretKeys = true
-        end
-    end
-
-    -- Log first successful poll with structure info (once per run)
-    if not self._meterFirstPollLogged then
-        self._meterFirstPollLogged = true
-        diag("GetPartyData OK", {
-            sessionID = tostring(sessionID),
-            entries = entryCount,
-            hasSecretKeys = hasSecretKeys,
-        })
-    end
-
-    _dumpPartyDataOnce(partyData)
-
-    -- Buscar la entrada del jugador con matching robusto.
-    local playerEntry
-    local matchMethod = "none"
-    for _, memberData in pairs(partyData) do
-        if type(memberData) == "table" then
-            local guid = _pollPickStr(memberData, POLL_GUID_FIELDS)
-            if guid and guid == playerGUID then
-                playerEntry = memberData
-                matchMethod = "guid"
-                break
-            end
-        end
-    end
-    -- Fallback: match por nombre
-    if not playerEntry and playerName then
-        for _, memberData in pairs(partyData) do
-            if type(memberData) == "table" then
-                local nm = _pollPickStr(memberData, POLL_NAME_FIELDS)
-                if nm == playerName then
-                    playerEntry = memberData
-                    matchMethod = "name"
-                    break
-                end
-            end
-        end
-    end
-    -- Último fallback en Midnight: si sólo hay 1 entry, asumir que es el jugador
-    if not playerEntry then
-        local count, firstEntry = 0, nil
-        for _, memberData in pairs(partyData) do
-            if type(memberData) == "table" then
-                count = count + 1
-                firstEntry = firstEntry or memberData
-            end
-        end
-        if count == 1 then
-            playerEntry = firstEntry
-            matchMethod = "single_entry"
-        end
-    end
-    if not playerEntry then
-        -- Log why matching failed (once per run)
-        if not self._meterNoMatchLogged then
-            self._meterNoMatchLogged = true
-            diag("No se encontró entrada del jugador en partyData", {
-                entries = entryCount,
-                playerGUID = playerGUID,
-                playerName = playerName or "nil",
-            })
-        end
-        return
-    end
-
-    -- Ahora extraer campos con múltiples nombres posibles.
-    local dmg   = _pollPickNum(playerEntry, POLL_DMG_FIELDS)
-    local heal  = _pollPickNum(playerEntry, POLL_HEAL_FIELDS)
-    local taken = _pollPickNum(playerEntry, POLL_TAKEN_FIELDS)
-    local kicks = _pollPickNum(playerEntry, POLL_KICKS_FIELDS)
-    local disp  = _pollPickNum(playerEntry, POLL_DISPELS_FIELDS)
-
-    -- Log extracted values (once per run, or when values change significantly)
-    if not self._meterValuesLogged then
-        self._meterValuesLogged = true
-        diag("Datos extraídos del meter", {
-            matchMethod = matchMethod,
-            dmg = dmg, heal = heal, taken = taken,
-            kicks = kicks, dispels = disp,
-        })
-    end
-
-    -- Track data source for healing: C_DamageMeter vs UNIT_COMBAT fallback
-    if heal > 0 then
-        run._healSource = "C_DamageMeter"
-    end
-
-    if dmg > 0 then
-        run.stats.damageTotal = dmg
-        run._dmgSource = "C_DamageMeter"
-        self._lastMeterDamage = dmg
-    end
-    if heal  > 0 then run.stats.healingTotal  = heal  end
-    if taken > 0 then run.stats.damageTaken   = taken end
-    if kicks > 0 then run.stats.kicks   = kicks end
-    if disp  > 0 then run.stats.dispels = disp  end
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- CHALLENGE MODE — COMPLETADO
--- ─────────────────────────────────────────────────────────────────────────────
+-- Midnight-safe combat collection lives in MidnightSafeTracking.lua.
+-- Keeping one implementation avoids shadowed functions and diagnostic probes
+-- that wrote development-only payloads into SavedVariables.
+-- -----------------------------------------------------------------------------
+-- CHALLENGE MODE - COMPLETADO
+-- -----------------------------------------------------------------------------
 
 -- v5.4.2 (BUG A4): cierre unico del ciclo de vida de una run.
--- Antes ni OnChallengeCompleted ni OnChallengeReset apagaban el Coach,
--- reseteaban KeystoneTracker ni paraban RouteAdvisor. El overlay solo
--- desaparecia como efecto colateral de que Refresh() viera la run a nil, y
--- KeystoneTracker._active se quedaba en true indefinidamente entre runs.
+-- Cierre único del ciclo de vida de una run.
 -- IMPORTANTE: llamar SIEMPRE despues de haber capturado Enemy Forces.
 function MitzuMPlus:_TeardownRun(reason)
-    if self.HideOverlay then pcall(self.HideOverlay, self) end
-    if self.RouteAdvisor and self.RouteAdvisor.Stop then
-        pcall(self.RouteAdvisor.Stop, self.RouteAdvisor)
-    end
     if self.KeystoneTracker and self.KeystoneTracker.Reset then
         pcall(self.KeystoneTracker.Reset, self.KeystoneTracker)
     end
@@ -1629,6 +778,10 @@ function MitzuMPlus:_TeardownRun(reason)
         pcall(self.ClearCombatBaseline, self)
     end
     _G.MitzuMPlusCurrentRun = nil
+    if reason ~= "completed" and reason ~= "duplicate-completion"
+       and self.RunSession and self.RunSession.Clear then
+        pcall(self.RunSession.Clear, self.RunSession, reason)
+    end
     if self.EventBus then
         self.EventBus:Emit("RUN_TEARDOWN", reason)
     end
@@ -1652,15 +805,15 @@ function MitzuMPlus:OnChallengeCompleted()
     local completionTime, inTime = 0, false
     local isPractice = false
 
-    -- ═══════════════════════════════════════════════════════════════════════
+    -- =======================================================================
     -- FIX COMPLETION-1 (CRÍTICO): GetCompletionInfo() retorna:
     --   mapChallengeModeID, level, time, onTime, keystoneUpgradeLevels, practiceRun, ...
     -- El código anterior capturaba solo 3 retornos (completionMs, onTime, isPractice)
-    -- pensando que era (time, onTime, practice) — INCORRECTO desde 7.2.0.
+    -- pensando que era (time, onTime, practice) - INCORRECTO desde 7.2.0.
     --
     -- En 12.0+ existe GetChallengeCompletionInfo() que retorna un struct.
     -- Usamos la nueva API si existe, con fallback a la antigua correctamente parseada.
-    -- ═══════════════════════════════════════════════════════════════════════
+    -- =======================================================================
 
     if C_ChallengeMode then
         -- Ruta 1: Nueva API de 12.0+ (GetChallengeCompletionInfo retorna struct)
@@ -1671,6 +824,10 @@ function MitzuMPlus:OnChallengeCompleted()
                 inTime = info.onTime and true or false
                 isPractice = info.practiceRun and true or false
                 run.keystoneUpgradeLevels = tonumber(info.keystoneUpgradeLevels) or 0
+                -- v7.14: marca de origen. keystoneUpgradeLevels acaba en 0 tambien
+                -- cuando la API no responde, asi que por si solo no prueba nada;
+                -- el Key Prediction HUD solo afirma un resultado oficial con esto.
+                if completionTime > 0 then run.completionInfoSource = "CHALLENGE_COMPLETION_INFO" end
             end
         end
 
@@ -1683,6 +840,7 @@ function MitzuMPlus:OnChallengeCompleted()
                 local timeNum = tonumber(timeMs)
                 if timeNum and timeNum > 0 then
                     completionTime = math.floor(timeNum / 1000)
+                    run.completionInfoSource = "COMPLETION_INFO"
                 end
                 -- onTime es el 4to retorno (boolean)
                 if type(onTime) == "boolean" then
@@ -1729,17 +887,30 @@ function MitzuMPlus:OnChallengeCompleted()
         return
     end
 
+    if self.RunSession and self.RunSession.IsDuplicateFinalization then
+        local duplicate, why, priorID = self.RunSession:IsDuplicateFinalization(run, completionTime, endNow)
+        if duplicate then
+            if self.Print then
+                self:Print(string.format(
+                    "|cFFFF9922Finalización duplicada ignorada:|r %s (run %s).",
+                    tostring(why), tostring(priorID or "?")))
+            end
+            self:_TeardownRun("duplicate-completion")
+            return
+        end
+    end
+
     run.endTime        = endNow
     run.completionTime = completionTime
     run.inTime         = inTime
 
-    -- ── Recolectar datos finales según la fuente ─────────────────────────────
+    -- -- Recolectar datos finales según la fuente -----------------------------
     -- FIX STATS-1: Intentar C_DamageMeter primero si existe, luego CLEU fallback
     if IS_MIDNIGHT and C_DamageMeter then
         -- Primera lectura inmediata
         self:PollDamageMeterData(run)
 
-        -- FIX RACE-2: Escalated retries — C_DamageMeter can take several
+        -- FIX RACE-2: Escalated retries - C_DamageMeter can take several
         -- seconds to finalize data after CHALLENGE_MODE_COMPLETED.
         -- Retry at 0.5s, 2s, and 5s to maximize capture probability.
         if C_Timer and C_Timer.After then
@@ -1776,16 +947,16 @@ function MitzuMPlus:OnChallengeCompleted()
 
     -- Party combat events are intentionally not reconstructed in Midnight.
 
-    -- ── LootTracker: guardar loot por jugador en run.loot ────────────────
+    -- -- LootTracker: guardar loot por jugador en run.loot ----------------
     if self.LootTracker then
         self.LootTracker:Stop()
         self.LootTracker:ApplyToRun(run)
     end
 
-    -- ── Capture Enemy Forces final state from KeystoneTracker ──────────
+    -- -- Capture Enemy Forces final state from KeystoneTracker ----------
     -- BUG FIX (verify reporte: enemyForcesFinalPct=0, enemyForcesTotal=0):
     -- antes la captura estaba protegida por KeystoneTracker:IsActive(), pero
-    -- el tracker ya se reseteaba antes de llegar aquí → nunca se capturaba EF.
+    -- el tracker ya se reseteaba antes de llegar aquí -> nunca se capturaba EF.
     -- Ahora forzamos una lectura final con C_Scenario/KeystoneTracker sin
     -- depender del flag _active. Hacemos un Update() extra para refrescar.
     if self.KeystoneTracker then
@@ -1817,7 +988,7 @@ function MitzuMPlus:OnChallengeCompleted()
         end
     end
 
-    -- ── Midnight-safe final normalization ─────────────────────────────────
+    -- -- Midnight-safe final normalization ---------------------------------
     -- Never synthesize values Blizzard no longer exposes. C_DamageMeter is
     -- authoritative for combat metrics and may only be readable post-combat.
     local st = run.stats or {}
@@ -1846,16 +1017,11 @@ function MitzuMPlus:OnChallengeCompleted()
         self:_TeardownRun("save-failed")
         return
     end
-
-    -- ── Personal Best check ─────────────────────────────────────────────
-    if self.PersonalBest then
-        local pbResults = self.PersonalBest:CheckRun(run)
-        if pbResults and #pbResults > 0 then
-            self.PersonalBest:AnnounceResults(pbResults)
-        end
+    if self.RunSession and self.RunSession.Finalize then
+        pcall(self.RunSession.Finalize, self.RunSession, run, completionTime, endNow, runID)
     end
 
-    -- ── Data integrity: enforce run limit ────────────────────────────────
+    -- -- Data integrity: enforce run limit --------------------------------
     if self.DataManager then
         self.DataManager:EnforceRunLimit()
     end
@@ -1865,16 +1031,18 @@ function MitzuMPlus:OnChallengeCompleted()
         -- showToasts es el interruptor general de avisos en pantalla;
         -- notifyOnComplete es el especifico de "he terminado una llave". Hasta
         -- la v7.9.0 el segundo no se leia en ninguna parte del addon.
-        local wantToast = settings.showToasts
-            and (not self.NotifyEnabled or self:NotifyEnabled("notifyOnComplete"))
+        -- La casilla visible es la autoridad. No debe quedar anulada por el
+        -- viejo settings.showToasts, que ya no se expone en esta pantalla y
+        -- podia quedar en false tras actualizar desde una version antigua.
+        local wantToast = (not self.NotifyEnabled) or self:NotifyEnabled("notifyOnComplete")
         if wantToast and self.ShowToast then
             local msg = string.format(
-                "%s +%d — %s",
+                "%s +%d - %s",
                 run.dungeonName or "Run",
                 run.keyLevel or 0,
                 inTime and "EN TIEMPO" or "FUERA DE TIEMPO"
             )
-            self:ShowToast(msg, inTime and "ok" or "bad", 4)
+            self:ShowToast(msg, inTime and "ok" or "bad", 4, true)
         end
 
         -- "Resumen en chat": otra casilla que no leia nadie. Va al chat, no a
@@ -1888,10 +1056,21 @@ function MitzuMPlus:OnChallengeCompleted()
             local secs = run.completionTime or 0
             local t = (self.FormatTime and self:FormatTime(secs)) or tostring(secs)
             self:Print(string.format(
-                "%s |cFFe8b84a+%d|r  %s  ·  %s  ·  %d muertes",
+                "%s |cFFe8b84a+%d|r  %s   -   %s   -   %d muertes",
                 run.dungeonName or "Mythic+", run.keyLevel or 0, t,
                 inTime and "|cFF21de66en tiempo|r" or "|cFFff5555fuera de tiempo|r",
                 (run.stats and run.stats.deaths) or 0))
+        end
+    end
+
+    -- -- Personal Best check ---------------------------------------------
+    -- Se ejecuta despues del aviso de finalizacion para que "Al completar
+    -- run" sea siempre la primera notificacion visible. Los PB posteriores se
+    -- encolan y no pisan el aviso principal.
+    if self.PersonalBest then
+        local pbResults = self.PersonalBest:CheckRun(run)
+        if pbResults and #pbResults > 0 then
+            self.PersonalBest:AnnounceResults(pbResults)
         end
     end
 
@@ -1900,10 +1079,8 @@ function MitzuMPlus:OnChallengeCompleted()
     end
 
     if self.EventBus then
-        -- v5.4.2 (BUG A3): RouteAdvisor se suscribe a RUN_COMPLETED, que no se
-        -- emitia en ningun sitio, asi que RouteAdvisor:Stop() nunca corria al
-        -- terminar una key. Se emiten los dos: RUN_ENDED por compatibilidad con
-        -- los listeners existentes y RUN_COMPLETED como nombre canonico.
+        -- RUN_ENDED se conserva como evento legado; RUN_COMPLETED es el nombre
+        -- canónico para consumidores actuales.
         self.EventBus:Emit("RUN_ENDED", run, runID)
         self.EventBus:Emit("RUN_COMPLETED", run, runID)
     end
@@ -1926,9 +1103,9 @@ function MitzuMPlus:OnChallengeCompleted()
     self:_TeardownRun("completed")
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- CHALLENGE MODE — RESET
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
+-- CHALLENGE MODE - RESET
+-- -----------------------------------------------------------------------------
 
 function MitzuMPlus:OnChallengeReset()
     if self.LootTracker         then self.LootTracker:Reset() end
@@ -1967,9 +1144,9 @@ function MitzuMPlus:OnChallengeReset()
     end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- BOSS KILL
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function MitzuMPlus:OnBossKill(event, encounterID, encounterName, difficultyID, groupSize, success)
     local run = _G.MitzuMPlusCurrentRun
@@ -1990,9 +1167,9 @@ function MitzuMPlus:OnBossKill(event, encounterID, encounterName, difficultyID, 
     end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- SCENARIO CRITERIA UPDATE — Boss kills + Enemy Forces changes
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
+-- SCENARIO CRITERIA UPDATE - Boss kills + Enemy Forces changes
+-- -----------------------------------------------------------------------------
 
 -- Dump raw scenario criteria a SavedVariables (una vez por sesión) para
 -- diagnosticar por qué KeystoneTracker no detecta Enemy Forces en este cliente.
@@ -2081,14 +1258,14 @@ end
 -- Midnight bloquea CombatLogGetCurrentEventInfo para este uso; el addon conserva
 -- únicamente fuentes permitidas (Challenge Mode, C_DamageMeter y eventos seguros).
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- ARRANQUE REAL DE LA LLAVE (v7.11.0)
 --
 -- Core ya no decide cuando empieza una llave: se lo dice DungeonContext, que
 -- es quien tiene la maquina de estados y comprueba IsChallengeModeActive().
 -- Aqui solo se reacciona. Sin esto, la guarda de BUG CTX-1 dejaria la run sin
 -- arrancar nunca, porque CHALLENGE_MODE_START ya paso.
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 if MitzuMPlus.EventBus then
     MitzuMPlus.EventBus:On("MITZU_KEY_STARTED", function()
         if _G.MitzuMPlusCurrentRun then return end

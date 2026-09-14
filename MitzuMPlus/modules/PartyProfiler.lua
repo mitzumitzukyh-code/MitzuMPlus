@@ -34,11 +34,13 @@ local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 local PartyProfiler = {}
 MitzuMPlus.PartyProfiler = PartyProfiler
 
-local PartyContext = { members = {}, updatedAt = 0 }
+local PartyContext = { members = {}, updatedAt = 0, refreshCount = 0, lastReason = "NONE" }
 MitzuMPlus.PartyContext = PartyContext
 
 local SpecCache = {}
 MitzuMPlus.SpecCache = SpecCache
+
+local Q
 
 local _issecretvalue = rawget(_G, "issecretvalue")
 
@@ -157,6 +159,13 @@ local function tokensDeGrupo()
     return t
 end
 
+local function tamanoEsperado()
+    local n = tonumber(leer(GetNumGroupMembers)) or 0
+    -- GetNumGroupMembers incluye al jugador cuando hay grupo y devuelve 0 en
+    -- solitario. El profiler siempre incluye "player".
+    return math.max(1, n)
+end
+
 -- El rol asignado y el rol que implica la spec son cosas distintas y se
 -- guardan las dos. Un tanque sin rol asignado en el buscador sigue siendo un
 -- tanque, y mezclarlos haría imposible saber cuál falló.
@@ -232,6 +241,8 @@ function PartyProfiler:Refresh(motivo)
 
     PartyContext.members   = nuevos
     PartyContext.updatedAt = (GetTime and GetTime()) or 0
+    PartyContext.refreshCount = (PartyContext.refreshCount or 0) + 1
+    PartyContext.lastReason = tostring(motivo or "UNKNOWN")
     SpecCache:Prune(vivos)
     self:_EnqueueMissing()
 
@@ -245,6 +256,24 @@ end
 -- ─────────────────────────────────────────────────────────────────────────
 
 function PartyProfiler:GetMembers() return PartyContext.members end
+
+function PartyProfiler:GetRosterDiagnostics()
+    local cached = 0
+    for _, m in pairs(PartyContext.members) do
+        if type(m) == "table" then cached = cached + 1 end
+    end
+    local ahora = (GetTime and GetTime()) or 0
+    return {
+        expectedGroupSize = tamanoEsperado(),
+        cachedSize = cached,
+        lastRosterUpdate = PartyContext.updatedAt,
+        lastRosterAge = math.max(0, ahora - (tonumber(PartyContext.updatedAt) or 0)),
+        rosterRefreshCount = PartyContext.refreshCount or 0,
+        lastRefreshReason = PartyContext.lastReason or "NONE",
+        inspectPending = #Q.pending,
+        inspectActive = Q.active ~= nil,
+    }
+end
 
 local function porRol(rol)
     local out = {}
@@ -268,7 +297,7 @@ end
 -- COLA DE INSPECCIÓN
 -- ─────────────────────────────────────────────────────────────────────────
 
-local Q = {
+Q = {
     pending = {},   -- lista de guids
     active  = nil,  -- guid en vuelo
     since   = 0,
@@ -409,8 +438,29 @@ for _, ev in ipairs({
     "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "INSPECT_READY",
     "PLAYER_ENTERING_WORLD",
+    "CHALLENGE_MODE_START",
 }) do
     pcall(function() frame:RegisterEvent(ev) end)
+end
+
+-- Al entrar al mundo, especialmente tras cargar el addon dentro de una key ya
+-- avanzada, los party1..party4 pueden aparecer unos instantes después del
+-- primer PLAYER_ENTERING_WORLD y no siempre llega otro GROUP_ROSTER_UPDATE.
+-- Estas relecturas acotadas convergen el cache sin depender de specs ni de
+-- inferencia de combate. Un evento posterior invalida la tanda anterior.
+local ROSTER_RECHECK_DELAYS = { 0.5, 2, 5 }
+PartyProfiler._rosterRecheckGeneration = 0
+
+function PartyProfiler:_ScheduleRosterRechecks(reason)
+    if not (C_Timer and C_Timer.After) then return end
+    self._rosterRecheckGeneration = self._rosterRecheckGeneration + 1
+    local generation = self._rosterRecheckGeneration
+    for i, delay in ipairs(ROSTER_RECHECK_DELAYS) do
+        C_Timer.After(delay, function()
+            if PartyProfiler._rosterRecheckGeneration ~= generation then return end
+            PartyProfiler:Refresh(tostring(reason or "ROSTER") .. "_RECHECK_" .. i)
+        end)
+    end
 end
 
 frame:SetScript("OnEvent", function(_, event, arg1)
@@ -418,6 +468,9 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         PartyProfiler:OnInspectReady(arg1)
     else
         PartyProfiler:Refresh(event)
+        if event == "PLAYER_ENTERING_WORLD" or event == "CHALLENGE_MODE_START" then
+            PartyProfiler:_ScheduleRosterRechecks(event)
+        end
     end
 end)
 

@@ -29,11 +29,29 @@ end
 -- CONFIGURACIÓN POR DEFECTO
 -- ─────────────────────────────────────────────────────────────────────────────
 
+local Constants = MitzuMPlus.Constants or {}
 local DEFAULTS = {
-    ancho = 1000,
-    alto = 600,
+    ancho = Constants.UI_HISTORIAL_DEFAULT_WIDTH or 1280,
+    alto = Constants.UI_HISTORIAL_DEFAULT_HEIGHT or 760,
     escala = 1.0,
 }
+
+Render.DEFAULT_WIDTH, Render.DEFAULT_HEIGHT = DEFAULTS.ancho, DEFAULTS.alto
+Render.MIN_WIDTH, Render.MIN_HEIGHT = Constants.UI_WINDOW_MIN_WIDTH or 1240,
+    Constants.UI_WINDOW_MIN_HEIGHT or 700
+Render.MAX_WIDTH, Render.MAX_HEIGHT = 1700, 1100
+
+-- Preserve the usable logical layout; fit its physical size to UIParent.
+function Render.FitScale(width, height, screenWidth, screenHeight, preferred)
+    return math.min(preferred or 1, math.max(0.1, (screenWidth - 32) / width),
+        math.max(0.1, (screenHeight - 32) / height))
+end
+
+function Render:FitToScreen(frame)
+    local sw, sh = UIParent:GetSize()
+    frame:SetScale(self.FitScale(frame:GetWidth(), frame:GetHeight(), sw, sh, frame:GetScale()))
+    frame:SetClampedToScreen(true)
+end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- RESETEAR VENTANA A VALORES PREDETERMINADOS
@@ -47,6 +65,8 @@ local function ResetearVentana(frame, claveDB)
     end
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+    Render:FitToScreen(frame)
 
     local db = MitzuMPlus.db
     if db and db.profile and db.profile.settings then
@@ -68,10 +88,10 @@ Render.ResetearVentana = ResetearVentana
 -- ─────────────────────────────────────────────────────────────────────────────
 
 function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
-    minW = minW or 520
-    minH = minH or 380
-    maxW = maxW or 1600
-    maxH = maxH or 1200
+    minW = minW or self.MIN_WIDTH
+    minH = minH or self.MIN_HEIGHT
+    maxW = maxW or self.MAX_WIDTH
+    maxH = maxH or self.MAX_HEIGHT
 
     frame:SetResizable(true)
     if frame.SetResizeBounds then
@@ -157,7 +177,8 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
                 local s = (startScale or 1.0) + (dx / 600)
                 s = _Clamp(s, 0.5, 2.0)
                 s = _RoundToStep(s, 0.05)
-                frame:SetScale(s)
+                local sw, sh = UIParent:GetSize()
+                frame:SetScale(Render.FitScale(frame:GetWidth(), frame:GetHeight(), sw, sh, s))
             end)
         else
             -- ✅ RESIZE NORMAL (BOTTOMRIGHT)
@@ -176,6 +197,7 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
             w = math.max(minW, math.min(maxW, w))
             h = math.max(minH, math.min(maxH, h))
             frame:SetSize(w, h)
+            Render:FitToScreen(frame)
 
             for _, ln in ipairs(gripLines) do
                 ln:SetColorTexture(0.78, 0.66, 0.29, 0.85)
@@ -285,23 +307,35 @@ function Render:RestorePositionAndSize(frame)
     local db = MitzuMPlus.db and MitzuMPlus.db.profile
     if not db then return end
 
-    -- ✅ Restaurar tamaño
-    local w = db.settings and db.settings.windowWidth
-    local h = db.settings and db.settings.windowHeight
-    if type(w) == "number" and type(h) == "number" and w > 100 and h > 100 then
-        frame:SetSize(w, h)
+    local settings = db.settings or {}
+
+    -- Restaurar tamaño y migrar de forma explícita los perfiles antiguos.
+    -- Antes un 1000x600 se usaba en memoria, pero quedaba guardado y volvía a
+    -- romper el Historial en cada /reload.
+    local w = tonumber(settings.windowWidth)
+    local h = tonumber(settings.windowHeight)
+    local validSize = w and h and w >= self.MIN_WIDTH and h >= self.MIN_HEIGHT
+    if validSize then
+        w = math.min(self.MAX_WIDTH, w)
+        h = math.min(self.MAX_HEIGHT, h)
     else
-        frame:SetSize(DEFAULTS.ancho, DEFAULTS.alto)
+        w, h = DEFAULTS.ancho, DEFAULTS.alto
+    end
+    frame:SetSize(w, h)
+    if db.settings then
+        db.settings.windowWidth = w
+        db.settings.windowHeight = h
     end
 
     -- ✅ Restaurar escala
-    local scale = db.settings and db.settings.windowScale
-    if type(scale) == "number" then
+    local scale = tonumber(settings.windowScale)
+    if scale then
         scale = _Clamp(scale, 0.5, 2.0)
         frame:SetScale(scale)
     else
         frame:SetScale(DEFAULTS.escala)
     end
+    if db.settings then db.settings.windowScale = frame:GetScale() end
 
     -- ✅ Restaurar posición
     frame:ClearAllPoints()
@@ -369,18 +403,15 @@ end
 function Render:InitializeWindow(frame)
     if not frame then return end
 
-    -- ✅ Solo drag — resize y scale desactivados (ventana tamaño fijo)
     self:AttachDragHandlers(frame)
+    self:ConfigurarResize(frame, self.MIN_WIDTH, self.MIN_HEIGHT,
+        self.MAX_WIDTH, self.MAX_HEIGHT)
+    self:RestorePositionAndSize(frame)
 
-    -- ✅ NO llamar ConfigurarResize — ventana es de tamaño fijo.
-    --    SetResizable en false garantiza que el engine no permita resize.
-    if frame.SetResizable then
-        frame:SetResizable(false)
-    end
-
-    -- ✅ Restaurar SOLO la posición guardada, no el tamaño.
-    --    El tamaño lo fija Theme.LAYOUT y no se sobreescribe.
-    self:RestoreOnlyPosition(frame)
+    self:FitToScreen(frame)
+    frame:RegisterEvent("UI_SCALE_CHANGED")
+    frame:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    frame:HookScript("OnEvent", function() Render:FitToScreen(frame) end)
 
     -- ✅ Asegurar que sea visible en pantalla
     self:EnsureVisible(frame)

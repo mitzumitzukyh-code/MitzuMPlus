@@ -23,6 +23,9 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE"] = {
         if MitzuMPlus and MitzuMPlus.RefreshHistorialTable then
             MitzuMPlus:RefreshHistorialTable()
         end
+        if MitzuMPlus and MitzuMPlus.Footer and MitzuMPlus.Footer.UpdateStats then
+            MitzuMPlus.Footer:UpdateStats()
+        end
     end,
     timeout = 0,
     whileDead = true,
@@ -38,9 +41,16 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_CLEAR_ALL"] = {
         if MitzuMPlus and MitzuMPlus.db and MitzuMPlus.db.global then
             wipe(MitzuMPlus.db.global.runs)
             MitzuMPlus.db.global.nextRunID = 1
+            -- El historial es la fuente de verdad de las marcas personales.
+            -- Si se vacían las runs, conservar personalBests deja récords
+            -- fantasma que impedirían detectar nuevas marcas correctamente.
+            MitzuMPlus.db.global.personalBests = {}
         end
         if MitzuMPlus and MitzuMPlus.RefreshHistorialTable then
             MitzuMPlus:RefreshHistorialTable()
+        end
+        if MitzuMPlus and MitzuMPlus.Footer and MitzuMPlus.Footer.UpdateStats then
+            MitzuMPlus.Footer:UpdateStats()
         end
         if MitzuMPlus and MitzuMPlus.ShowToast then
             MitzuMPlus:ShowToast("Historial borrado.", "ok")
@@ -59,9 +69,34 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
     OnAccept = function()
         if MitzuMPlus and MitzuMPlus.db then
             MitzuMPlus.db:ResetProfile()
+
+            -- Aplicar inmediatamente los valores que tienen estado runtime.
+            local s = MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings or {}
+            if MitzuMPlus.Window then
+                MitzuMPlus.Window:SetMovable(s.windowLocked ~= true)
+                MitzuMPlus.Window:SetAlpha(tonumber(s.windowOpacity) or 1)
+            end
+            if MitzuMPlus.UpdateEscapeHandling then MitzuMPlus:UpdateEscapeHandling() end
+            local fontTheme = MitzuMPlus.Colors or MitzuMPlus.Theme
+            if fontTheme and fontTheme.RefreshFonts then
+                fontTheme:RefreshFonts()
+            end
+            if MitzuMPlus.KeyPredictionHUD and MitzuMPlus.KeyPredictionHUD.ApplySettings then
+                MitzuMPlus.KeyPredictionHUD:ApplySettings()
+            end
+
+            local lib = LibStub and LibStub("LibDBIcon-1.0", true)
+            local mm = s.minimapIcon
+            if lib then
+                if type(mm) == "table" and mm.hide == true then
+                    lib:Hide("MitzuMPlus")
+                else
+                    lib:Show("MitzuMPlus")
+                end
+            end
         end
         if MitzuMPlus and MitzuMPlus.ShowToast then
-            MitzuMPlus:ShowToast("Configuración restablecida.", "ok")
+            MitzuMPlus:ShowToast("Configuración restablecida. Reabre Configuración para refrescar los controles.", "ok", 4, true)
         end
     end,
     timeout = 0,
@@ -80,7 +115,7 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE_SELECTION"] = {
         local count = 0
         for runID in pairs(selectedRuns) do
             if MitzuMPlus.DeleteRun then
-                MitzuMPlus:DeleteRun(runID)
+                MitzuMPlus:DeleteRun(runID, true)
                 count = count + 1
             end
         end
@@ -88,9 +123,15 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE_SELECTION"] = {
         if MitzuMPlus.selectedRuns then
             wipe(MitzuMPlus.selectedRuns)
         end
+        if MitzuMPlus.PersonalBest and MitzuMPlus.PersonalBest.RebuildFromHistory then
+            MitzuMPlus.PersonalBest:RebuildFromHistory()
+        end
         
         if MitzuMPlus.RefreshHistorialTable then
             MitzuMPlus:RefreshHistorialTable()
+        end
+        if MitzuMPlus.Footer and MitzuMPlus.Footer.UpdateStats then
+            MitzuMPlus.Footer:UpdateStats()
         end
         
         if MitzuMPlus.ShowToast then

@@ -50,7 +50,7 @@ function MitzuMPlus:InitMinimapIcon()
             local t = MitzuMPlus.Theme or Theme
             local gc = t and t.GOLD and t.GOLD.title
                        or { r = 0.784, g = 0.627, b = 0.188 }
-            tt:AddLine("MitzuMPlus M+ Historial", gc.r, gc.g, gc.b)
+            tt:AddLine("MitzuMPlus", gc.r, gc.g, gc.b)
 
             local total = 0
             if MitzuMPlus.db and MitzuMPlus.db.global and MitzuMPlus.db.global.runs then
@@ -94,17 +94,7 @@ local function GetMenuItems()
     return {
         { text = "Ver historial",   fn = function() if MitzuMPlus.ToggleWindow then MitzuMPlus:ToggleWindow() end end },
         { sep = true },
-        { text = "Activar captura", fn = function()
-            if InCombatLockdown and InCombatLockdown() then
-                if MitzuMPlus.Print then
-                    MitzuMPlus:Print("[!] No puedes activar la captura en combate.")
-                end
-                return
-            end
-            if MitzuMPlus.RegisterCoreEvents then MitzuMPlus:RegisterCoreEvents() end
-        end },
-        { sep = true },
-        { text = "Configuracion", fn = function()
+        { text = "Configuración", fn = function()
             if MitzuMPlus.ShowTab then
                 MitzuMPlus:ShowTab("settings")
             elseif MitzuMPlus.ShowConfig then
@@ -116,101 +106,122 @@ local function GetMenuItems()
 end
 
 function MitzuMPlus:ShowMinimapMenu(anchorFrame)
-    if Menu and Menu.OpenContextMenu then
-        local ok = pcall(function()
-            Menu.OpenContextMenu(anchorFrame, function(ownerRegion, rootDescription)
-                rootDescription:CreateTitle("MitzuMPlus M+")
-                for _, item in ipairs(GetMenuItems()) do
-                    if item.sep then
-                        rootDescription:CreateDivider()
-                    else
-                        rootDescription:CreateButton(item.text, item.fn)
-                    end
-                end
-            end)
-        end)
-        if ok then return end
-    end
-
+    -- Usar siempre nuestro menú propio. El menú contextual nativo de Midnight
+    -- puede heredar una apariencia demasiado translúcida según la UI/tema y
+    -- además no permite controlar con precisión el fondo.
     self:_ShowMinimapMenuFallback(anchorFrame)
 end
 
 function MitzuMPlus:_ShowMinimapMenuFallback(anchorFrame)
     if not self._mmMenu then
-        local ITEM_H = 22
-        local MENU_W = 190
+        local ITEM_H = 24
+        local MENU_W = 220
+        local OUTER_PAD = 6
+        local TITLE_H = 20
+        local TOP_PAD = 8
+        local DIV_H = 10
         local items  = GetMenuItems()
 
-        local menuH = 6
+        local menuH = TOP_PAD + TITLE_H + 6
         for _, item in ipairs(items) do
-            menuH = menuH + (item.sep and 8 or ITEM_H + 2)
+            menuH = menuH + (item.sep and DIV_H or ITEM_H + 2)
         end
+        menuH = menuH + 6
 
         local menu = CreateFrame("Frame", "MitzuMPlusMMMenu", UIParent, "BackdropTemplate")
         if not menu.SetBackdrop then Mixin(menu, BackdropTemplateMixin) end
         menu:SetSize(MENU_W, menuH)
-        menu:SetFrameStrata("TOOLTIP")
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(500)
+        menu:SetToplevel(true)
+        menu:SetClampedToScreen(true)
+        menu:SetAlpha(1)
         menu:SetBackdrop({
             bgFile   = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\Buttons\\WHITE8X8",
             edgeSize = 1,
+            insets   = { left = 1, right = 1, top = 1, bottom = 1 },
         })
 
         local col = _G.MitzuMPlusColors or {}
         menu:SetBackdropColor(
             (col.stone2 and col.stone2.r) or 0.04,
             (col.stone2 and col.stone2.g) or 0.04,
-            (col.stone2 and col.stone2.b) or 0.05, 0.98)
+            (col.stone2 and col.stone2.b) or 0.05, 0.96)
         menu:SetBackdropBorderColor(
             (col.gold1 and col.gold1.r) or 0.165,
             (col.gold1 and col.gold1.g) or 0.157,
             (col.gold1 and col.gold1.b) or 0.125, 1)
+
+        -- Fondo explícito además del Backdrop. Esto evita que el menú quede
+        -- transparente si BackdropTemplate o el tema de la UI no pinta el bg.
+        local solidBG = menu:CreateTexture(nil, "BACKGROUND", nil, -8)
+        solidBG:SetPoint("TOPLEFT", 1, -1)
+        solidBG:SetPoint("BOTTOMRIGHT", -1, 1)
+        solidBG:SetColorTexture(
+            (col.stone2 and col.stone2.r) or 0.04,
+            (col.stone2 and col.stone2.g) or 0.04,
+            (col.stone2 and col.stone2.b) or 0.05, 0.96)
+        menu._solidBG = solidBG
         menu:Hide()
 
-        local title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        title:SetPoint("TOPLEFT", 8, -5)
+        local title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOPLEFT", OUTER_PAD + 4, -(TOP_PAD - 1))
+        title:SetPoint("TOPRIGHT", -(OUTER_PAD + 4), -(TOP_PAD - 1))
+        title:SetJustifyH("LEFT")
+        title:SetWordWrap(false)
         title:SetText("MitzuMPlus M+")
         title:SetTextColor(
             (col.gold3 and col.gold3.r) or 0.784,
             (col.gold3 and col.gold3.g) or 0.627,
             (col.gold3 and col.gold3.b) or 0.188)
 
-        local y = -20
+        local titleLine = menu:CreateTexture(nil, "ARTWORK")
+        titleLine:SetPoint("TOPLEFT", OUTER_PAD + 2, -(TOP_PAD + TITLE_H + 1))
+        titleLine:SetPoint("TOPRIGHT", -(OUTER_PAD + 2), -(TOP_PAD + TITLE_H + 1))
+        titleLine:SetHeight(1)
+        titleLine:SetColorTexture(
+            (col.gold0 and col.gold0.r) or 0.29,
+            (col.gold0 and col.gold0.g) or 0.24,
+            (col.gold0 and col.gold0.b) or 0.09, 0.55)
+
+        local y = -(TOP_PAD + TITLE_H + 8)
         for _, item in ipairs(items) do
             if item.sep then
-                local line = menu:CreateTexture(nil, "OVERLAY")
-                line:SetPoint("TOPLEFT",  8,  y - 1)
-                line:SetPoint("TOPRIGHT", -8, y - 1)
+                local line = menu:CreateTexture(nil, "ARTWORK")
+                line:SetPoint("TOPLEFT",  OUTER_PAD + 4,  y - 3)
+                line:SetPoint("TOPRIGHT", -(OUTER_PAD + 4), y - 3)
                 line:SetHeight(1)
                 line:SetColorTexture(
                     (col.gold0 and col.gold0.r) or 0.29,
                     (col.gold0 and col.gold0.g) or 0.24,
-                    (col.gold0 and col.gold0.b) or 0.09, 0.5)
-                y = y - 8
+                    (col.gold0 and col.gold0.b) or 0.09, 0.45)
+                y = y - DIV_H
             else
                 local local_fn = item.fn
                 local row = CreateFrame("Button", nil, menu, "BackdropTemplate")
                 if not row.SetBackdrop then Mixin(row, BackdropTemplateMixin) end
-                row:SetSize(MENU_W - 8, ITEM_H)
-                row:SetPoint("TOPLEFT", 4, y)
+                row:SetSize(MENU_W - (OUTER_PAD * 2), ITEM_H)
+                row:SetPoint("TOPLEFT", OUTER_PAD, y)
                 row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
                 row:SetBackdropColor(0, 0, 0, 0)
 
-                local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                fs:SetPoint("LEFT", 6, 0)
-                fs:SetWidth(MENU_W - 20)
+                local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                fs:SetPoint("LEFT", 10, 0)
+                fs:SetPoint("RIGHT", -8, 0)
                 fs:SetJustifyH("LEFT")
+                fs:SetWordWrap(false)
                 fs:SetText(item.text)
                 fs:SetTextColor(
-                    (col.t2 and col.t2.r) or 0.72,
-                    (col.t2 and col.t2.g) or 0.72,
-                    (col.t2 and col.t2.b) or 0.72)
+                    (col.t2 and col.t2.r) or 0.82,
+                    (col.t2 and col.t2.g) or 0.82,
+                    (col.t2 and col.t2.b) or 0.82)
 
                 row:SetScript("OnEnter", function(self)
                     self:SetBackdropColor(
                         (col.metal1 and col.metal1.r) or 0.20,
                         (col.metal1 and col.metal1.g) or 0.16,
-                        (col.metal1 and col.metal1.b) or 0.06, 0.8)
+                        (col.metal1 and col.metal1.b) or 0.06, 0.85)
                     fs:SetTextColor(
                         (col.gold5 and col.gold5.r) or 0.97,
                         (col.gold5 and col.gold5.g) or 0.83,
@@ -219,9 +230,9 @@ function MitzuMPlus:_ShowMinimapMenuFallback(anchorFrame)
                 row:SetScript("OnLeave", function(self)
                     self:SetBackdropColor(0, 0, 0, 0)
                     fs:SetTextColor(
-                        (col.t2 and col.t2.r) or 0.72,
-                        (col.t2 and col.t2.g) or 0.72,
-                        (col.t2 and col.t2.b) or 0.72)
+                        (col.t2 and col.t2.r) or 0.82,
+                        (col.t2 and col.t2.g) or 0.82,
+                        (col.t2 and col.t2.b) or 0.82)
                 end)
                 row:SetScript("OnClick", function()
                     menu:Hide()
@@ -237,13 +248,10 @@ function MitzuMPlus:_ShowMinimapMenuFallback(anchorFrame)
             end
         end
 
-        -- Backdrop transparente para cerrar al hacer click fuera.
-        -- FIX BUG-8: el backdrop debe estar en "DIALOG" (mayor que HIGH, menor que
-        -- TOOLTIP) para que intercepte todos los clicks que NO sean sobre el propio menú.
-        -- Con "HIGH" el menú (TOOLTIP) lo tapaba y el click-fuera-para-cerrar no funcionaba.
         local backdrop = CreateFrame("Frame", nil, UIParent)
         backdrop:SetAllPoints()
-        backdrop:SetFrameStrata("DIALOG")
+        backdrop:SetFrameStrata("FULLSCREEN")
+        backdrop:SetFrameLevel(400)
         backdrop:EnableMouse(true)
         backdrop:Hide()
         backdrop:SetScript("OnMouseDown", function()
@@ -252,7 +260,21 @@ function MitzuMPlus:_ShowMinimapMenuFallback(anchorFrame)
         end)
         menu._backdrop = backdrop
 
-        menu:SetScript("OnShow", function() backdrop:Show() end)
+        menu:SetScript("OnShow", function()
+            menu:SetAlpha(1)
+            menu:SetBackdropColor(
+                (col.stone2 and col.stone2.r) or 0.04,
+                (col.stone2 and col.stone2.g) or 0.04,
+                (col.stone2 and col.stone2.b) or 0.05, 0.96)
+            if menu._solidBG then
+                menu._solidBG:SetColorTexture(
+                    (col.stone2 and col.stone2.r) or 0.04,
+                    (col.stone2 and col.stone2.g) or 0.04,
+                    (col.stone2 and col.stone2.b) or 0.05, 0.96)
+            end
+            backdrop:Show()
+            menu:Raise()
+        end)
         menu:SetScript("OnHide", function() backdrop:Hide() end)
 
         self._mmMenu = menu
@@ -265,8 +287,29 @@ function MitzuMPlus:_ShowMinimapMenuFallback(anchorFrame)
     end
 
     menu:ClearAllPoints()
-    if anchorFrame then
-        menu:SetPoint("BOTTOMLEFT", anchorFrame, "TOPLEFT", 0, 2)
+    if anchorFrame and anchorFrame.GetCenter then
+        local centerX, centerY = anchorFrame:GetCenter()
+        local uiCenterX = UIParent:GetWidth() / 2
+        local uiCenterY = UIParent:GetHeight() / 2
+        local anchorPoint, relativePoint, xOff, yOff
+
+        if centerY and centerY > uiCenterY then
+            if centerX and centerX > uiCenterX then
+                anchorPoint, relativePoint = "TOPRIGHT", "BOTTOMRIGHT"
+            else
+                anchorPoint, relativePoint = "TOPLEFT", "BOTTOMLEFT"
+            end
+            xOff, yOff = 0, -4
+        else
+            if centerX and centerX > uiCenterX then
+                anchorPoint, relativePoint = "BOTTOMRIGHT", "TOPRIGHT"
+            else
+                anchorPoint, relativePoint = "BOTTOMLEFT", "TOPLEFT"
+            end
+            xOff, yOff = 0, 4
+        end
+
+        menu:SetPoint(anchorPoint, anchorFrame, relativePoint, xOff, yOff)
     else
         menu:SetPoint("CENTER")
     end

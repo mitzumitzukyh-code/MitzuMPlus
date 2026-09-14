@@ -1,4 +1,4 @@
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- MitzuMPlus M+ Historial - ErrorLogger (v2.1)
 -- Sistema de logging de errores en producción.
 --
@@ -6,35 +6,35 @@
 --   • Intercepta el error handler global de WoW (seterrorhandler).
 --   • Filtra sólo errores originados dentro de este addon.
 --   • Persiste hasta MAX_ERRORS entradas en db.global.errorLog (SavedVariables).
---   • Expone /MitzuMPlus bugreport → abre el clipboard con el log completo.
+--   • Expone /MitzuMPlus bugreport -> abre el clipboard con el log completo.
 --
 -- POR QUÉ ES SEGURO:
 --   • Siempre llama al handler original de WoW (el cuadro rojo sigue apareciendo).
 --   • Usa pcall en toda operación que acceda a la DB para evitar errores recursivos.
 --   • No se registra si seterrorhandler no existe (versiones antiguas del cliente).
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- CONFIGURACIÓN
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 local MAX_ERRORS      = 20      -- máximo de entradas de error guardadas
 local MAX_DEBUG_EVENTS = 100     -- máximo de entradas de diagnóstico guardadas
 local ADDON_ID_PATTERN = "MitzuMPlus"  -- cadena que debe aparecer en el error
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- MÓDULO
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 local ErrorLogger = {}
 MitzuMPlus.ErrorLogger = ErrorLogger
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- UTILIDADES INTERNAS
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 -- Devuelve true si el mensaje de error pertenece a este addon.
 local function IsOurError(msg)
@@ -50,16 +50,16 @@ local function GetSafeZone()
     return "desconocida"
 end
 
--- Trunca un string a `max` caracteres añadiendo "…" si se corta.
+-- Trunca un string a `max` caracteres añadiendo "..." si se corta.
 local function Truncate(s, max)
     if type(s) ~= "string" then return tostring(s) end
     if #s <= max then return s end
-    return s:sub(1, max) .. "…"
+    return s:sub(1, max) .. "..."
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- CORE: guardar un error en la DB
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 local function SaveError(msg)
     -- Acceso a la DB siempre dentro de pcall para evitar errores recursivos.
@@ -118,9 +118,9 @@ local function SaveError(msg)
     if not ok then return end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- HOOK DEL ERROR HANDLER GLOBAL
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function ErrorLogger:Install()
     if self._installed then return end
@@ -162,9 +162,9 @@ function ErrorLogger:Install()
     self._installed = true
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- BUGREPORT: formatea el log para el clipboard
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function ErrorLogger:GetReport()
     if not (MitzuMPlus.db and MitzuMPlus.db.global) then
@@ -178,7 +178,7 @@ function ErrorLogger:GetReport()
 
     local lines = {}
     table.insert(lines, string.format(
-        "=== MitzuMPlus M+ Historial v%s — Bug Report ===",
+        "=== MitzuMPlus M+ Historial v%s - Bug Report ===",
         MitzuMPlus.VERSION or "?"
     ))
     table.insert(lines, string.format("Generado: %s", date and date("%Y-%m-%d %H:%M:%S") or "?"))
@@ -203,9 +203,9 @@ function ErrorLogger:GetReport()
     return table.concat(lines, "\n")
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- LIMPIAR EL LOG
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 function ErrorLogger:Clear()
     if MitzuMPlus.db and MitzuMPlus.db.global then
@@ -216,9 +216,9 @@ function ErrorLogger:Clear()
     end
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 -- HELPERS PÚBLICOS
--- ─────────────────────────────────────────────────────────────────────────────
+-- -----------------------------------------------------------------------------
 
 -- Las entradas del log de errores, o una lista vacía. Para el Bug Report V2.
 function ErrorLogger:Entries()
@@ -236,14 +236,14 @@ function ErrorLogger:Count()
     return #MitzuMPlus.db.global.errorLog
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- SISTEMA DE DIAGNÓSTICO (Debug Log)
 -- Registra eventos de flujo de datos para diagnosticar problemas como:
---   • C_DamageMeter no devuelve datos → damageTotal=0
+--   • C_DamageMeter no devuelve datos -> damageTotal=0
 --   • Fuente de healingTotal (C_DamageMeter vs UNIT_COMBAT fallback)
 --   • Secret values encontrados en datos del meter
 --   • Matching de GUID/nombre que falla
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 -- Log a diagnostic event. category = string tag, msg = description, data = optional table
 function ErrorLogger:LogEvent(category, msg, data)
@@ -305,7 +305,7 @@ function ErrorLogger:GetDebugReport()
 
     local lines = {}
     table.insert(lines, string.format(
-        "=== MitzuMPlus M+ Historial v%s — Debug Log ===",
+        "=== MitzuMPlus M+ Historial v%s - Debug Log ===",
         MitzuMPlus.VERSION or "?"
     ))
     table.insert(lines, string.format("Generado: %s", date and date("%Y-%m-%d %H:%M:%S") or "?"))

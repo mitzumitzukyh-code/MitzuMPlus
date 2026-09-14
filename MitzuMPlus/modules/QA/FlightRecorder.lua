@@ -5,8 +5,7 @@
 -- entregar UN informe (/emp bugreport) que cuente qué pasó.
 --
 -- QUÉ REGISTRA: solo hechos de MitzuMPlus, ya decididos por sus autoridades
--- (transiciones de DungeonContext, ruta cargada, cambios de pull, decisiones
--- de RunSession, HUD mostrado/oculto, recomendación del Coach, errores).
+-- (transiciones de DungeonContext, sesión, run, tracker y errores).
 -- QUÉ NO REGISTRA: combat log, unidades, placas, nada por frame. No es CLEU y
 -- no intenta reconstruirlo.
 --
@@ -195,15 +194,12 @@ end
 --
 -- Prioridad 1000, por encima de todo el core (10-90): la CAUSA se anota antes
 -- que sus efectos. Un evento del bus dispara otros anidados (entrar en RUNNING
--- activa la ruta, que emite su propio evento); anotando al principio, el
--- informe se lee en el orden en que ocurrieron las cosas.
+-- Anotando al principio, el informe se lee en el orden causal.
 --
 -- DungeonContext emite primero el evento de la llave (MITZU_KEY_STARTED...) y
 -- después MITZU_DUNGEON_STATE_CHANGED, así que la transición se anota en el
 -- primero que llegue y se ignora el duplicado.
 -- ─────────────────────────────────────────────────────────────────────────
-
-local function idRuta(r) return type(r) == "table" and r.id or nil end
 
 local ultimaTransicion = nil
 local function anotarTransicion()
@@ -228,30 +224,6 @@ if bus and bus.On then
         local DC = MitzuMPlus.DungeonContext
         FR:Record("DUNGEON", "RECOGNIZED", { key = key, prev = prev,
             source = DC and DC.GetIdentitySource and DC:GetIdentitySource() or nil })
-    end, P)
-    bus:On("MITZU_ROUTE_LOADED", function(route)
-        local RM = MitzuMPlus.RouteManager
-        FR:Record("ROUTE", "LOADED", { id = idRuta(route),
-            source = RM and RM.GetLoadSource and RM:GetLoadSource() or nil,
-            pulls = type(route) == "table" and type(route.pulls) == "table" and #route.pulls or nil })
-    end, P)
-    bus:On("MITZU_ROUTE_UNLOADED", function(route)
-        FR:Record("ROUTE", "UNLOADED", { id = idRuta(route) })
-    end, P)
-    bus:On("MITZU_ROUTE_PREPARED", function(route)
-        FR:Record("ROUTE", "STATE", { id = idRuta(route), state = "PREPARED" })
-    end, P)
-    bus:On("MITZU_ROUTE_STARTED", function(route)
-        FR:Record("ROUTE", "STATE", { id = idRuta(route), state = "ACTIVE" })
-    end, P)
-    bus:On("MITZU_ROUTE_COMPLETED", function(route)
-        FR:Record("ROUTE", "STATE", { id = idRuta(route), state = "COMPLETED" })
-    end, P)
-    bus:On("MITZU_ROUTE_RECOVERED", function(routeID, pull)
-        FR:Record("SESSION", "RECOVERY_APPLIED", { route = routeID, pull = pull })
-    end, P)
-    bus:On("MITZU_PULL_CHANGED", function(pull, prev, reason)
-        FR:Record("ROUTE", "PULL", { to = pull, from = prev, reason = reason })
     end, P)
     bus:On("RUN_STARTED", function(run)
         FR:Record("RUN", "CHALLENGE_STARTED", {

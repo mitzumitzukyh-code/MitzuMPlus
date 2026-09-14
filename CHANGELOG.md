@@ -7,6 +7,42 @@ El historial anterior a la separación está en `docs/history/CHANGELOG_legacy.t
 
 ## MitzuMPlus
 
+### Sin versión todavía (sobre 7.14.0-rc1) — limpieza final de producto
+
+Simplificación de producto en feature freeze. Versión **sin cambiar** hasta la
+prueba en vivo.
+
+- Historial V2 reconstruido con filtros compactos, tabla 65/35, detalle,
+  selección, exportación y paginación.
+- Retirados del producto los sistemas de rutas, navegación manual, Coach
+  táctico, datasets derivados de MDT, API experimental y ajustes sin consumidor.
+- `RunSession` reducido a identidad, reload y deduplicación; corregido el doble
+  registro causado por información de finalización reciclada.
+- Configuración reorganizada y Bug Report alineado con el producto final.
+- Paquete MIT sin dependencia runtime ni datos derivados de MDT.
+
+**Cambiado**
+- El HUD en vivo es ahora el **Key Prediction HUD** (`modules/KeyPredictionHUD.lua`):
+  un frame pequeño estilo Blizzard con mazmorra y nivel, tiempo / límite, predicción
+  `+3` / `+2` / `+1` / `OVERTIME` (o `CALCULANDO...`), confianza y final estimado cuando
+  el motor lo da por fiable. Al completar, resultado final unos segundos.
+  Lee solo DungeonContext, ChallengeClock y PredictionEngine.
+- `/emp hud test` previsualiza el tracker; `[HUD]` del Bug Report usa
+  `implementation=KEY_PREDICTION_HUD` con prediction/confidence/estimatedFinish/elapsed/limit.
+- Invariante `HUD_MATCHES_AUTHORITY` → `HUD_PREDICTION_ONLY`; `COACH_ROUTE_POSITION_TRUST` retirado.
+- La tecla `MITZUMPLUS_OVERLAY` alterna el HUD de predicción.
+- Core marca `run.completionInfoSource` cuando el resultado viene de la API de finalización.
+
+**Retirado**
+- Coach HUD V2 (`modules/CoachHUD.lua`): pull, `MANUAL`, % de ruta, siguiente pull,
+  mobs y consejo táctico.
+- Overlay clásico del Coach (`modules/UI_Overlay_v2.lua`) y sus ajustes/paneles.
+- Ajustes `hud.compact`, `hud.showPreKey`, `hud.replaceClassic` (se quitan al cargar).
+
+**Corregido**
+- PredictionEngine (BUG PRED-HYST): una mejora de varios brackets comparaba contra el
+  umbral más lejano y podía quedarse en `FUERA` con la proyección muy por debajo del límite.
+
 ### 7.14.0-rc1 — Coach HUD V2, Bug Report V2 e icono
 
 Release candidate **pendiente de prueba en vivo**. Construida sobre la baseline

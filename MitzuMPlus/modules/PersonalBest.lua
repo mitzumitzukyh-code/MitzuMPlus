@@ -319,11 +319,12 @@ end
 function PersonalBest:AnnounceResults(results)
     if not results or #results == 0 then return end
 
-    -- "Nuevo record" es subir de nivel de llave; "Personal Best" es mejorar
-    -- una marca (tiempo, dps, hps, sin muertes). Son dos casillas distintas
-    -- en el panel, asi que aqui se separan igual.
+    -- "Nuevo record" es subir de nivel de llave; "Marca personal" cubre
+    -- tiempo/DPS/HPS/flawless. Cada interruptor controla tanto el mensaje de
+    -- chat como el aviso visual correspondiente.
     local wantRecord = MitzuMPlus:NotifyEnabled("notifyNewRecord")
     local wantPB     = MitzuMPlus:NotifyEnabled("notifyPersonalBest")
+    local recordToast, personalToast
 
     for _, pb in ipairs(results) do
         local wanted = (pb.type == "highest_key") and wantRecord or wantPB
@@ -338,8 +339,20 @@ function PersonalBest:AnnounceResults(results)
         elseif pb.type == "best_time" then
             local newT = MitzuMPlus.FormatTime and MitzuMPlus:FormatTime(pb.newValue) or tostring(pb.newValue)
             msg = string.format(
+                "|cFF21de66NUEVO PB!|r Mejor tiempo en %s: |cFFe8b84a%s|r",
+                pb.dungeon, newT)
+            if pb.oldValue then
+                local diff = pb.oldValue - pb.newValue
+                local diffT = MitzuMPlus.FormatTime and MitzuMPlus:FormatTime(diff) or tostring(diff)
+                msg = msg .. string.format(" (|cFF21de66-%s|r)", diffT)
+            end
+        elseif pb.type == "best_time_level" then
+            -- Este resultado existia desde CheckRun(), pero no tenia rama de
+            -- anuncio y por tanto podia quedar completamente silencioso.
+            local newT = MitzuMPlus.FormatTime and MitzuMPlus:FormatTime(pb.newValue) or tostring(pb.newValue)
+            msg = string.format(
                 "|cFF21de66NUEVO PB!|r Mejor tiempo en %s +%d: |cFFe8b84a%s|r",
-                pb.dungeon, pb.keyLevel, newT)
+                pb.dungeon, pb.keyLevel or 0, newT)
             if pb.oldValue then
                 local diff = pb.oldValue - pb.newValue
                 local diffT = MitzuMPlus.FormatTime and MitzuMPlus:FormatTime(diff) or tostring(diff)
@@ -361,14 +374,26 @@ function PersonalBest:AnnounceResults(results)
                 pb.dungeon, pb.keyLevel)
         end
 
-        if wanted and msg ~= "" and MitzuMPlus.Print then
-            MitzuMPlus:Print(msg)
+        if wanted and msg ~= "" then
+            if MitzuMPlus.Print then MitzuMPlus:Print(msg) end
+            if pb.type == "highest_key" then
+                recordToast = recordToast or msg
+            else
+                personalToast = personalToast or msg
+            end
         end
     end
 
-    -- Play sound for PBs
+    -- Como una sola run puede disparar varias marcas a la vez, se limita a un
+    -- toast por categoria. ShowToast mantiene una cola para no pisarlos entre
+    -- si ni pisar el aviso de run completada.
+    if recordToast and MitzuMPlus.ShowToast then
+        MitzuMPlus:ShowToast(recordToast, "ok", 4, true)
+    end
+    if personalToast and MitzuMPlus.ShowToast then
+        MitzuMPlus:ShowToast(personalToast, "ok", 4, true)
+    end
 
-    -- Emit event
     if MitzuMPlus.EventBus then
         MitzuMPlus.EventBus:Emit("PERSONAL_BEST_ACHIEVED", results)
     end

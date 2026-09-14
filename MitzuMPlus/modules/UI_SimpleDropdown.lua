@@ -41,8 +41,12 @@ function MitzuMPlus:CreateSimpleDropdown(parent, width, items, onSelect)
     
     local text = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if Theme and Theme.ApplyFont then Theme:ApplyFont(text,"normal",13) end
-    text:SetPoint("LEFT", 8, 0)
-    text:SetPoint("RIGHT", -20, 0)
+    text:SetPoint("LEFT", dropdown, "LEFT", 8, 0)
+    text:SetWidth(math.max(40, (width or 180) - 32))
+    text:SetWordWrap(false)
+    dropdown:SetScript("OnSizeChanged", function(_, w)
+        text:SetWidth(math.max(40, w - 32))
+    end)
     text:SetJustifyH("LEFT")
     if Theme and Theme.TEXT and Theme.TEXT.primary then
         text:SetTextColor(Theme.TEXT.primary.r, Theme.TEXT.primary.g, Theme.TEXT.primary.b, 1)
@@ -53,8 +57,9 @@ function MitzuMPlus:CreateSimpleDropdown(parent, width, items, onSelect)
     dropdown._text = text
     
     local arrow = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if Theme and Theme.ApplyFont then Theme:ApplyFont(arrow,"mono",12) end
-    arrow:SetPoint("RIGHT", -4, 0)
+    if Theme and Theme.ApplyFont then Theme:ApplyFont(arrow,"normal",12) end
+    arrow:SetPoint("RIGHT", dropdown, "RIGHT", -8, 0)
+    -- ASCII-only glyph: WoW clients may render Unicode arrows as squares.
     arrow:SetText("v")
     if Theme and Theme.TEXT and Theme.TEXT.dim then
         arrow:SetTextColor(Theme.TEXT.dim.r, Theme.TEXT.dim.g, Theme.TEXT.dim.b, 1)
@@ -89,20 +94,39 @@ function MitzuMPlus:CreateSimpleDropdown(parent, width, items, onSelect)
             dropdown:SetBackdropBorderColor(0.133, 0.133, 0.125, 1)
         end
     end)
+
+    dropdown:HookScript("OnHide", function(self)
+        local openMenu = MitzuMPlus._simpleDropdownMenu
+        if openMenu and openMenu._ownerDropdown == self then
+            openMenu:Hide()
+        end
+    end)
     
     function dropdown:SetItems(newItems)
         self._items = newItems or {}
+        local found = false
+        for _, item in ipairs(self._items) do
+            if item.value == self._selectedValue then found = true; break end
+        end
+        if not found then
+            local first = self._items[1]
+            self._selectedValue = first and first.value or nil
+            self._text:SetText(first and first.text or "Select...")
+        end
     end
     
     function dropdown:SetSelectedValue(value)
-        self._selectedValue = value
         for _, item in ipairs(self._items) do
             if item.value == value then
+                self._selectedValue = value
                 self._text:SetText(item.text or "")
-                return
+                return true
             end
         end
-        self._text:SetText(self._items[1] and self._items[1].text or "Select...")
+        local first = self._items[1]
+        self._selectedValue = first and first.value or nil
+        self._text:SetText(first and first.text or "Select...")
+        return false
     end
     
     function dropdown:GetSelectedValue()
@@ -132,15 +156,10 @@ function MitzuMPlus:OpenSimpleDropdownMenu(dropdown)
         }
     end
     
-    if Menu and Menu.OpenContextMenu then
-        Menu.OpenContextMenu(dropdown, function(ownerRegion, rootDescription)
-            for _, item in ipairs(items) do
-                rootDescription:CreateButton(item.text, item.func)
-            end
-        end)
-    else
-        self:OpenSimpleDropdownMenuLegacy(dropdown, items)
-    end
+    -- The Blizzard context-menu API can use a cursor/parent anchor that is
+    -- outside the addon when the frame is scaled. Use the controlled menu
+    -- below so every client opens it next to the field that was clicked.
+    self:OpenSimpleDropdownMenuLegacy(dropdown, items)
 end
 
 function MitzuMPlus:OpenSimpleDropdownMenuLegacy(dropdown, items)
@@ -148,63 +167,75 @@ function MitzuMPlus:OpenSimpleDropdownMenuLegacy(dropdown, items)
         self._simpleDropdownMenu:Hide()
         self._simpleDropdownMenu = nil
     end
-    
+
+    items = items or {}
+    if #items == 0 then return end
+
+    local ITEM_H = 24
+    local MAX_VISIBLE = 8
+    local visibleCount = math.min(#items, MAX_VISIBLE)
+
     local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    menu:SetFrameStrata("DIALOG")
+    menu._ownerDropdown = dropdown
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetToplevel(true)
     menu:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         tile = true, tileSize = 16, edgeSize = 16,
         insets = {left = 4, right = 4, top = 4, bottom = 4}
     })
-    
+
     if Theme and Theme.BG and Theme.BG.tooltip then
         menu:SetBackdropColor(Theme.BG.tooltip.r, Theme.BG.tooltip.g, Theme.BG.tooltip.b, Theme.BG.tooltip.a)
     else
         menu:SetBackdropColor(0.027, 0.027, 0.035, 0.98)
     end
-    
+
     if Theme and Theme.BORDER and Theme.BORDER.window then
         menu:SetBackdropBorderColor(Theme.BORDER.window.r, Theme.BORDER.window.g, Theme.BORDER.window.b, 1)
     else
         menu:SetBackdropBorderColor(0.165, 0.157, 0.125, 1)
     end
-    
-    local maxWidth = 100
+
+    -- Cap the menu height. The old implementation used #items * 24, so a
+    -- dungeon/character filter with many values escaped the addon window and
+    -- looked like stray filter text below it.
+    local maxWidth = math.max(100, dropdown:GetWidth() or 100)
     for _, item in ipairs(items) do
-        local w = (item.text and #item.text or 0) * 7 + 20
-        if w > maxWidth then maxWidth = w end
+        local label = tostring(item.text or "")
+        -- Byte length is only a rough estimate, but the clamp below makes it
+        -- safe even with accented labels.
+        maxWidth = math.max(maxWidth, math.min(420, #label * 7 + 28))
     end
-    
-    menu:SetWidth(math.max(dropdown:GetWidth(), maxWidth))
-    menu:SetHeight(#items * 24 + 8)
-    
-    local x, y = dropdown:GetCenter()
-    local scale = dropdown:GetEffectiveScale()
-    local uiScale = UIParent:GetEffectiveScale()
-    menu:SetPoint("TOP", UIParent, "BOTTOMLEFT", (x * scale) / uiScale, (y * scale) / uiScale - (dropdown:GetHeight() / 2))
-    
-    for i, item in ipairs(items) do
-        local menuItem = item
+    local footerH = #items > visibleCount and 14 or 0
+    menu:SetWidth(maxWidth)
+    menu:SetHeight(visibleCount * ITEM_H + 8 + footerH)
+    menu:SetClampedToScreen(true)
+    menu:EnableMouse(true)
+    menu:EnableMouseWheel(#items > visibleCount)
+    menu.offset = 0
+
+    local rows = {}
+    for slot = 1, visibleCount do
         local btn = CreateFrame("Button", nil, menu)
-        btn:SetPoint("TOPLEFT", 4, -(i-1) * 24 - 4)
-        btn:SetPoint("TOPRIGHT", -4, -(i-1) * 24 - 4)
-        btn:SetHeight(24)
-        
+        btn:SetPoint("TOPLEFT", 4, -(slot - 1) * ITEM_H - 4)
+        btn:SetPoint("TOPRIGHT", -4, -(slot - 1) * ITEM_H - 4)
+        btn:SetHeight(ITEM_H)
+
         local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        if Theme and Theme.ApplyFont then Theme:ApplyFont(fs,"normal",13) end
-        fs:SetPoint("LEFT", 4, 0)
+        if Theme and Theme.ApplyFont then Theme:ApplyFont(fs, "normal", 13) end
+        fs:SetPoint("LEFT", 6, 0)
+        fs:SetPoint("RIGHT", -18, 0)
         fs:SetJustifyH("LEFT")
-        fs:SetText(menuItem.text)
+        fs:SetWordWrap(false)
         if Theme and Theme.TEXT and Theme.TEXT.primary then
             fs:SetTextColor(Theme.TEXT.primary.r, Theme.TEXT.primary.g, Theme.TEXT.primary.b, 1)
         else
             fs:SetTextColor(0.933, 0.933, 0.933, 1)
         end
+        btn._label = fs
 
-        -- Un Button sin BackdropTemplate no tiene SetBackdrop en Retail.
-        -- El hover se dibuja con una textura propia, valida para cualquier
-        -- tipo de Button y sin crear NineSlice/backdrops en cada entrada.
         local hover = btn:CreateTexture(nil, "BACKGROUND")
         hover:SetAllPoints()
         hover:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -213,37 +244,94 @@ function MitzuMPlus:OpenSimpleDropdownMenuLegacy(dropdown, items)
             hc and hc.b or 0.05, hc and hc.a or 0.90)
         hover:Hide()
         btn._hover = hover
-        
-        btn:SetScript("OnEnter", function(self)
-            self._hover:Show()
-        end)
-        
-        btn:SetScript("OnLeave", function(self)
-            self._hover:Hide()
-        end)
-        
-        btn:SetScript("OnClick", function()
-            if menuItem.func then menuItem.func() end
-            menu:Hide()
-        end)
+
+        btn:SetScript("OnEnter", function(self) self._hover:Show() end)
+        btn:SetScript("OnLeave", function(self) self._hover:Hide() end)
+        rows[slot] = btn
     end
-    
-    menu:SetScript("OnHide", function(self)
-        self:SetScript("OnUpdate", nil)
-        MitzuMPlus._simpleDropdownMenu = nil
+
+    local scrollHint
+    if #items > visibleCount then
+        scrollHint = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if Theme and Theme.ApplyFont then Theme:ApplyFont(scrollHint, "normal", 10) end
+        scrollHint:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -7, 5)
+        scrollHint:SetTextColor(0.58, 0.55, 0.48, 1)
+    end
+
+    local function ClampOffset()
+        local maxOffset = math.max(0, #items - visibleCount)
+        menu.offset = math.max(0, math.min(maxOffset, tonumber(menu.offset) or 0))
+    end
+
+    local function RefreshRows()
+        ClampOffset()
+        for slot, btn in ipairs(rows) do
+            local idx = menu.offset + slot
+            local item = items[idx]
+            if item then
+                btn._index = idx
+                btn._label:SetText(tostring(item.text or ""))
+                btn:SetScript("OnClick", function(self)
+                    local selected = items[self._index]
+                    -- Hide the popup before refreshing the owning panel. Some
+                    -- filter callbacks rebuild dropdown contents immediately;
+                    -- doing that while this UIParent popup is still active can
+                    -- make the click look ignored or close the wrong menu.
+                    menu:Hide()
+                    if selected and selected.func then
+                        local ok, err = pcall(selected.func)
+                        if not ok and MitzuMPlus and MitzuMPlus.Print then
+                            MitzuMPlus:Print("Error al aplicar filtro: " .. tostring(err))
+                        end
+                    end
+                end)
+                btn:Show()
+            else
+                btn._index = nil
+                btn:Hide()
+            end
+        end
+        if scrollHint then
+            local last = math.min(#items, menu.offset + visibleCount)
+            scrollHint:SetText(string.format("%d-%d/%d", menu.offset + 1, last, #items))
+        end
+    end
+
+    menu:SetScript("OnMouseWheel", function(self, delta)
+        self.offset = (self.offset or 0) - delta
+        RefreshRows()
     end)
-    
+
+    -- Open on the current selection when possible instead of always starting
+    -- at the first item.
+    local selectedValue = dropdown._selectedValue
+    if selectedValue ~= nil then
+        for i, raw in ipairs(dropdown._items or {}) do
+            if raw.value == selectedValue then
+                if i > visibleCount then menu.offset = i - visibleCount end
+                break
+            end
+        end
+    end
+    RefreshRows()
+
+    -- Anchor next to the control. Height is capped so SetClampedToScreen no
+    -- longer has to move a giant menu to an unrelated area of the screen.
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
+
+    menu:SetScript("OnHide", function(self)
+        if MitzuMPlus._simpleDropdownMenu == self then
+            MitzuMPlus._simpleDropdownMenu = nil
+        end
+    end)
+
     menu:Show()
     self._simpleDropdownMenu = menu
-    
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0.1, function()
-            if not menu:IsShown() then return end
-            menu:SetScript("OnUpdate", function(self)
-                if not IsMouseOverSafe(self) and not IsMouseOverSafe(dropdown) then
-                    self:Hide()
-                end
-            end)
-        end)
-    end
+
+    -- Do NOT close this popup from an OnUpdate mouse-over poll. Retail can
+    -- report a one-frame gap while the pointer moves from the owner field to
+    -- this UIParent child, which made filter menus disappear before the click
+    -- reached an item. The menu now closes deterministically on selection or
+    -- when another dropdown is opened.
 end

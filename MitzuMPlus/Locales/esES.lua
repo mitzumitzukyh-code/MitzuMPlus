@@ -1,6 +1,6 @@
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- MitzuMPlus M+ Historial - Localization: Español (esES / esMX)
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 local L = LibStub("AceLocale-3.0"):NewLocale("MitzuMPlus", "esES")
 if not L then
@@ -8,12 +8,12 @@ if not L then
     if not L then return end
 end
 
--- ── General ─────────────────────────────────────────────────────────────
+-- -- General -------------------------------------------------------------
 L["ADDON_LOADED"]           = "|cFFD4A43CMitzuMPlus M+ Historial|r v%s cargado. /MitzuMPlus para abrir."
 L["ADDON_TITLE"]            = "MitzuMPlus M+ HISTORIAL"
 L["ADDON_SUBTITLE"]         = "Historial y Análisis de Mythic+"
 
--- ── Tabs ────────────────────────────────────────────────────────────────
+-- -- Tabs ----------------------------------------------------------------
 L["TAB_HISTORIAL"]          = "Historial"
 L["TAB_STATS"]              = "Estadísticas"
 L["TAB_DETAIL"]             = "Detalle"
@@ -21,7 +21,7 @@ L["TAB_COMPARE"]            = "Comparar"
 L["TAB_CONFIG"]             = "Configuración"
 L["TAB_SEASON"]             = "Temporada"
 
--- ── Sidebar ─────────────────────────────────────────────────────────────
+-- -- Sidebar -------------------------------------------------------------
 L["SIDEBAR_GLOBAL_SUMMARY"] = ">> RESUMEN GLOBAL (%d)"
 L["SIDEBAR_TOTAL_RUNS"]     = "Runs totales"
 L["SIDEBAR_IN_TIME"]        = "En tiempo"
@@ -37,7 +37,7 @@ L["SIDEBAR_WEEKLY_INTIME"]  = "En tiempo"
 L["SIDEBAR_WEEKLY_DEATHS"]  = "Muertes totales"
 L["SIDEBAR_BEST_PER_DUNG"]  = ">> MEJOR POR MAZMORRA"
 
--- ── Filter Bar ──────────────────────────────────────────────────────────
+-- -- Filter Bar ----------------------------------------------------------
 L["FILTER_SEARCH"]          = "Buscar mazmorra..."
 L["FILTER_ALL_DUNGEONS"]    = "Todas"
 L["FILTER_ALL_RESULTS"]     = "Todas"
@@ -49,7 +49,7 @@ L["FILTER_SORT_DPS"]        = "DPS"
 L["FILTER_SORT_TIME"]       = "Tiempo"
 L["FILTER_SORT_DEATHS"]     = "Muertes"
 
--- ── Buttons ─────────────────────────────────────────────────────────────
+-- -- Buttons -------------------------------------------------------------
 L["BTN_EXPORT_CSV"]         = "Exportar CSV"
 L["BTN_EXPORT_CODE"]        = "Exportar Code"
 L["BTN_EXPORT_WEB"]         = "Exportar Web"
@@ -59,15 +59,15 @@ L["BTN_BACK"]               = "<-- Volver"
 L["BTN_DELETE"]              = "Eliminar"
 L["BTN_FAVORITE"]           = "Favorito"
 
--- ── Run States ──────────────────────────────────────────────────────────
+-- -- Run States ----------------------------------------------------------
 L["RUN_IN_TIME"]            = "EN TIEMPO"
 L["RUN_OUT_OF_TIME"]        = "FUERA DE TIEMPO"
 L["RUN_STARTED"]            = "|cFF21de66M+ Iniciada:|r %s +%d | Rol: %s (%s) | Fuente: %s"
-L["RUN_COMPLETED"]          = "%s +%d — %s"
+L["RUN_COMPLETED"]          = "%s +%d - %s"
 L["RUN_PRACTICE"]           = "Run de práctica detectada, no se guardará."
 L["RUN_DUPLICATE"]          = "Duplicado ignorado: Esta run ya fue registrada."
 
--- ── Stats Panel ─────────────────────────────────────────────────────────
+-- -- Stats Panel ---------------------------------------------------------
 L["STATS_TOTAL_RUNS"]       = "RUNS TOTALES"
 L["STATS_SUCCESS_RATE"]     = "TASA DE ÉXITO"
 L["STATS_BEST_KEY"]         = "MEJOR LLAVE"
@@ -83,11 +83,11 @@ L["STATS_PER_RUN"]          = "%.1f por run"
 L["STATS_DUNGEONS"]         = "mazmorras"
 L["STATS_RUNS_ANALYZED"]    = "runs analizadas"
 
--- ── Detail Panel ────────────────────────────────────────────────────────
+-- -- Detail Panel --------------------------------------------------------
 L["DETAIL_NO_RUN"]          = "Ninguna Run Seleccionada"
 L["DETAIL_SELECT_RUN"]      = "Selecciona una run del Historial para ver detalles."
 
--- ── Compare Panel ───────────────────────────────────────────────────────
+-- -- Compare Panel -------------------------------------------------------
 L["COMPARE_TITLE"]          = "Comparación de Runs"
 L["COMPARE_SELECT"]         = "Selecciona dos runs para compararlas lado a lado"
 L["COMPARE_NEED_2"]         = "Necesitas al menos 2 runs para comparar"
@@ -97,7 +97,7 @@ L["COMPARE_SUMMARY"]        = ">> RESUMEN"
 L["COMPARE_STATS"]          = ">> ESTADÍSTICAS COMPARADAS"
 L["COMPARE_PERFORMANCE"]    = ">> RENDIMIENTO GENERAL"
 
--- ── Config Panel ────────────────────────────────────────────────────────
+-- -- Config Panel --------------------------------------------------------
 L["CONFIG_GENERAL"]         = ">> CONFIGURACIÓN GENERAL"
 L["CONFIG_AUTO_RECORD"]     = "Registrar automáticamente"
 L["CONFIG_AUTO_RECORD_D"]   = "Registra las runs completadas de forma automática"
@@ -135,23 +135,23 @@ L["CONFIG_RESET_CONFIG"]    = "Restablecer configuración"
 L["CONFIG_DELETE_ALL"]      = "Borrar todos los datos"
 L["CONFIG_ABOUT"]           = ">> ACERCA DE"
 
--- ── Personal Best ───────────────────────────────────────────────────────
+-- -- Personal Best -------------------------------------------------------
 L["PB_NEW_RECORD"]          = "|cFF21de66NUEVO RÉCORD!|r Mejor llave en %s: |cFFe8b84a+%d|r"
 L["PB_NEW_TIME"]            = "|cFF21de66NUEVO PB!|r Mejor tiempo en %s +%d: |cFFe8b84a%s|r"
 L["PB_NEW_DPS"]             = "|cFF21de66NUEVO PB DPS!|r %s: |cFFe8b84a%s|r DPS"
 L["PB_NEW_HPS"]             = "|cFF21de66NUEVO PB HPS!|r %s: |cFFe8b84a%s|r HPS"
 L["PB_FLAWLESS"]            = "|cFF21de66IMPECABLE!|r %s +%d completada sin muertes"
 
--- ── Goals ───────────────────────────────────────────────────────────────
-L["GOAL_UNLOCKED"]          = "|cFFFFD700LOGRO DESBLOQUEADO!|r |cFFe8b84a%s|r — %s"
+-- -- Goals ---------------------------------------------------------------
+L["GOAL_UNLOCKED"]          = "|cFFFFD700LOGRO DESBLOQUEADO!|r |cFFe8b84a%s|r - %s"
 
--- ── Score ───────────────────────────────────────────────────────────────
+-- -- Score ---------------------------------------------------------------
 L["SCORE_TITLE"]            = "Puntuación M+"
 L["SCORE_TOTAL"]            = "Puntuación Total"
 L["SCORE_WEEKLY_DELTA"]     = "Cambio Semanal"
 
--- ── Slash Commands ──────────────────────────────────────────────────────
-L["HELP_TITLE"]             = "|cFFe8b84a═════ MitzuMPlus M+ HISTORIAL - AYUDA ═════|r"
+-- -- Slash Commands ------------------------------------------------------
+L["HELP_TITLE"]             = "|cFFe8b84a===== MitzuMPlus M+ HISTORIAL - AYUDA =====|r"
 L["HELP_OPEN"]              = "|cFFf7d470/MitzuMPlus|r o |cFFf7d470/emp|r  - Abrir/cerrar ventana"
 L["HELP_HISTORIAL"]         = "|cFFf7d470/MitzuMPlus historial|r          - Tab Historial"
 L["HELP_STATS"]             = "|cFFf7d470/MitzuMPlus stats|r              - Tab Estadísticas"
@@ -166,7 +166,7 @@ L["HELP_VERSION"]           = "|cFFf7d470/MitzuMPlus version|r            - Most
 L["HELP_BUGREPORT"]         = "|cFFf7d470/MitzuMPlus bugreport|r          - Copiar log de errores"
 L["HELP_CLEARERRORS"]       = "|cFFf7d470/MitzuMPlus clearerrors|r        - Limpiar errores"
 
--- ── Misc ────────────────────────────────────────────────────────────────
+-- -- Misc ----------------------------------------------------------------
 L["DUNGEON"]                = "Mazmorra"
 L["KEY_LEVEL"]              = "Nivel de Llave"
 L["RESULT"]                 = "Resultado"

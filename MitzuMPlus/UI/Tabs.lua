@@ -44,7 +44,7 @@ local TAB_DEFS = {
     {
         id   = "stats",
         icon = ICON_PATH .. "5b_tab_stats",
-        text = "ESTADISTICAS",
+        text = "ESTADÍSTICAS",
         badge = nil,
     },
     {
@@ -54,15 +54,9 @@ local TAB_DEFS = {
         badge = nil,
     },
     {
-        id   = "coach",
-        icon = "Interface\\Icons\\Achievement_ChallengeMode_Gold",
-        text = "M+ COACH",
-        badge = nil,
-    },
-    {
         id   = "settings",
         icon = ICON_PATH .. "5e_tab_config",
-        text = "CONFIGURACION",
+        text = "CONFIGURACIÓN",
         badge = nil,
     },
 }

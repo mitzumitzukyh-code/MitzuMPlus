@@ -11,10 +11,4 @@
     <Binding name="MITZUMPLUS_OVERLAY" runOnUp="false">
         MitzuMPlus_OverlayBinding()
     </Binding>
-    <Binding name="MITZUMPLUS_ROUTE_NEXT_PULL" runOnUp="false">
-        MitzuMPlus_RouteNextPullBinding()
-    </Binding>
-    <Binding name="MITZUMPLUS_ROUTE_PREVIOUS_PULL" runOnUp="false">
-        MitzuMPlus_RoutePreviousPullBinding()
-    </Binding>
 </Bindings>

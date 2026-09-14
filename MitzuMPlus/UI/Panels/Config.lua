@@ -261,496 +261,197 @@ end
 -- ─────────────────────────────────────────────────────────────────────────
 
 function PanelConfig:Create(parent)
-    local container
-    if MitzuMPlus.Tabs and MitzuMPlus.Tabs.CreatePanelContainer then
-        container = MitzuMPlus.Tabs:CreatePanelContainer(parent)
-    else
-        container = CreateFrame("Frame", nil, parent)
-        container:SetAllPoints(parent)
-    end
+    local container = MitzuMPlus.Tabs and MitzuMPlus.Tabs:CreatePanelContainer(parent)
+        or CreateFrame("Frame", nil, parent)
+    if not MitzuMPlus.Tabs then container:SetAllPoints(parent) end
 
-    -- ScrollFrame (mismo patrón que los demás paneles)
     local scrollFrame = WG():CreateScrollFrame(container)
-    scrollFrame:SetPoint("TOPLEFT",     container,"TOPLEFT",     16, -16)
-    scrollFrame:SetPoint("BOTTOMRIGHT", container,"BOTTOMRIGHT", -16,  16)
-
+    scrollFrame:SetPoint("TOPLEFT", container, "TOPLEFT", 16, -16)
+    scrollFrame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -16, 16)
     local content = scrollFrame.scrollChild
     content:SetWidth(1)
-
     scrollFrame:SetScript("OnSizeChanged", function(self)
-        if not self.scrollChild then return end
-        local w = self:GetWidth() or 0
-        self.scrollChild:SetWidth(math.max(1, w - 20))
-        self:UpdateScrollRange()
-    end)
-    scrollFrame:HookScript("OnShow", function(self)
-        if not self.scrollChild then return end
-        local w = self:GetWidth() or 0
-        self.scrollChild:SetWidth(math.max(1, w - 20))
-        self:UpdateScrollRange()
+        if self.scrollChild then
+            self.scrollChild:SetWidth(math.max(1, (self:GetWidth() or 0) - 20))
+            self:UpdateScrollRange()
+        end
     end)
 
     local yOff = 0
+    local function place(section)
+        section:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOff)
+        section:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOff)
+        FinishSection(section)
+        yOff = yOff - section:GetHeight() - 14
+    end
 
-    -- ── SECCIÓN: GENERAL ─────────────────────────────────────────────────
-    local secGeneral = MakeSection(content, ">> CONFIGURACIÓN GENERAL", 290)
-    secGeneral:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secGeneral:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
-
-    MakeToggleRow(secGeneral,
-        "Registrar automáticamente",
-        "Registra las runs completadas de forma automática",
-        function() return S().autoActivateTracking ~= false end,
-        function(v) S().autoActivateTracking = v end)
-
-    MakeToggleRow(secGeneral,
-        "Solo runs en tiempo",
-        "Registra únicamente runs completadas dentro del tiempo límite",
-        function() return P().onlyInTime or false end,
-        function(v) P().onlyInTime = v end)
-
-    MakeToggleRow(secGeneral,
-        "Registrar detalles completos",
-        "Incluye estadísticas de combate: DPS, healing, muertes, etc.",
+    local secGeneral = MakeSection(content, "GENERAL", 100)
+    MakeToggleRow(secGeneral, "Mostrar botón del minimapa",
+        "Acceso rápido a MitzuMPlus desde el minimapa",
         function()
-            local t = S().tracking
-            return t == nil or t.damage ~= false
+            local icon = S().minimapIcon
+            return type(icon) ~= "table" or icon.hide ~= true
         end,
-        function(v)
-            if not S().tracking then S().tracking = {} end
-            S().tracking.damage = v
+        function(value)
+            S().minimapIcon = S().minimapIcon or {}
+            S().minimapIcon.hide = not value
+            local lib = LibStub and LibStub("LibDBIcon-1.0", true)
+            if lib then if value then lib:Show("MitzuMPlus") else lib:Hide("MitzuMPlus") end end
         end)
+    place(secGeneral)
 
-    MakeToggleRow(secGeneral,
-        "Compartir datos con grupo",
-        "Permite que otros jugadores vean tus estadísticas",
-        function() return P().shareData or false end,
-        function(v) P().shareData = v end)
+    local function HUD() return MitzuMPlus.KeyPredictionHUD end
+    local function HS() local h = HUD(); return h and h:Settings() or {} end
+    local secTracker = MakeSection(content, "TRACKER M+", 430)
+    MakeToggleRow(secTracker, "Activado",
+        "Muestra únicamente la proyección +3, +2, +1 u OVERTIME durante la llave",
+        function() return HS().enabled ~= false end,
+        function(v) if HUD() then HUD():SetEnabled(v) end end)
+    MakeToggleRow(secTracker, "Bloquear posición",
+        "Bloqueado no se arrastra ni intercepta clics",
+        function() return HS().locked == true end,
+        function(v) if HUD() then HUD():SetOption("locked", v) end end)
+    MakeToggleRow(secTracker, "Mostrar confianza",
+        "Muestra el porcentaje de confianza cuando el motor dispone de base",
+        function() return HS().showConfidence ~= false end,
+        function(v) if HUD() then HUD():SetOption("showConfidence", v) end end)
+    MakeToggleRow(secTracker, "Mostrar ETA",
+        "Muestra la hora estimada de finalización cuando es fiable",
+        function() return HS().showETA ~= false end,
+        function(v) if HUD() then HUD():SetOption("showETA", v) end end)
+    MakeSliderRow(secTracker, "Escala  (%)", 60, 200,
+        function() return math.floor(((tonumber(HS().scale) or 1) * 100) + 0.5) end,
+        function(v) if HUD() then HUD():SetOption("scale", v / 100) end end)
+    MakeSliderRow(secTracker, "Opacidad  (%)", 20, 100,
+        function() return math.floor(((tonumber(HS().alpha) or 1) * 100) + 0.5) end,
+        function(v) if HUD() then HUD():SetOption("alpha", v / 100) end end)
+    MakeButtonRow(secTracker, "Vista previa: activar / desactivar", function()
+        if HUD() then HUD():SetPreview(not HUD():IsPreview()) end
+    end, "primary")
+    MakeButtonRow(secTracker, "Restablecer posición", function()
+        if HUD() then HUD():ResetPosition() end
+    end)
+    place(secTracker)
 
-    MakeSliderRow(secGeneral,
-        "Nivel mínimo de llave",
-        1, 25,
-        function() return P().minKeyLevel or 2 end,
-        function(v) P().minKeyLevel = v end)
-
-    FinishSection(secGeneral)
-    yOff = yOff - secGeneral:GetHeight() - 14
-
-    -- ── SECCIÓN: INTERFAZ ─────────────────────────────────────────────────
-    local secUI = MakeSection(content, ">> INTERFAZ", 315)
-    secUI:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secUI:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
-
-    MakeToggleRow(secUI,
-        "Mostrar botón de minimapa",
-        "Muestra el ícono de MitzuMPlus en el minimapa",
-        function()
-            return S().minimap == nil or (S().minimap and S().minimap.show ~= false)
-        end,
-        function(v)
-            if not S().minimap then S().minimap = {} end
-            S().minimap.show = v
-            local ico = LibStub and LibStub("LibDBIcon-1.0", true)
-            if ico then
-                if v then ico:Show("MitzuMPlus")
-                else       ico:Hide("MitzuMPlus") end
-            end
-        end)
-
-    MakeToggleRow(secUI,
-        "Bloquear ventana",
-        "Evita que la ventana se mueva accidentalmente",
-        function() return S().windowLocked or false end,
+    local secUI = MakeSection(content, "INTERFAZ", 310)
+    MakeToggleRow(secUI, "Bloquear ventana", "Evita mover la ventana accidentalmente",
+        function() return S().windowLocked == true end,
         function(v)
             S().windowLocked = v
             if MitzuMPlus.Window then MitzuMPlus.Window:SetMovable(not v) end
         end)
-
-    MakeToggleRow(secUI,
-        "Habilitar animaciones",
-        "Animación de aparición al abrir la ventana",
+    MakeToggleRow(secUI, "Animaciones", "Transición breve al cambiar de vista",
         function() return S().enableAnimations ~= false end,
         function(v) S().enableAnimations = v end)
-
-    MakeToggleRow(secUI,
-        "Cerrar con Escape",
-        "Permite cerrar la ventana presionando la tecla Escape",
+    MakeToggleRow(secUI, "Cerrar con Escape", "Cierra MitzuMPlus con la tecla Escape",
         function() return S().closeWithEscape ~= false end,
-        function(v) S().closeWithEscape = v end)
-
-    MakeSliderRow(secUI,
-        "Tamaño del texto de la interfaz  (%)",
-        90, 140,
+        function(v)
+            S().closeWithEscape = v
+            if MitzuMPlus.UpdateEscapeHandling then MitzuMPlus:UpdateEscapeHandling() end
+        end)
+    MakeSliderRow(secUI, "Tamaño del texto  (%)", 90, 140,
         function() return math.floor(((S().textScale or 1.15) * 100) + 0.5) end,
         function(v)
             S().textScale = v / 100
-            local th = TH()
-            if th and th.RefreshFonts then th:RefreshFonts() end
+            if TH() and TH().RefreshFonts then TH():RefreshFonts() end
         end)
-
-    -- ── Nivel de interfaz ────────────────────────────────────────────────
-    -- Va el PRIMERO de la seccion a proposito: es el ajuste que mas cambia lo
-    -- que ve el jugador, y el unico que alguien que empieza necesita tocar.
-    do
-        local LEVELS  = { "Aprendiendo", "Pro" }
-        local current = (tostring(S().uiLevel or "PRO"):upper() == "LEARN") and 1 or 2
-
-        MakeDropdownRow(secUI,
-            "Nivel de interfaz",
-            "Aprendiendo: te dice qué hacer y explica cada dato · Pro: todos los números",
-            LEVELS, current,
-            function(index)
-                S().uiLevel = (index == 1) and "LEARN" or "PRO"
-                -- Se repinta al momento para que se vea el cambio sin tener
-                -- que entrar a una mazmorra a comprobarlo.
-                if MitzuMPlus.OverlayFrame and MitzuMPlus.OverlayFrame.Refresh then
-                    pcall(function() MitzuMPlus.OverlayFrame:Refresh() end)
-                end
-                MitzuMPlus:Print(index == 1
-                    and "|cFF21de66Modo Aprendiendo:|r el Coach dirá qué hacer y explicará cada número."
-                    or  "|cFF21de66Modo Pro:|r el Coach muestra todos los datos.")
-            end)
-    end
-
-    -- ── Fuente de la interfaz (LibSharedMedia) ───────────────────────────
-    -- La lista se construye AQUI, al crear el panel, no al cargar el archivo:
-    -- LibSharedMedia la rellenan otros addons y en tiempo de carga puede estar
-    -- todavia vacia. Al abrir Configuracion ya estan todos dentro.
-    do
-        -- OJO: no llamar a esta local `TH`. Arriba hay `local function TH()`
-        -- y dentro de este bloque la tapaba, asi que las lineas de mas abajo
-        -- que hacen `TH():ApplyFont(...)` intentaban invocar una tabla.
-        local ThemeTbl = MitzuMPlus.Theme
-        local fonts = (ThemeTbl and ThemeTbl.GetFontList) and ThemeTbl:GetFontList() or {}
-
-        if #fonts == 0 then
-            -- Sin LSM no se pinta un desplegable vacio que no hace nada: se
-            -- dice por que no esta y como conseguirlo.
-            local note = secUI:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            note:SetPoint("TOPLEFT",  secUI, "TOPLEFT",  14, secUI.innerY)
-            note:SetPoint("TOPRIGHT", secUI, "TOPRIGHT", -14, secUI.innerY)
-            note:SetJustifyH("LEFT")
-            TH():ApplyFont(note, "normal", 12)
-            local why = (ThemeTbl and ThemeTbl.LSMDiagnosis) and ThemeTbl:LSMDiagnosis() or nil
-            note:SetText("Fuente de la interfaz: no hay lista que mostrar. " ..
-                (why or "Requiere LibSharedMedia-3.0.") ..
-                "  Escribe /emp fuentes para el detalle.")
-            note:SetTextColor(0.55, 0.55, 0.55, 1)
-            secUI.innerY = secUI.innerY - 34
-        else
-            -- Se antepone la opcion de volver al tema, para que se pueda
-            -- deshacer sin tener que recordar cual era la fuente original.
-            local items, current = { "(fuente del tema)" }, 1
-            local chosen = S().uiFont
-            for i, name in ipairs(fonts) do
-                items[i + 1] = name
-                if chosen and name == chosen then current = i + 1 end
-            end
-
-            MakeDropdownRow(secUI,
-                "Fuente de la interfaz",
-                "Se aplica al instante a toda la ventana; no hace falta recargar",
-                items, current,
-                function(index, value)
-                    if index == 1 then
-                        S().uiFont = nil
-                    else
-                        S().uiFont = value
-                    end
-                    -- Colors es quien tiene el registro debil de FontStrings,
-                    -- asi que es el unico que puede repintar lo ya creado.
-                    local C = MitzuMPlus.Colors
-                    if C and C.RefreshFonts then C:RefreshFonts() end
-                end)
-        end
-    end
-
-    MakeSliderRow(secUI,
-        "Opacidad de ventana  (%)",
-        20, 100,
-        function() return math.floor((S().windowOpacity or 0.92) * 100) end,
+    MakeSliderRow(secUI, "Opacidad de ventana  (%)", 20, 100,
+        function() return math.floor(((S().windowOpacity or 1) * 100) + 0.5) end,
         function(v)
-            local alpha = v / 100
-            S().windowOpacity = alpha
-            if MitzuMPlus.Window then MitzuMPlus.Window:SetAlpha(alpha) end
+            S().windowOpacity = v / 100
+            if MitzuMPlus.Window then MitzuMPlus.Window:SetAlpha(v / 100) end
         end)
+    place(secUI)
 
-    FinishSection(secUI)
-    yOff = yOff - secUI:GetHeight() - 14
-
-    -- ── SECCIÓN: NOTIFICACIONES ───────────────────────────────────────────
-    local secNotif = MakeSection(content, ">> NOTIFICACIONES", 228)
-    secNotif:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secNotif:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
-
-    MakeToggleRow(secNotif,
-        "Notificar al completar run",
-        "Muestra un mensaje en pantalla al terminar una Mythic+",
-        function() return P().notifyOnComplete ~= false end,
-        function(v) P().notifyOnComplete = v end)
-
-    MakeToggleRow(secNotif,
-        "Notificar nuevo récord",
-        "Alerta cuando superas tu mejor tiempo en una mazmorra",
-        function() return P().notifyNewRecord ~= false end,
-        function(v) P().notifyNewRecord = v end)
-
-    MakeToggleRow(secNotif,
-        "Notificar Personal Best",
-        "Muestra un mensaje en chat cuando superas tu mejor marca",
-        function() return P().notifyPersonalBest ~= false end,
-        function(v) P().notifyPersonalBest = v end)
-
-    MakeToggleRow(secNotif,
-        "Resumen en chat",
-        "Muestra un resumen de la run en el chat al terminar",
-        function() return P().chatOutput or false end,
-        function(v) P().chatOutput = v end)
-
-    FinishSection(secNotif)
-    yOff = yOff - secNotif:GetHeight() - 14
-
-    -- ── SECCIÓN: M+ COACH ────────────────────────────────────────────────
-    -- v6.0.0: incluye selector de modo, opciones del Coach y acceso al panel.
-    local secCoach = MakeSection(content, ">> M+ COACH", 773)
-    secCoach:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secCoach:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
-
-    MakeToggleRow(secCoach,
-        "Coach en vivo",
-        "Muestra la proyección de la key junto al tracker oficial de Blizzard",
-        function() return S().overlayEnabled ~= false end,
-        function(v)
-            S().overlayEnabled = v
-            if not v and MitzuMPlus.HideOverlay then MitzuMPlus:HideOverlay()
-            elseif v and MitzuMPlus.ShowOverlay and C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then MitzuMPlus:ShowOverlay() end
-        end)
-
-    local modeLabel = { COMPLEMENT="Complemento", REPLACE="Reemplazo", COMPACT="Compacto" }
-    local modeNext  = { COMPLEMENT="REPLACE", REPLACE="COMPACT", COMPACT="COMPLEMENT" }
-    MakeButtonRow(secCoach, "Modo del tracker: " .. (modeLabel[S().coachDisplayMode or "COMPLEMENT"] or "Complemento"), function(btn)
-        local current = tostring(S().coachDisplayMode or "COMPLEMENT"):upper()
-        local nextMode = modeNext[current] or "COMPLEMENT"
-        S().coachDisplayMode = nextMode
-        if nextMode == "REPLACE" then S().coachAnchorBlizzard = true end
-        btn:SetText("Modo del tracker: " .. modeLabel[nextMode])
-        local overlay = MitzuMPlus.OverlayFrame
-        if overlay then
-            if nextMode ~= "REPLACE" and overlay.RestoreBlizzardTracker then overlay:RestoreBlizzardTracker() end
-            overlay._anchorKey = nil
-            if overlay.ApplyBackground then overlay:ApplyBackground(true) end
-            if overlay.Reanchor then overlay:Reanchor(true) end
-            if overlay:IsShown() and overlay.Refresh then overlay:Refresh() end
-        end
-    end, "primary")
-
-    MakeToggleRow(secCoach,
-        "Anclar al tracker de Blizzard",
-        "Mantiene el Coach pegado al bloque oficial de Challenge Mode",
-        function() return S().coachAnchorBlizzard ~= false end,
-        function(v)
-            S().coachAnchorBlizzard = v
-            if MitzuMPlus.OverlayFrame and MitzuMPlus.OverlayFrame.Reanchor then MitzuMPlus.OverlayFrame:Reanchor(true) end
-        end)
-
-    MakeToggleRow(secCoach,
-        "Bloquear posición del Coach",
-        "Bloqueado no se arrastra y no intercepta clics sobre el mundo",
-        function() return S().coachLocked == true end,
-        function(v)
-            S().coachLocked = v
-            if MitzuMPlus.OverlayFrame and MitzuMPlus.OverlayFrame.ApplyMouse then
-                MitzuMPlus.OverlayFrame:ApplyMouse()
-            end
-        end)
-
-    -- v5.5.0: sin fondo el texto va con contorno negro y colores saturados.
-    -- El rectángulo negro tapaba media mazmorra y era lo primero que molestaba.
-    MakeToggleRow(secCoach,
-        "Coach sin fondo",
-        "Quita el recuadro negro: solo texto con contorno y color llamativo",
-        function() return S().coachTransparent ~= false end,
-        function(v)
-            S().coachTransparent = v
-            if MitzuMPlus.RefreshOverlayStyle then MitzuMPlus:RefreshOverlayStyle() end
-        end)
-
-    MakeToggleRow(secCoach,
-        "Línea de ritmo",
-        "Compara tu %/min real de fuerzas con el %/min necesario para entrar en tiempo",
-        function() return S().coachShowPace ~= false end,
-        function(v) S().coachShowPace = v end)
-
-    MakeToggleRow(secCoach,
-        "Línea de reloj",
-        "Tiempo transcurrido / límite y cuánto queda (en rojo bajo 2 minutos)",
-        function() return S().coachShowClock ~= false end,
-        function(v) S().coachShowClock = v end)
-
-    MakeToggleRow(secCoach,
-        "Margen de muertes",
-        "Cuántas muertes más caben antes de perder el nivel de llave proyectado",
-        function() return S().coachShowDeathBudget ~= false end,
-        function(v) S().coachShowDeathBudget = v end)
-
-    MakeSliderRow(secCoach,
-        "Tamaño del Coach  (%)",
-        70, 200,
-        function() return math.floor(((S().coachScale or 1.0) * 100) + 0.5) end,
-        function(v)
-            S().coachScale = v / 100
-            if MitzuMPlus.OverlayFrame then
-                if MitzuMPlus.OverlayFrame.ApplyScale then MitzuMPlus.OverlayFrame:ApplyScale() end
-                MitzuMPlus.OverlayFrame:Reanchor(true)
-            end
-        end)
-
-    FinishSection(secCoach)
-    yOff = yOff - secCoach:GetHeight() - 14
-
-    -- ── SECCIÓN: LOOT TRACKER ───────────────────────────────
-    local secLoot = MakeSection(content, ">> LOOT TRACKER", 230)
-    secLoot:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secLoot:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
-
-    MakeToggleRow(secLoot,
-        "Registrar loot de compañeros",
-        "Guarda los items que obtiene cada miembro del grupo durante la M+",
+    local secData = MakeSection(content, "HISTORIAL / DATOS", 390)
+    MakeToggleRow(secData, "Registrar botín del grupo",
+        "Conserva el botín para el detalle visible de cada jugador",
         function() return S().lootTracking ~= false end,
         function(v)
             S().lootTracking = v
-            if MitzuMPlus.LootTracker then
-                MitzuMPlus.LootTracker.enabled = v
-            end
+            if MitzuMPlus.LootTracker then MitzuMPlus.LootTracker.enabled = v end
         end)
-
-    MakeSliderRow(secLoot,
-        "Nivel de objeto mínimo (ilvl)",
-        0, 700,
+    -- Solo exponemos umbrales útiles para M+: Poco común, Raro y Épico.
+    -- El valor guardado sigue siendo la calidad numérica nativa de WoW
+    -- (2/3/4), de modo que LootTracker no necesita una traducción adicional.
+    local lootQualityValues = { 2, 3, 4 }
+    local lootQualityLabels = { "Poco común", "Raro", "Épico" }
+    local savedLootQuality = tonumber(S().lootMinQuality) or 2
+    local lootQualityIndex = savedLootQuality >= 4 and 3 or (savedLootQuality >= 3 and 2 or 1)
+    -- Migrar perfiles antiguos que podían contener 0, 1 o 5 al nuevo selector.
+    S().lootMinQuality = lootQualityValues[lootQualityIndex]
+    if MitzuMPlus.LootTracker then
+        MitzuMPlus.LootTracker.minQuality = S().lootMinQuality
+    end
+    MakeDropdownRow(secData, "Calidad mínima del botín",
+        "Guarda objetos de esta calidad o superior",
+        lootQualityLabels, lootQualityIndex,
+        function(index)
+            local quality = lootQualityValues[index] or 2
+            S().lootMinQuality = quality
+            if MitzuMPlus.LootTracker then MitzuMPlus.LootTracker.minQuality = quality end
+        end)
+    MakeSliderRow(secData, "Nivel de objeto mínimo", 0, 700,
         function() return S().lootMinIlvl or 0 end,
         function(v)
             S().lootMinIlvl = v
-            if MitzuMPlus.LootTracker then
-                MitzuMPlus.LootTracker.minIlvl = v
-            end
+            if MitzuMPlus.LootTracker then MitzuMPlus.LootTracker.minIlvl = v end
         end)
-
-    MakeSliderRow(secLoot,
-        "Calidad mínima de item",
-        0, 5,
-        function() return S().lootMinQuality or 2 end,
-        function(v)
-            S().lootMinQuality = v
-            if MitzuMPlus.LootTracker then
-                MitzuMPlus.LootTracker.minQuality = v
-            end
-        end)
-
-    -- Etiqueta aclaratoria de calidades
-    do
-        local qNote = secLoot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        qNote:SetPoint("TOPLEFT", secLoot, "TOPLEFT", 14, secLoot.innerY)
-        qNote:SetText("Calidades: 0=Basura  1=Normal  2=Poco común  3=Raro  4=Épico  5=Legendario")
-        qNote:SetTextColor(0.50, 0.50, 0.50, 1)
-        secLoot.innerY = secLoot.innerY - 20
-    end
-
-    FinishSection(secLoot)
-    yOff = yOff - secLoot:GetHeight() - 14
-
-    -- ── SECCIÓN: GESTIÓN DE DATOS ─────────────────────────────────────────
-    -- BUG FIX: runs is a hash table (non-consecutive numeric keys), not an array.
-    -- #table only works for arrays. Use pairs() to count correctly.
-    local runsCount = 0
-    if MitzuMPlus.db and MitzuMPlus.db.global and MitzuMPlus.db.global.runs then
-        for _ in pairs(MitzuMPlus.db.global.runs) do
-            runsCount = runsCount + 1
+    MakeButtonRow(secData, "Validar integridad del historial", function()
+        if MitzuMPlus.DataManager then
+            local valid, invalid = MitzuMPlus.DataManager:ValidateAllRuns()
+            MitzuMPlus:Print(string.format("%d válidas · %d con problemas", valid, invalid))
         end
-    end
+    end)
+    place(secData)
 
-    local secData = MakeSection(content, ">> GESTIÓN DE DATOS", 260)
-    secData:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secData:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
+    local secNotify = MakeSection(content, "NOTIFICACIONES", 230)
+    MakeToggleRow(secNotify, "Al completar run", "Aviso en pantalla al terminar la llave",
+        function() return P().notifyOnComplete ~= false end,
+        function(v) P().notifyOnComplete = v end)
+    MakeToggleRow(secNotify, "Nuevo récord", "Aviso en pantalla y chat al superar la mejor llave",
+        function() return P().notifyNewRecord ~= false end,
+        function(v) P().notifyNewRecord = v end)
+    MakeToggleRow(secNotify, "Marca personal", "Aviso en pantalla y chat al mejorar tiempo o rendimiento",
+        function() return P().notifyPersonalBest ~= false end,
+        function(v) P().notifyPersonalBest = v end)
+    MakeToggleRow(secNotify, "Resumen en chat", "Escribe un resumen al finalizar",
+        function() return P().chatOutput == true end,
+        function(v) P().chatOutput = v end)
+    MakeButtonRow(secNotify, "Probar notificaciones", function()
+        if MitzuMPlus.HandleSlashCommand then
+            MitzuMPlus:HandleSlashCommand("testavisos")
+        end
+    end, "primary")
+    place(secNotify)
 
-    MakeInfoRow(secData, "Runs registradas:", tostring(runsCount) .. " en base de datos")
+    local secQA = MakeSection(content, "AVANZADO / QA", 190)
+    MakeButtonRow(secQA, "Abrir Bug Report", function()
+        if MitzuMPlus.BugReport then MitzuMPlus.BugReport:Show() end
+    end, "primary")
+    MakeButtonRow(secQA, "Restablecer configuración", function()
+        if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_RESET_CONFIG") end
+    end, "bad")
+    MakeButtonRow(secQA, "Borrar todo el historial", function()
+        if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_CLEAR_ALL") end
+    end, "bad")
+    place(secQA)
 
-    MakeButtonRow(secData, "Exportar a CSV",
-        function()
-            if MitzuMPlus.Export and MitzuMPlus.Export.ExportToCSV then
-                MitzuMPlus.Export:ExportToCSV()
-            else
-                MitzuMPlus:Print("Exportación no disponible.")
-            end
-        end, "primary")
+    local secAbout = MakeSection(content, "ACERCA DE", 120)
+    local title = secAbout:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", secAbout, "TOPLEFT", 14, secAbout.innerY)
+    title:SetText("|cffFFD700MitzuMPlus|r")
+    secAbout.innerY = secAbout.innerY - 24
+    local info = secAbout:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    info:SetPoint("TOPLEFT", secAbout, "TOPLEFT", 14, secAbout.innerY)
+    info:SetText("Mythic+ History & Key Prediction  ·  v" .. tostring(MitzuMPlus.VERSION or "?"))
+    info:SetTextColor(0.65, 0.65, 0.65, 1)
+    place(secAbout)
 
-    MakeButtonRow(secData, "Restablecer configuracion",
-        function() if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_RESET_CONFIG") end end, "bad")
-
-    MakeButtonRow(secData, "Borrar todos los datos",
-        function() if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_CLEAR_ALL") end end, "bad")
-
-    MakeButtonRow(secData, "Validar integridad",
-        function()
-            if MitzuMPlus.DataManager then
-                local valid, invalid = MitzuMPlus.DataManager:ValidateAllRuns()
-                MitzuMPlus:Print(string.format(
-                    "|cFFe8b84a[DataManager]|r %d válidas, %d corruptas.", valid, invalid))
-                if invalid > 0 then
-                    MitzuMPlus.DataManager:RemoveCorruptRuns()
-                end
-            end
-        end, "primary")
-
-    FinishSection(secData)
-    yOff = yOff - secData:GetHeight() - 14
-
-    -- ── SECCIÓN: ACERCA DE ────────────────────────────────────────────────
-    local secAbout = MakeSection(content, ">> ACERCA DE", 130)
-    secAbout:SetPoint("TOPLEFT",  content,"TOPLEFT",  0, yOff)
-    secAbout:SetPoint("TOPRIGHT", content,"TOPRIGHT", 0, yOff)
-
-    local titleFS = secAbout:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    titleFS:SetPoint("TOPLEFT", secAbout, "TOPLEFT", 14, secAbout.innerY)
-    titleFS:SetText("|cffFFD700MitzuMPlus M+ Historial|r")
-    secAbout.innerY = secAbout.innerY - 22
-
-    -- API-2 FIX: GetAddOnMetadata deprecada en 11.0 → C_AddOns.GetAddOnMetadata
-    -- MitzuMPlus.VERSION ya contiene el valor correcto (Bootstrap.lua lo lee con
-    -- la función correcta). Este fallback queda solo como seguro extra.
-    local function _ReadVer(name)
-        if C_AddOns and C_AddOns.GetAddOnMetadata then return C_AddOns.GetAddOnMetadata(name, "Version") end
-        if GetAddOnMetadata then return GetAddOnMetadata(name, "Version") end
-        return nil
-    end
-    local addonVer = MitzuMPlus.VERSION or _ReadVer("MitzuMPlus") or "?.?.?"
-
-    local verFS = secAbout:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    verFS:SetPoint("TOPLEFT", secAbout, "TOPLEFT", 14, secAbout.innerY)
-    verFS:SetText("Versión " .. addonVer ..
-                  "  ·  Pro Player Edition  ·  Desarrollado por Mutzukyhs")
-    verFS:SetTextColor(0.65, 0.65, 0.65, 1)
-    secAbout.innerY = secAbout.innerY - 20
-
-    local helpFS = secAbout:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-    helpFS:SetPoint("TOPLEFT", secAbout,"TOPLEFT", 14, secAbout.innerY)
-    helpFS:SetText("Comandos: |cffFFD700/MitzuMPlus help|r   ·   /emp help")
-    helpFS:SetTextColor(0.55, 0.55, 0.55, 1)
-
-    FinishSection(secAbout)
-    yOff = yOff - secAbout:GetHeight() - 14
-
-    -- Altura total del contenido
     content:SetHeight(math.abs(yOff) + 20)
     scrollFrame:UpdateScrollRange()
-
-    self.panel       = container
-    self.scrollFrame = scrollFrame
-    self.content     = content
-
-    if MitzuMPlus.Tabs then
-        MitzuMPlus.Tabs:RegisterPanel("settings", container)
-    end
-
+    self.panel, self.scrollFrame, self.content = container, scrollFrame, content
+    if MitzuMPlus.Tabs then MitzuMPlus.Tabs:RegisterPanel("settings", container) end
     return container
 end
 

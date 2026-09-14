@@ -59,19 +59,16 @@ end
 DungeonRegistry.NormalizeName = normalizeName
 
 -- ─────────────────────────────────────────────────────────────────────────
--- PERSISTENCIA DE LO APRENDIDO
---
--- Vive en la DB de AdaptiveRoute. Es un mapa de números a números: no ocupa
--- nada y ahorra depender del texto en cada sesión.
+-- PERSISTENCIA DE LA IDENTIDAD FÍSICA APRENDIDA
 -- ─────────────────────────────────────────────────────────────────────────
 
 local function store()
-    local db = _G.MPlusAdaptiveRouteDB
-    if type(db) ~= "table" then return nil end
-    db.dungeonRegistry = db.dungeonRegistry or { byInstanceMapID = {}, byUIMapID = {} }
-    db.dungeonRegistry.byInstanceMapID = db.dungeonRegistry.byInstanceMapID or {}
-    db.dungeonRegistry.byUIMapID       = db.dungeonRegistry.byUIMapID or {}
-    return db.dungeonRegistry
+    local global = MitzuMPlus.db and MitzuMPlus.db.global
+    if type(global) ~= "table" then return nil end
+    global.dungeonRegistry = global.dungeonRegistry or { byInstanceMapID = {}, byUIMapID = {} }
+    global.dungeonRegistry.byInstanceMapID = global.dungeonRegistry.byInstanceMapID or {}
+    global.dungeonRegistry.byUIMapID       = global.dungeonRegistry.byUIMapID or {}
+    return global.dungeonRegistry
 end
 
 function DungeonRegistry:LoadLearned()

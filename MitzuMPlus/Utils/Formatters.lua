@@ -1,7 +1,7 @@
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- MitzuMPlus M+ Historial - Formatters Utility
 -- Funciones de formateo de números, tiempo, fechas
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
@@ -9,9 +9,9 @@ local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 local Formatters = {}
 MitzuMPlus.Formatters = Formatters
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- TIME FORMATTING
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 function Formatters:FormatTime(seconds, format)
     if not seconds or seconds < 0 then return "00:00" end
@@ -43,9 +43,9 @@ function Formatters:FormatTimeDelta(delta)
     return string.format("%s%d:%02d", sign, mins, secs)
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- NUMBER FORMATTING
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 function Formatters:FormatNumber(num, decimals)
     if not num then return "0" end
@@ -104,9 +104,9 @@ function Formatters:FormatDelta(current, baseline)
     return string.format("%s%.1f%%", sign, delta)
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- DATE FORMATTING
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 function Formatters:FormatDate(timestamp, format)
     if not timestamp then return "" end
@@ -147,9 +147,9 @@ function Formatters:FormatRelativeDate(timestamp)
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- COLOR HELPERS
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 function Formatters:ColorText(text, colorTable)
     if not text or not colorTable then return text end
@@ -168,32 +168,32 @@ function Formatters:ColorTextHex(text, hexColor)
     return string.format("|cFF%s%s|r", hexColor, text)
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- ITEM LEVEL FORMATTING
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 function Formatters:FormatItemLevel(ilvl)
-    if not ilvl or ilvl == 0 then return "—" end
+    if not ilvl or ilvl == 0 then return "-" end
     return tostring(math.floor(ilvl))
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- KEY LEVEL FORMATTING
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 function Formatters:FormatKeyLevel(level)
-    if not level or level == 0 then return "—" end
+    if not level or level == 0 then return "-" end
     return "+" .. tostring(level)
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 -- DUNGEON NAME SHORTENING
--- ═══════════════════════════════════════════════════════════════════════════
+-- ===========================================================================
 
 -- FIX BUG-8: nombres cortos para las mazmorras de Midnight S1.
 -- Se incluyen tanto nombres en inglés (cliente EN) como en español (cliente ES).
 local DUNGEON_SHORT_NAMES = {
-    -- ── The War Within ───────────────────────────────────────────────────
+    -- -- The War Within ---------------------------------------------------
     ["Atal'dazar"]                    = "AD",
     ["Ara-Kara, City of Echoes"]      = "AK",
     ["Mists of Tirna Scithe"]         = "MOTS",
@@ -205,7 +205,7 @@ local DUNGEON_SHORT_NAMES = {
     ["The Stonevault"]                = "SV",
     ["The Dawnbreaker"]               = "DB",
 
-    -- ── Midnight — Temporada 1 (M+ Pool confirmado) ────────────────────────
+    -- -- Midnight - Temporada 1 (M+ Pool confirmado) ------------------------
     -- Nuevas de Midnight
     ["Windrunner Spire"]              = "WS",
     ["Murder Row"]                    = "MR",
@@ -217,7 +217,7 @@ local DUNGEON_SHORT_NAMES = {
     ["Seat of the Triumvirate"]       = "SOTT",
     ["Skyreach"]                      = "SKY",
 
-    -- ── Midnight — nombres ES ────────────────────────────────────────────
+    -- -- Midnight - nombres ES --------------------------------------------
     ["Aguja Brisaveloz"]              = "WS",
     ["Calle del Crimen"]              = "MR",
     ["Guarida de Nalorakk"]           = "DON",

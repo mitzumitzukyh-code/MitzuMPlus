@@ -1,492 +1,110 @@
-"""Static checks for the two addons in this repository.
-
-MitzuMPlus        -> the product (CurseForge). Must not contain experimental code.
-MitzuRouteArrows  -> experimental. Reads MitzuMPlus only through MitzuMPlusAPI.
-
-Every Lua file is compiled, both TOCs are validated, and the architectural
-rules of the split are read straight from the source code. Comments are
-stripped before searching: a file must be able to explain why it does NOT do
-something without the check mistaking the explanation for the act.
-"""
-
-import re
+"""Static release gate for the MitzuMPlus CurseForge product."""
 from pathlib import Path
-
+import re
 from lupa import LuaRuntime
 
-
 ROOT = Path(__file__).resolve().parents[1]
-CORE = ROOT / "MitzuMPlus"
-MRA = ROOT / "MitzuRouteArrows"
-
-EXPERIMENTAL_MODULES = [
-    "RouteArrows", "NameplateAnchorProvider", "NameplateGenerations",
-    "PullUnitResolver", "LiveEnemyResolver", "ArrowDemo", "ArrowDemoTelemetry",
-    "GuidanceEngine", "RouteArrowPresenter",
-    "EngagementEvidence", "UnitLinkEvidence", "CastEvidence", "AuraEvidence",
-    "EventCastEvidence", "PackEvidence", "PhysicalGroupMetadata",
-    "PhysicalGroupCorrelation", "MDTPhysicalGroupData",
-    "RouteSignature", "ExecutionEpisodeTracker", "RoutePullCandidateScorer",
-    "RouteAlignment",
-]
-
-
-QA_PRESENCE_CHECK = "MitzuMPlus/modules/QA/Invariants.lua"
-
+ADDON = ROOT / "MitzuMPlus"
+TOC = ADDON / "MitzuMPlus.toc"
+RUNTIME_SUFFIXES = {".lua", ".xml", ".toc", ".tga", ".blp", ".ogg", ".mp3", ".ttf", ".otf"}
+RETIRED_NAMES = {"RouteSchema.lua", "RouteManager.lua", "RouteProgress.lua", "RouteAdvisor.lua",
+    "MDTImporter.lua", "MDTEnemyData.lua", "CoachAdvice.lua", "CoachHUD.lua",
+    "UI_Overlay_v2.lua", "PublicAPI.lua", "Coach.lua", "Window.lua", "Calibration.lua"}
+FORBIDDEN_DIRS = {"AdaptiveRoute", "Routes", "Evidence", "Alignment"}
 
 class Checks:
-    def __init__(self) -> None:
-        self.count = 0
-        self.failures: list[str] = []
-
-    def check(self, ok: bool, message: str) -> None:
+    def __init__(self): self.count, self.failures = 0, []
+    def check(self, value, message):
         self.count += 1
-        if not ok:
-            self.failures.append(message)
+        if not value: self.failures.append(message)
 
+def read(path): return path.read_text(encoding="utf-8-sig")
+def relative(path): return path.relative_to(ROOT).as_posix()
+def toc_files():
+    return [line.strip().replace("\\", "/") for line in read(TOC).splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+def metadata():
+    return {m.group(1): m.group(2).strip() for m in
+            re.finditer(r"^##\s*([\w-]+)\s*:\s*(.*?)\s*$", read(TOC), re.MULTILINE)}
 
-def read(path: Path) -> str:
-    return path.read_text(encoding="utf-8-sig")
-
-
-def rel(path: Path) -> str:
-    return path.relative_to(ROOT).as_posix()
-
-
-def lua_code(source: str, keep_strings: bool = True) -> str:
-    """Lua source without comments; string contents blanked if keep_strings is False."""
-    out: list[str] = []
-    i, n = 0, len(source)
-    while i < n:
-        c = source[i]
-        if source.startswith("--", i):
-            m = re.match(r"--\[(=*)\[", source[i:])
-            if m:
-                end = source.find("]" + m.group(1) + "]", i + len(m.group(0)))
-                i = n if end < 0 else end + len(m.group(1)) + 2
-            else:
-                end = source.find("\n", i)
-                i = n if end < 0 else end
-            out.append(" ")
-        elif c in "\"'":
-            j = i + 1
-            while j < n and source[j] != c and source[j] != "\n":
-                j += 2 if source[j] == "\\" else 1
-            out.append(source[i:j + 1] if keep_strings else '""')
-            i = j + 1
-        elif c == "[" and re.match(r"\[=*\[", source[i:]):
-            m = re.match(r"\[(=*)\[", source[i:])
-            end = source.find("]" + m.group(1) + "]", i + len(m.group(0)))
-            stop = n if end < 0 else end + len(m.group(1)) + 2
-            out.append(source[i:stop] if keep_strings else '""')
-            i = stop
-        else:
-            out.append(c)
-            i += 1
-    return "".join(out)
-
-
-def toc_files(toc: Path) -> list[str]:
-    files = []
-    for line in read(toc).splitlines():
-        entry = line.strip()
-        if entry and not entry.startswith("#"):
-            files.append(entry.replace("\\", "/"))
-    return files
-
-
-def toc_meta(toc: Path) -> dict[str, str]:
-    meta = {}
-    for line in read(toc).splitlines():
-        m = re.match(r"^##\s*([\w\-]+)\s*:\s*(.*?)\s*$", line)
-        if m:
-            meta[m.group(1)] = m.group(2)
-    return meta
-
-
-def in_order(files: list[str], names: list[str]) -> bool:
-    positions = []
-    for name in names:
-        matches = [i for i, f in enumerate(files) if f.endswith(name)]
-        if not matches:
-            return False
-        positions.append(matches[0])
-    return positions == sorted(positions)
-
-
-def compile_all(c: Checks) -> list[Path]:
+def compile_lua(c):
     lua = LuaRuntime(unpack_returned_tuples=True)
-    compile_lua = lua.eval(
-        "function(source, name) local f, err = load(source, name); "
-        "return f ~= nil, err end"
-    )
-    lua_files = sorted(
-        p for p in ROOT.rglob("*.lua")
-        if ".git" not in p.parts and "dist" not in p.parts
-    )
-    for path in lua_files:
-        ok, error = compile_lua(read(path), "@" + rel(path))
-        c.check(ok, f"{rel(path)}: {error}")
-    return lua_files
-
-
-def check_core_toc(c: Checks) -> None:
-    toc = CORE / "MitzuMPlus.toc"
-    c.check(toc.exists(), "MitzuMPlus/MitzuMPlus.toc is missing (TOC name must match folder)")
-    meta = toc_meta(toc)
-    files = toc_files(toc)
-    c.check(meta.get("Title") == "MitzuMPlus", "core TOC: Title must be MitzuMPlus")
-    for key in ["Interface", "Version", "Author", "Notes", "SavedVariables", "IconTexture"]:
-        c.check(bool(meta.get(key)), f"core TOC: missing ## {key}")
-    c.check("dev" not in meta.get("Version", ""), "core TOC: release version must not be -dev")
-    c.check("Dependencies" not in meta and "RequiredDeps" not in meta,
-            "core TOC: the product must not have required dependencies")
-    c.check("MythicDungeonTools" in meta.get("OptionalDeps", ""),
-            "core TOC: MythicDungeonTools must be optional")
-    c.check("MitzuRouteArrows" not in meta.get("OptionalDeps", "") + meta.get("Dependencies", ""),
-            "core TOC: core must not depend on MitzuRouteArrows")
-    c.check("Historial" not in meta.get("Title", "") and "Historial" not in meta.get("IconTexture", ""),
-            "core TOC: old MitzuMPlus_Historial name remains")
-    c.check("MitzuMPlus\\" in meta.get("IconTexture", ""), "core TOC: IconTexture must point to the MitzuMPlus folder")
-
-    for entry in files:
-        c.check((CORE / entry).exists(), f"core TOC: listed file missing: {entry}")
-    for name in EXPERIMENTAL_MODULES:
-        c.check(not any(f.endswith("/" + name + ".lua") or f == name + ".lua" for f in files),
-                f"core TOC: experimental module loaded by the product: {name}")
-    c.check(not any(f.startswith(("Evidence/", "Alignment/")) for f in files),
-            "core TOC: Evidence/Alignment folders loaded by the product")
-    c.check(in_order(files, ["modules/EventBus.lua", "modules/RouteProgress.lua",
-                             "AdaptiveRoute/PullNavigator.lua", "API/PublicAPI.lua", "Init.lua"]),
-            "core TOC: PublicAPI must load after RouteProgress/PullNavigator and before Init")
-
-    # No Lua file of the product lives outside its TOC (dead files).
-    listed = {(CORE / f).resolve() for f in files}
-    xml_dirs = [(CORE / f).parent.resolve() for f in files if f.endswith(".xml")]
-    for path in CORE.rglob("*.lua"):
-        covered = path.resolve() in listed or any(d in path.resolve().parents for d in xml_dirs)
-        c.check(covered, f"core: Lua file not loaded by the TOC (dead file): {rel(path)}")
-
-    # Only runtime files in the package folder.
-    for path in CORE.rglob("*"):
-        if path.is_file():
-            ok = path.suffix.lower() in {".lua", ".toc", ".xml", ".tga", ".blp", ".ogg", ".ttf"} \
-                or path.name in {"DATA_SOURCES.md", "LICENSE.txt"}
-            c.check(ok, f"core: development file inside the package folder: {rel(path)}")
-
-
-HUD_QA_MODULES = [
-    "modules/CoachHUD.lua", "modules/CoachAdvice.lua", "modules/AdaptiveRoute/PullHUD.lua",
-    "modules/QA/SafeValue.lua", "modules/QA/FlightRecorder.lua",
-    "modules/QA/Invariants.lua", "modules/QA/BugReport.lua",
-]
-AUTHORITY_WRITERS = [
-    "SetPull", "NextPull", "PreviousPull", "RestorePull", "SetCurrentPull", "Prepare", "Start",
-    "Complete", "Begin", "UpdatePull", "TryRestore", "TryRecoverWhenReady", "_Transition", "Emit",
-    "LoadForDungeon", "Unload", "SetSelectedRoute",
-]
-
-
-def check_hud_and_qa(c: Checks) -> None:
-    """Coach HUD V2, QA flight recorder and Bug Report V2 are views/observers."""
-    files = toc_files(CORE / "MitzuMPlus.toc")
-    c.check(in_order(files, ["modules/EventBus.lua", "modules/QA/SafeValue.lua",
-                             "modules/QA/FlightRecorder.lua", "modules/DungeonContext.lua"]),
-            "core TOC: QA SafeValue/FlightRecorder must load after EventBus and before DungeonContext")
-    c.check(in_order(files, ["modules/PredictionEngine.lua", "modules/CoachAdvice.lua"]),
-            "core TOC: CoachAdvice must load after PredictionEngine")
-    c.check(in_order(files, ["modules/UI_Overlay_v2.lua", "modules/CoachHUD.lua",
-                             "modules/QA/Invariants.lua", "modules/QA/BugReport.lua",
-                             "API/PublicAPI.lua", "Init.lua"]),
-            "core TOC: CoachHUD, Invariants and BugReport load order is invalid")
-
-    for relpath in HUD_QA_MODULES:
-        path = CORE / relpath
-        c.check(path.exists(), f"missing {relpath}")
-        if not path.exists():
-            continue
-        source = read(path)
-        code = lua_code(source, keep_strings=False)
-        ids = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
-        writers = sorted(ids & set(AUTHORITY_WRITERS))
-        c.check(not writers, f"{relpath}: a view/observer names authority writers {writers}")
-        scans = sorted(ids & {"C_NamePlate", "UnitGUID", "UnitName", "GetRealmName", "BNGetInfo",
-                              "CombatLogGetCurrentEventInfo", "COMBAT_LOG_EVENT_UNFILTERED"})
-        c.check(not scans, f"{relpath}: scans units/nameplates/identity {scans}")
-        literal = lua_code(source)
-        c.check('"OnUpdate"' not in literal and "'OnUpdate'" not in literal,
-                f"{relpath}: no OnUpdate polling (event-driven + NewTicker only)")
-        c.check("Secure" not in literal, f"{relpath}: no secure templates or protected actions")
-
-    hud = lua_code(read(CORE / "modules" / "CoachHUD.lua"))
-    c.check("C_Timer.NewTicker(1," in hud, "CoachHUD: clock ticker must be 1 s")
-    c.check("PLAYER_REGEN_ENABLED" in hud and "InCombatLockdown" in hud,
-            "CoachHUD: settings must be deferred out of combat")
-    c.check(hud.count("PreviewModel") >= 2, "CoachHUD: preview must use a mock model")
-    overlay = lua_code(read(CORE / "modules" / "UI_Overlay_v2.lua"))
-    c.check("ReplacesClassicOverlay" in overlay and "CoachAdvice" in overlay,
-            "classic overlay must defer to the HUD and share CoachAdvice")
-    report = lua_code(read(CORE / "modules" / "QA" / "BugReport.lua"))
-    for section in ["BUILD", "CONTEXT", "PLAYER", "PARTY", "ROUTE", "SESSION", "HUD", "COACH",
-                    "CAPABILITIES", "INVARIANTS", "RECENT EVENTS", "ERRORS"]:
-        c.check(f'"{section}"' in report, f"BugReport: missing section {section}")
-    c.check("pcall(fn, add, line)" in report, "BugReport: every section must be isolated in pcall")
-
-    # Icon: new logo in place, old textures and references gone.
-    meta = toc_meta(CORE / "MitzuMPlus.toc")
-    c.check(meta.get("IconTexture", "").endswith("Media\\Icons\\logo_64"), "core TOC: IconTexture must be logo_64")
-    logo = CORE / "Media" / "Icons" / "logo_64.tga"
-    c.check(logo.exists(), "missing Media/Icons/logo_64.tga")
-    if logo.exists():
-        head = logo.read_bytes()[:18]
-        w, h = head[12] | head[13] << 8, head[14] | head[15] << 8
-        c.check(head[2] == 2 and head[16] == 32 and head[17] == 0x08 and w == h == 64,
-                "logo_64.tga must be uncompressed 32 bpp 64x64 bottom-left TGA")
-    for old in ["1_addon.tga", "10_minimap.tga"]:
-        c.check(not (CORE / "Media" / "Icons" / old).exists(), f"unused old icon still packaged: {old}")
-    for path in list(CORE.rglob("*.lua")) + [CORE / "MitzuMPlus.toc"]:
-        if "libs" in path.relative_to(CORE).parts:
-            continue
-        text = read(path)
-        c.check("1_addon" not in text and "10_minimap" not in text, f"{rel(path)}: references a removed icon")
-
-    release = read(ROOT / "docs" / "RELEASE.md")
-    c.check("05a4d77" in release, "docs/RELEASE.md must record the live-validated baseline 05a4d77")
-    c.check("GPL-2.0" in release and "BLOQUEO" in release.upper(),
-            "docs/RELEASE.md must keep the MDT GPL-2.0 license blocker visible")
-
-
-def check_core_isolation(c: Checks) -> None:
-    forbidden_ids = set(EXPERIMENTAL_MODULES) | {
-        "MitzuRouteArrows", "MitzuRouteArrowsDB", "ThreatPlates", "TidyPlatesThreat", "Plater",
-        "MitzuMPlusEventBus",
-    }
-    for path in sorted(CORE.rglob("*.lua")):
-        if "libs" in path.relative_to(CORE).parts:
-            continue
-        code = lua_code(read(path), keep_strings=False)
-        ids = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
-        hits = sorted(ids & forbidden_ids)
-        c.check(not hits, f"{rel(path)}: core references experimental code: {hits}")
-        strings = set(re.findall(r"[\"']([A-Za-z]+)[\"']", lua_code(read(path))))
-        by_name = sorted(strings & set(EXPERIMENTAL_MODULES))
-        if rel(path) == QA_PRESENCE_CHECK:
-            # The QA invariant that DETECTS experimental modules leaking into the
-            # core may name them, but only to test presence: rawget(t, name) ~= nil.
-            presence = re.findall(r"rawget\(\s*\w+\s*,\s*name\s*\)\s*~=\s*nil", code)
-            c.check(len(presence) == 2 and not re.search(r"name\s*\]\s*[:.(]", code),
-                    f"{rel(path)}: QA invariant may only test presence of experimental modules")
-        else:
-            c.check(not by_name, f"{rel(path)}: core looks up experimental module by name: {by_name}")
-        c.check(not re.search(r"(^|[^.\w])SlashCmdList\s*=", code),
-                f"{rel(path)}: reassigns the Blizzard global SlashCmdList (taint)")
-
-    bindings = read(CORE / "Bindings.xml")
-    c.check("MARK_TARGET" not in bindings, "core Bindings.xml: mark-target binding belongs to MitzuRouteArrows")
-
-    core_lua = read(CORE / "modules" / "Core.lua")
-    c.check("pcall(tonumber, spellID)" not in core_lua, "Core: secret spellID conversion path remains")
-
-    api = lua_code(read(CORE / "API" / "PublicAPI.lua"), keep_strings=False)
-    names = re.findall(r"function API\.(\w+)\s*\(", api)
-    c.check(len(names) >= 30, "PublicAPI: API functions not found")
-    writers = [n for n in names if re.match(r"(Set|Next|Prev|Restore|Start|Stop|Complete|Clear|Import|Load|Write)", n)
-               or "Reset" in n]
-    c.check(not writers, f"PublicAPI: writer in the read-only API: {writers}")
-    c.check("__newindex" in api and "__metatable = false" in api,
-            "PublicAPI: export must be a read-only proxy")
-    for internal_writer in ["SetPull", "NextPull", "PreviousPull", "RestorePull", "SetCurrentPull",
-                            ":Emit", ":Save", ":Prepare", ":Start", ":Complete", ":Reset"]:
-        c.check(internal_writer not in api, f"PublicAPI: calls a core writer: {internal_writer}")
-
-
-def check_mra_toc(c: Checks) -> list[str]:
-    toc = MRA / "MitzuRouteArrows.toc"
-    c.check(toc.exists(), "MitzuRouteArrows/MitzuRouteArrows.toc is missing")
-    meta = toc_meta(toc)
-    core_meta = toc_meta(CORE / "MitzuMPlus.toc")
-    files = toc_files(toc)
-    c.check("EXPERIMENTAL" in meta.get("Title", ""), "MRA TOC: Title must say EXPERIMENTAL")
-    c.check(meta.get("X-Status") == "EXPERIMENTAL", "MRA TOC: X-Status must be EXPERIMENTAL")
-    c.check("dev" in meta.get("Version", ""), "MRA TOC: version must be a development version")
-    c.check(meta.get("Interface") == core_meta.get("Interface"), "MRA TOC: Interface differs from core")
-    c.check(meta.get("SavedVariables") == "MitzuRouteArrowsDB", "MRA TOC: own SavedVariables only")
-    c.check("MitzuMPlus" in meta.get("OptionalDeps", ""), "MRA TOC: MitzuMPlus must load first (OptionalDeps)")
-    for entry in files:
-        c.check((MRA / entry).exists(), f"MRA TOC: listed file missing: {entry}")
-    c.check(files[:2] == ["Core/Bootstrap.lua", "Core/Host.lua"], "MRA TOC: Bootstrap and Host must load first")
-    c.check(files[-2:] == ["Core/Lifecycle.lua", "Core/Commands.lua"], "MRA TOC: Lifecycle and Commands must load last")
-    c.check(in_order(files, [
-        "Data/MDTPhysicalGroupData.lua", "Evidence/PhysicalGroupMetadata.lua",
-        "Evidence/PhysicalGroupCorrelation.lua", "Evidence/PackEvidence.lua",
-        "Modules/GuidanceEngine.lua", "Modules/RouteArrowPresenter.lua",
-    ]), "MRA TOC: Evidence/Guidance load order is missing or invalid")
-    c.check(in_order(files, [
-        "Evidence/EngagementEvidence.lua", "Evidence/UnitLinkEvidence.lua",
-        "Evidence/PhysicalGroupCorrelation.lua",
-    ]), "MRA TOC: correlation must load after engagement and token-link evidence")
-    c.check(in_order(files, [
-        "Modules/ArrowDemo.lua", "Alignment/RouteSignature.lua",
-        "Alignment/ExecutionEpisodeTracker.lua", "Alignment/RoutePullCandidateScorer.lua",
-        "Alignment/RouteAlignment.lua", "Core/Lifecycle.lua",
-    ]), "TOC: phase-4 alignment load order is missing or invalid")
-    listed = {(MRA / f).resolve() for f in files}
-    for path in MRA.rglob("*.lua"):
-        c.check(path.resolve() in listed, f"MRA: Lua file not loaded by the TOC: {rel(path)}")
+    compile_one = lua.eval("function(s,n) local f,e=load(s,n); return f~=nil,e end")
+    files = sorted(p for p in ADDON.rglob("*.lua") if "libs" not in p.relative_to(ADDON).parts)
+    tests = sorted((ROOT / "tests" / "core").glob("*.spec.lua"))
+    for path in files + tests:
+        ok, error = compile_one(read(path), "@" + relative(path))
+        c.check(ok, f"{relative(path)}: {error}")
     return files
 
+def check_manifest(c, lua_files):
+    meta, entries = metadata(), toc_files()
+    c.check(meta.get("Title") == "MitzuMPlus", "TOC title is not MitzuMPlus")
+    c.check(meta.get("Version") == "7.14.0-rc1", "version changed during cleanup")
+    c.check(meta.get("SavedVariables") == "MitzuMPlusDB", "unexpected SavedVariables")
+    optional = meta.get("OptionalDeps", "")
+    c.check("MythicDungeonTools" not in optional, "MDT remains an optional runtime dependency")
+    c.check("MitzuRouteArrows" not in optional, "MitzuRouteArrows remains a runtime dependency")
+    c.check(meta.get("X-License") == "MIT", "package license metadata is not MIT")
+    c.check(meta.get("IconTexture", "").endswith("Media\\Icons\\logo_64"), "official logo is not configured")
+    for entry in entries: c.check((ADDON / entry).exists(), f"missing TOC entry: {entry}")
+    listed = {(ADDON / entry).resolve() for entry in entries if entry.lower().endswith(".lua")}
+    for path in lua_files: c.check(path.resolve() in listed, f"orphan Lua file outside TOC: {relative(path)}")
 
-def check_mra_isolation(c: Checks, files: list[str]) -> None:
-    api_sites = []
-    for entry in files:
-        path = MRA / entry
-        source = read(path)
-        code = lua_code(source, keep_strings=False)
-        ids = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", code))
-        for forbidden in ["MitzuMPlus", "MitzuMPlusDB", "MPlusAdaptiveRouteDB", "MitzuMPlusEventBus", "LibStub"]:
-            c.check(forbidden not in ids, f"{rel(path)}: MitzuRouteArrows uses {forbidden} (only MitzuMPlusAPI is allowed)")
-        literal = lua_code(source)
-        for forbidden in ['"MitzuMPlus"', "'MitzuMPlus'", "MitzuMPlusDB", "MPlusAdaptiveRouteDB", "AceAddon-3.0"]:
-            c.check(forbidden not in literal, f"{rel(path)}: MitzuRouteArrows names {forbidden}")
-        if "MitzuMPlusAPI" in ids or '"MitzuMPlusAPI"' in literal:
-            api_sites.append(entry)
-        for writer in ["SetPull", "NextPull", "PreviousPull", "RestorePull", "SetCurrentPull",
-                       "routeCurrentPull", "RunSession"]:
-            c.check(writer not in ids, f"{rel(path)}: MitzuRouteArrows names core writer {writer}")
-        c.check(not re.search(r"(^|[^.\w])SlashCmdList\s*=", code),
-                f"{rel(path)}: reassigns the Blizzard global SlashCmdList (taint)")
-        c.check(not re.search(r"(rawset|setfenv|debug\.setmetatable)|setmetatable\s*\(\s*_G", code),
-                f"{rel(path)}: raw writes could bypass the read-only API proxy")
-    c.check(api_sites == ["Core/Bootstrap.lua"], f"MRA: MitzuMPlusAPI must be located only in Core/Bootstrap, found {api_sites}")
+def check_product_boundary(c):
+    for path in ADDON.rglob("*"):
+        if not path.is_file(): continue
+        parts = set(path.relative_to(ADDON).parts)
+        c.check(path.name not in RETIRED_NAMES, f"retired module still packaged: {relative(path)}")
+        c.check(not (parts & FORBIDDEN_DIRS), f"retired subsystem directory still packaged: {relative(path)}")
+        c.check(path.suffix.lower() in RUNTIME_SUFFIXES or path.name == "LICENSE.txt",
+                f"non-runtime file in addon folder: {relative(path)}")
+    toc = read(TOC)
+    for word in ["MythicDungeonTools", "MitzuRouteArrows", "AdaptiveRoute", "MDTImporter", "RouteProgress"]:
+        c.check(word not in toc, f"{word} remains in the runtime manifest")
+    hud = read(ADDON / "modules" / "KeyPredictionHUD.lua")
+    code = re.sub(r"--[^\n]*", "", hud)
+    for access in ["MitzuMPlus.RouteProgress", "MitzuMPlus.RouteManager", "MitzuMPlus.RouteAdvisor",
+                   "MitzuMPlus.CoachAdvice", "C_NamePlate", "CombatLogGetCurrentEventInfo"]:
+        c.check(access not in code, f"tracker reads retired/unreliable source: {access}")
+    for result in ['["+3"]', '["+2"]', '["+1"]', '["FUERA"] = "OVERTIME"']:
+        c.check(result in hud, f"tracker result contract missing {result}")
 
-    host = lua_code(read(MRA / "Core" / "Host.lua"), keep_strings=False)
-    host_methods = re.findall(r"(\w+)\s*=\s*function\s*\(", host) + re.findall(r"function\s+Host[:.](\w+)\s*\(", host)
-    c.check(len(host_methods) >= 15, "Host: facade methods not found")
-    writers = [m for m in host_methods if re.match(r"(Set|Next|Prev|Restore|Start|Complete|Mark|Save|Emit|Write)", m)
-               or "Reset" in m]
-    c.check(not writers, f"Host: facade exposes writers: {writers}")
+def check_ui_and_commands(c):
+    tabs = read(ADDON / "UI" / "Tabs.lua")
+    for label in ["HISTORIAL", "ESTADÍSTICAS", "JUGADORES", "CONFIGURACIÓN"]:
+        c.check(label in tabs, f"missing final tab {label}")
+    c.check("M+ COACH" not in tabs, "retired M+ Coach tab remains")
+    init = read(ADDON / "Init.lua")
+    c.check('RegisterChatCommand("emp"' in init, "/emp is not registered")
+    for command in ["route", "routes", "pull", "next", "prev", "mdt", "alignment", "evidence", "coach"]:
+        c.check(f'cmd == "{command}"' not in init, f"legacy command remains: {command}")
+    dropdown = read(ADDON / "modules" / "UI_SimpleDropdown.lua")
+    c.check('arrow:SetText("▼")' in dropdown, "dropdown does not use a clear down indicator")
+    history = read(ADDON / "UI" / "Panels" / "Historial.lua")
+    for label in ["MAZMORRA", "NIVEL", "RESULTADO", "DURACIÓN", "PERSONAJE", "ROL", "FECHA"]:
+        c.check(label in history, f"History V2 column missing: {label}")
+    c.check("Panel.FilterRuns" in history and "Panel.Paginate" in history, "History V2 model helpers missing")
 
-    commands = lua_code(read(MRA / "Core" / "Commands.lua"))
-    c.check('SLASH_MITZUROUTEARROWS1 = "/mra"' in commands, "MRA: /mra slash command missing")
-    core_init = lua_code(read(CORE / "Init.lua"))
-    c.check('RegisterChatCommand("emp"' in core_init, "core: /emp slash command missing")
-    c.check('"/mra"' not in core_init and '"mra"' not in core_init, "core: registers /mra")
-    for moved in ["alignmentdetail", "alignment", "evidence", "castevidence", "eventcast", "plates",
-                  "arrowdemo", "marktarget", "guidance"]:
-        c.check(f'cmd == "{moved}"' not in core_init, f"core: still handles moved command /emp {moved}")
-        c.check(f'COMANDOS["{moved}"]' in commands, f"MRA: /mra {moved} missing")
+def check_savedvariables_and_media(c):
+    defaults = read(ADDON / "MitzuMPlus_main.lua")
+    for legacy in ["routeAutoLearn", "shareData", "routeData", "tracking =", "visibleColumns", "calibrationEnabled"]:
+        c.check(legacy not in defaults, f"obsolete default remains initialized: {legacy}")
+    for active in ["activeRunSession", "dungeonRegistry", "lootTracking", "showConfidence", "showETA"]:
+        c.check(active in defaults, f"active setting/storage missing: {active}")
+    expected = {"logo_64.tga", "2_settings.tga", "3_close.tga", "5a_tab_historial.tga",
+                "5b_tab_stats.tga", "5e_tab_config.tga"}
+    actual = {p.name for p in (ADDON / "Media" / "Icons").iterdir() if p.is_file()}
+    c.check(actual == expected, f"media set differs from referenced assets: {sorted(actual)}")
 
-
-def check_alignment_rules(c: Checks) -> None:
-    """FASE 4: alignment is DIAGNOSTIC. identityWrites=0, resolverMatchesFabricated=0,
-    automaticRouteProgress=0, read from the source."""
-    alignment = MRA / "Alignment"
-    modules = ["RouteSignature.lua", "ExecutionEpisodeTracker.lua",
-               "RoutePullCandidateScorer.lua", "RouteAlignment.lua"]
-    forbidden = [
-        "SetPull", "NextPull", "PreviousPull", "RestorePull",
-        "MarkUnit", "UnmarkUnit", "RouteArrows",
-        "ResolveForGuidance", "GuidanceEngine", "RouteArrowPresenter",
-        "UnitGUID", "UnitName", "COMBAT_LOG_EVENT_UNFILTERED",
-    ]
-    sources = {}
-    for name in modules:
-        path = alignment / name
-        c.check(path.exists(), f"Alignment: missing module {name}")
-        if not path.exists():
-            continue
-        # The addon's own name contains "RouteArrows"; it is not a reference to the module.
-        source = lua_code(read(path)).replace("MitzuRouteArrows", "MRA_ADDON")
-        sources[name] = source
-        for word in forbidden:
-            c.check(word not in source, f"{name}: forbidden phase-4 usage {word}")
-        c.check("MATCH" not in source.replace("MISMATCH", ""), f"{name}: alignment cannot produce identity MATCH")
-        c.check("matchState" not in source, f"{name}: alignment cannot write resolver matchState")
-
-    joined = "\n".join(sources.values())
-    for pattern in [r"RouteProgress\s*[:.]\s*SetPull\s*\(", r"RouteProgress\s*[:.]\s*NextPull\s*\(",
-                    r"RouteProgress\s*[:.]\s*PreviousPull\s*\(", r"RouteProgress\s*[:.]\s*RestorePull\s*\(",
-                    r"\.routeCurrentPull\s*=", r"rawset\s*\([^\n]*routeCurrentPull"]:
-        c.check(not re.search(pattern, joined), f"Alignment: progress authority found: {pattern}")
-
-    temporal = "\n".join(sources.get(n, "") for n in modules[1:])
-    c.check(not re.search(r"spellID|safeSpellID|castGUID", temporal, re.IGNORECASE),
-            "Alignment: EventCast payload crossed the temporal-engagement boundary")
-
-    detail_contract = [
-        'COMANDOS["alignmentdetail"]', "RAl:DetailLines()",
-        "authority=NONE", "progressWrites=0", "matchAuthority=NONE", "arrowWrites=0",
-        "eventCastRole=TEMPORAL_ENGAGEMENT_ONLY", "bestCandidate=",
-        "runnerUp=", "candidateMargin=", "candidateScore=", "episodeConfidence=",
-        'candidateSignal("npcComposition"', 'candidateSignal("multiplicity"',
-        'candidateSignal("bossAnchor"', 'episodeSignal("engagement"',
-        'episodeSignal("recentEvent"', 'episodeSignal("tokenLink"', "reasons=",
-    ]
-    commands = read(MRA / "Core" / "Commands.lua")
-    detail = read(alignment / "RouteAlignment.lua")
-    for marker in detail_contract:
-        c.check(marker in commands or marker in detail, f"alignmentdetail: missing contract marker {marker}")
-
-    scorer = sources.get("RoutePullCandidateScorer.lua", "")
-    for impure in ["GetTime", "CreateFrame", "C_Timer", "RegisterEvent"]:
-        c.check(impure not in scorer, f"RoutePullCandidateScorer: must stay pure, found {impure}")
-    score_one = scorer.partition("function Scorer:ScoreOne")[2].partition("function Scorer:EpisodeConfidence")[0]
-    c.check(bool(score_one), "RoutePullCandidateScorer: ScoreOne not found")
-    for signal in ["engagementConsistency", "castActivity", "eventEngagement", "tokenLinkage"]:
-        c.check(signal not in score_one, f"RoutePullCandidateScorer: global signal entered candidateScore: {signal}")
-    ranking = scorer.partition("function Scorer:Evaluate")[2]
-    c.check("a.candidateScore" in ranking and "candidateMargin" in ranking,
-            "RoutePullCandidateScorer: ranking is not explicitly candidate-only")
-
-    demo = lua_code(read(MRA / "Modules" / "ArrowDemo.lua"))
-    c.check("pcall(RAl.Feed" in demo, "ArrowDemo: the alignment layer is no longer fed from the tick")
-    tick = demo.partition("function ArrowDemo:_Tick")[2].partition("function ArrowDemo:SafeTick")[0]
-    c.check(bool(tick), "ArrowDemo: _Tick not found")
-    c.check(not ("RAl:Get" in tick or re.search(r"self:Decide\([^)]*RAl", tick, re.DOTALL)),
-            "ArrowDemo: alignment result crossed into arrow decision")
-    bridge = demo.partition("local function eventCastDe")[2].partition("local function esperados")[0]
-    c.check(bool(bridge), "ArrowDemo: EventCast bridge not found")
-    c.check(not re.search(r"safeSpellID|spellIDState|castGUID|\.spellID", bridge, re.IGNORECASE),
-            "ArrowDemo: EventCast identity payload crossed the bridge")
-
-
-def check_evidence_rules(c: Checks) -> None:
-    identity = ["AR.LiveEnemyResolver", "AR.GuidanceEngine", "AR.RouteArrowPresenter",
-                "AR.RouteArrows", "MRA.LiveEnemyResolver", "MRA.GuidanceEngine",
-                "MRA.RouteArrowPresenter", "MRA.RouteArrows", "RouteProgress"]
-    for name in ["PhysicalGroupCorrelation.lua", "CastEvidence.lua", "EventCastEvidence.lua"]:
-        source = lua_code(read(MRA / "Evidence" / name))
-        for word in identity:
-            c.check(word not in source, f"{name}: forbidden identity integration {word}")
-
-
-def check_repo_layout(c: Checks) -> None:
-    for required in ["README.md", "CHANGELOG.md", "LICENSE", "docs/ARCHITECTURE.md", "docs/RELEASE.md",
-                     "tools/package_mitzumplus.py"]:
-        c.check((ROOT / required).exists(), f"repo: missing {required}")
-    for legacy in ["MitzuMPlus_Historial.toc", "Init.lua", "modules", "UI", "libs"]:
-        c.check(not (ROOT / legacy).exists(), f"repo: legacy root entry still present: {legacy}")
-
-
-def main() -> None:
-    c = Checks()
-    lua_files = compile_all(c)
-    check_core_toc(c)
-    check_core_isolation(c)
-    check_hud_and_qa(c)
-    mra_files = check_mra_toc(c)
-    check_mra_isolation(c, mra_files)
-    check_alignment_rules(c)
-    check_evidence_rules(c)
-    check_repo_layout(c)
-
+def main():
+    c = Checks(); lua_files = compile_lua(c)
+    check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
+    check_savedvariables_and_media(c)
     if c.failures:
-        print(f"Static: {c.count} checks, {len(c.failures)} failures ({len(lua_files)} Lua files parsed)")
-        for failure in c.failures:
-            print(failure)
+        print(f"Static: {c.count} checks, {len(c.failures)} failures ({len(lua_files)} product Lua files parsed)")
+        for failure in c.failures: print(failure)
         raise SystemExit(1)
-    print(f"Static: {c.count} checks, 0 failures ({len(lua_files)} Lua files parsed)")
+    print(f"Static: {c.count} checks, 0 failures ({len(lua_files)} product Lua files parsed)")
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

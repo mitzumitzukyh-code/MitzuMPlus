@@ -21,33 +21,30 @@ MitzuMPlusDB_Defaults = {
         errorLog = {},
 
         personalBests = {},   -- [charKey][dungeonKey] = { bestTime, bestDPS, etc. }
+        dungeonRegistry = { byInstanceMapID = {}, byUIMapID = {} },
+        activeRunSession = nil,
     },
     profile = {
-        shareData = false,
-        routes = {},
+        notifyOnComplete = true,
+        notifyNewRecord = true,
+        notifyPersonalBest = true,
+        chatOutput = false,
         settings = {
-            -- v6.8.0: medicion de exactitud de la prediccion. Local, barata
-            -- (una lectura cada 5 s) y guarda 12 numeros por llave completada.
-            -- Nivel de interfaz: "PRO" (denso, datos) o "LEARN" (dice que
-            -- hacer y explica cada numero). PRO por defecto para no cambiarle
-            -- la interfaz a quien ya tenia el addon instalado.
-            uiLevel = "PRO",
-            calibrationEnabled = true,
             -- LibSharedMedia (opcional): nombre de fuente elegido por el
             -- usuario. nil = la del tema. Si LSM no esta instalada o la
             -- fuente desaparece, se cae al tema sin avisar.
             uiFont = nil,
             minimapIcon      = { hide = false },
+            lootTracking     = true,
+            lootMinQuality   = 2,
+            lootMinIlvl      = 0,
             showToasts       = true,
             pageSize         = 20,
             defaultTab       = "historial",
             windowOpacity    = 1.0,
             windowWidth      = nil,
             windowHeight     = nil,
-            rememberPosition = true,
             closeWithEscape  = true,
-            showWatermark    = true,
-            showResizeHandle = true,
             enableAnimations = true,
             windowLocked     = false,
             windowScale      = 1.0,
@@ -56,104 +53,18 @@ MitzuMPlusDB_Defaults = {
             textScale        = 1.15,
             debugMode        = false,
 
-            -- FIX BUG-7: overlay settings ausentes de los defaults.
-            -- Sin estos, db:ResetProfile() los descarta y la posición/visibilidad
-            -- del overlay no se restaura correctamente.
-            overlayEnabled   = true,
-            autoTrackOnEnter = false,
-            coachEnabled     = true,
-            coachAnchorBlizzard = true,
-            -- COMPLEMENT conserva el tracker oficial (predeterminado seguro).
-            -- REPLACE lo sustituye visualmente; COMPACT reduce el Coach.
-            coachDisplayMode = "COMPLEMENT",
-            -- v5.4.3: escala del overlay del Coach (0.7 - 2.0). El tamano base
-            -- de 250x104 con fuentes *Small resultaba ilegible en pantallas
-            -- grandes; ahora la base es 320x134 y esto lo ajusta por usuario.
-            coachScale       = 1.0,
-            -- v5.4.4: con el Coach bloqueado se desactiva EnableMouse, asi que
-            -- no intercepta ningun clic sobre el mundo durante la llave.
-            coachLocked      = false,
-
-            -- ── v5.5.0: aspecto del Coach ─────────────────────────────────
-            -- Sin fondo el texto lleva contorno negro y colores saturados. Se
-            -- lee sobre el mundo sin tapar la mazmorra con un rectangulo negro.
-            coachTransparent      = true,
-            -- Lineas opcionales del Coach en vivo.
-            coachShowPace         = true,   -- ritmo real vs ritmo necesario
-            coachShowClock        = true,   -- reloj y tiempo restante
-            coachShowDeathBudget  = true,   -- cuantas muertes mas caben
-
-            -- ── v7.14.0: Coach HUD V2 (modules/CoachHUD.lua) ──────────────
-            -- Vista principal durante la llave. replaceClassic evita tener el
-            -- overlay clasico del Coach duplicado en pantalla; overlayEnabled
-            -- y el resto de ajustes del Coach NO se tocan.
+            -- ── v7.14.0: Key Prediction HUD (modules/KeyPredictionHUD.lua) ─
+            -- El único HUD en vivo: solo predice +3/+2/+1/OVERTIME.
+            -- Los ajustes históricos retirados no se leen ni se borran.
             hud = {
                 enabled        = true,
                 locked         = false,
                 scale          = 1.0,
                 alpha          = 1.0,
-                compact        = false,
-                showPreKey     = true,
-                replaceClassic = true,
+                showConfidence = true,
+                showETA        = true,
             },
 
-            routeAutoLearn   = true,
-            predictionEnabled = true,
-
-            -- ── Tracking por rol ──────────────────────────────────────────
-            tracking = {
-                -- DPS / general
-                damage      = true,
-                damageSplit = true,
-                peakDPS     = true,
-
-                -- Healer
-                healing     = true,
-                healingBreakdown = true,
-                peakHPS     = true,
-
-                -- Tank
-                damageTaken      = true,
-                mitigation       = true,
-                peakDTPS         = true,
-                defensiveUptime  = true,
-                avoidance        = true,
-
-                -- Comunes
-                deaths      = true,
-                interrupts  = true,
-                dispels     = true,
-                equipment   = true,
-                timeline    = true,
-                groupComp   = true,
-            },
-
-            -- ── Qué columnas mostrar en el historial ──────────────────────
-            visibleColumns = {
-                dps          = true,
-                deaths       = true,
-                kicks        = true,
-                dispels      = true,
-                ilvl         = true,
-                role         = true,
-                -- Columnas de tank (visibles si el personaje es tank)
-                tankDtps     = true,
-                tankMitPct   = true,
-                -- Columnas de healer
-                healHps      = true,
-                overhealPct  = true,
-            },
-
-            -- ── Alertas ─────────────────────────────────────────────────────
-            alerts = {
-                onDeath      = true,
-                onComplete   = true,
-                onBossKill   = true,
-                timeWarning  = 5,
-            },
-
-            notifyPersonalBest  = true,
-            shareData           = false,
         },
 
         position = {
@@ -161,16 +72,6 @@ MitzuMPlusDB_Defaults = {
             relativePoint = "BOTTOMLEFT",
             x = nil,
             y = nil,
-        },
-        -- FIX BUG-7: posición del overlay al nivel profile (no dentro de settings)
-        -- para que AceDB lo persista y lo restaure en ResetProfile correctamente.
-        -- v5.4.4: la posicion manual del Coach. `point` se rellena al arrastrar;
-        -- mientras sea nil se usa la posicion por defecto.
-        overlayPosition = {
-            point    = nil,
-            relPoint = nil,
-            x = -20,
-            y = -100,
         },
     },
     char = {

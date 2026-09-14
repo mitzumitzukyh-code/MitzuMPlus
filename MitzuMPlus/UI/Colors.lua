@@ -228,12 +228,15 @@ Colors.BACKDROPS = {
 -- ─────────────────────────────────────────────────────────────────────────
 
 Colors.LAYOUT = {
-    windowWidth    = 1160,
-    windowHeight   = 700,
-    titlebarHeight = 56,
+    -- Debe coincidir con Constants.lua, Theme.lua y RenderizadoNuevo.lua.
+    -- Colors.lua reemplaza a Theme.lua en el TOC y, por tanto, es el valor
+    -- efectivo que recibe la ventana al crearse.
+    windowWidth    = 1280,
+    windowHeight   = 760,
+    titlebarHeight = 64,
     tabHeight      = 40,
     sidebarWidth   = 220,
-    footerHeight   = 28,
+    footerHeight   = 36,
     padding        = 12,
     paddingSmall   = 8,
     paddingTiny    = 4,
