@@ -14,8 +14,8 @@ El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 ### 1.0.0-rc1 — notificaciones, iconos e higiene de release
 
 - Notificaciones como texto flotante, sin panel.
-- Set de iconos aprobado (header 28 px, pestañas 20 px, opciones y cerrar
-  21 px, minimapa y lista de addons). Texturas recortadas para que el arte
+- Set de iconos aprobado (header 30 px, pestañas 20 px, opciones y cerrar
+  22 px sobre area de clic 24 px, sin fondo y con hover por alpha; minimapa y lista de addons). Texturas recortadas para que el arte
   ocupe ~90% del lienzo (el minimapa conserva 87.5% por el recorte del 5% de
   LibDBIcon); retirada una línea casi transparente que descentraba
   `btn_options_64` y `btn_minimize_64`. Retirados `logo_64.tga`,

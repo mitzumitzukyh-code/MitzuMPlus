@@ -239,6 +239,37 @@ function MitzuMPlus:InitializeUI()
     self.Window:SetAlpha(alpha)
 end
 
+-- Titlebar icon layout. Even icon sizes inside even containers (titlebar 64,
+-- hit area 24) keep the textures on whole pixels.
+local ICON_PATH                  = "Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\"
+local HEADER_ICON_SIZE           = 30
+local HEADER_ICON_LEFT           = 12
+local HEADER_ICON_GAP            = 6
+local HEADER_TITLE_TOP           = 10
+local HEADER_TITLE_SUBTITLE_GAP  = 4
+local WINDOW_CONTROL_HITBOX      = 24
+local WINDOW_CONTROL_ICON_SIZE   = 22
+local WINDOW_CONTROL_GAP         = 4   -- visual gap = 4 + (24 - 22)
+local WINDOW_CONTROL_RIGHT       = 10
+local WINDOW_CONTROL_IDLE_ALPHA  = 0.9
+local VERSION_TEXT_GAP           = 10
+
+-- Titlebar control drawn only by its own framed texture: no backdrop, the art
+-- is slightly dimmed at rest and shown at full alpha on hover.
+local function CreateWindowControl(parent, texture)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(WINDOW_CONTROL_HITBOX, WINDOW_CONTROL_HITBOX)
+    local icon = btn:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(WINDOW_CONTROL_ICON_SIZE, WINDOW_CONTROL_ICON_SIZE)
+    icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    icon:SetTexture(ICON_PATH .. texture)
+    icon:SetAlpha(WINDOW_CONTROL_IDLE_ALPHA)
+    btn:SetScript("OnEnter", function() icon:SetAlpha(1) end)
+    btn:SetScript("OnLeave", function() icon:SetAlpha(WINDOW_CONTROL_IDLE_ALPHA) end)
+    btn.icon = icon
+    return btn
+end
+
 function MitzuMPlus:CreateMainWindow()
     local Theme = MitzuMPlus.Theme
     if not Theme then
@@ -324,86 +355,52 @@ function MitzuMPlus:CreateMainWindow()
     Theme:SetBackdropColor(titlebar, Theme.BG.titlebar)
     Theme:SetBackdropBorderColor(titlebar, Theme.BORDER.titlebar)
 
-    -- Logo 28x28 (textura 64x64), centrado con el bloque titulo+subtitulo.
-    local addonIcon = titlebar:CreateTexture(nil, "OVERLAY")
-    addonIcon:SetSize(28, 28)
-    addonIcon:SetPoint("LEFT", titlebar, "LEFT", 14, 2)
-    addonIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\mitzu_logo_header_64")
-
     local titleText = titlebar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     Theme:ApplyFont(titleText,"title",17)
-    titleText:SetPoint("TOPLEFT", titlebar, "TOPLEFT", 48, -10)
+    titleText:SetPoint("TOPLEFT", titlebar, "TOPLEFT",
+        HEADER_ICON_LEFT + HEADER_ICON_SIZE + HEADER_ICON_GAP, -HEADER_TITLE_TOP)
     titleText:SetText("MitzuMPlus")
     titleText:SetTextColor(Theme.GOLD.gold4.r, Theme.GOLD.gold4.g, Theme.GOLD.gold4.b, Theme.GOLD.gold4.a)
 
     local subtitleText = titlebar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     Theme:ApplyFont(subtitleText,"normal",12)
-    subtitleText:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 0, -4)
+    subtitleText:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 0, -HEADER_TITLE_SUBTITLE_GAP)
     subtitleText:SetPoint("RIGHT", titlebar, "RIGHT", -245, 0)
     subtitleText:SetJustifyH("LEFT")
     subtitleText:SetWordWrap(false)
     subtitleText:SetText("Mythic+ History & Key Prediction")
     subtitleText:SetTextColor(Theme.TEXT.secondary.r, Theme.TEXT.secondary.g, Theme.TEXT.secondary.b, Theme.TEXT.secondary.a)
 
-    -- Settings button (punto asignado DESPUÉS de definir closeBtn)
-    -- Area de click 24x24. El icono ya trae su propio marco, asi que el
-    -- backdrop queda transparente en reposo y solo se pinta en hover.
-    local CONTROL_REST = { r = 0, g = 0, b = 0, a = 0 }
-    local settingsBtn = CreateFrame("Button", nil, titlebar, BackdropTemplateMixin and "BackdropTemplate")
-    settingsBtn:SetSize(24, 24)
-    settingsBtn:SetBackdrop(Theme.BACKDROPS.button)
-    Theme:SetBackdropColor(settingsBtn, CONTROL_REST)
-    Theme:SetBackdropBorderColor(settingsBtn, CONTROL_REST)
+    -- Logo centrado en vertical con el bloque titulo+subtitulo (el titulo no
+    -- se mueve). Si la fuente aun no da altura, se usan los tamanos nominales.
+    local titleHeight = titleText:GetStringHeight()
+    local subtitleHeight = subtitleText:GetStringHeight()
+    if not titleHeight or titleHeight <= 0 then titleHeight = 17 end
+    if not subtitleHeight or subtitleHeight <= 0 then subtitleHeight = 12 end
+    local blockCenter = HEADER_TITLE_TOP + (titleHeight + HEADER_TITLE_SUBTITLE_GAP + subtitleHeight) / 2
+    local addonIcon = titlebar:CreateTexture(nil, "OVERLAY")
+    addonIcon:SetSize(HEADER_ICON_SIZE, HEADER_ICON_SIZE)
+    addonIcon:SetPoint("TOPLEFT", titlebar, "TOPLEFT",
+        HEADER_ICON_LEFT, -math.floor(blockCenter - HEADER_ICON_SIZE / 2 + 0.5))
+    addonIcon:SetTexture(ICON_PATH .. "mitzu_logo_header_64")
 
-    local settingsIcon = settingsBtn:CreateTexture(nil, "OVERLAY")
-    settingsIcon:SetSize(21, 21)
-    settingsIcon:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
-    settingsIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\btn_options_64")
+    -- Controles: [version] [Options] [Close], anclados de derecha a izquierda.
+    local closeBtn = CreateWindowControl(titlebar, "btn_close_64")
+    closeBtn:SetPoint("RIGHT", titlebar, "RIGHT", -WINDOW_CONTROL_RIGHT, 0)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
-    settingsBtn:SetScript("OnEnter", function()
-        Theme:SetBackdropColor(settingsBtn, Theme.BG.btnSecHover)
-        Theme:SetBackdropBorderColor(settingsBtn, Theme.BORDER.btnSecHover)
-    end)
-    settingsBtn:SetScript("OnLeave", function()
-        Theme:SetBackdropColor(settingsBtn, CONTROL_REST)
-        Theme:SetBackdropBorderColor(settingsBtn, CONTROL_REST)
-    end)
+    local settingsBtn = CreateWindowControl(titlebar, "btn_options_64")
+    settingsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -WINDOW_CONTROL_GAP, 0)
     settingsBtn:SetScript("OnClick", function()
         if MitzuMPlus.ShowTab then MitzuMPlus:ShowTab("settings") end
     end)
 
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, titlebar, BackdropTemplateMixin and "BackdropTemplate")
-    closeBtn:SetSize(24, 24)
-    closeBtn:SetPoint("RIGHT", titlebar, "RIGHT", -10, 0)
-    -- Cadena de anclaje: settingsBtn -> LEFT de closeBtn
-    settingsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -6, 0)
-
     -- Version text - BUG-FIX-7: siempre leer MitzuMPlus.VERSION
     local versionText = titlebar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     Theme:ApplyFont(versionText,"mono",11)
-    versionText:SetPoint("RIGHT", settingsBtn, "LEFT", -10, 0)
+    versionText:SetPoint("RIGHT", settingsBtn, "LEFT", -VERSION_TEXT_GAP, 0)
     versionText:SetText("v" .. (MitzuMPlus.VERSION or ADDON_VERSION_FALLBACK))
     versionText:SetTextColor(Theme.TEXT.dim.r, Theme.TEXT.dim.g, Theme.TEXT.dim.b, Theme.TEXT.dim.a)
-
-    closeBtn:SetBackdrop(Theme.BACKDROPS.button)
-    Theme:SetBackdropColor(closeBtn, CONTROL_REST)
-    Theme:SetBackdropBorderColor(closeBtn, CONTROL_REST)
-
-    local closeIcon = closeBtn:CreateTexture(nil, "OVERLAY")
-    closeIcon:SetSize(21, 21)
-    closeIcon:SetPoint("CENTER", closeBtn, "CENTER", 0, 0)
-    closeIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\btn_close_64")
-
-    closeBtn:SetScript("OnEnter", function()
-        Theme:SetBackdropColor(closeBtn, Theme.BG.btnCloseHover)
-        Theme:SetBackdropBorderColor(closeBtn, Theme.BORDER.btnCloseHover)
-    end)
-    closeBtn:SetScript("OnLeave", function()
-        Theme:SetBackdropColor(closeBtn, CONTROL_REST)
-        Theme:SetBackdropBorderColor(closeBtn, CONTROL_REST)
-    end)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
     -- -- Footer container (creado ANTES que body para que body pueda anclarse) --
     local footerHeight = Theme.LAYOUT.footerHeight or 36

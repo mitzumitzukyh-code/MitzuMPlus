@@ -34,6 +34,14 @@ Tabs.panels = {}
 
 local ICON_PATH = "Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\"
 
+-- Tab icon layout shared by every tab. 20 px keeps the icon on whole pixels
+-- inside the 40 px tab; inactive icons are slightly dimmed, hover and the
+-- active tab show them at full alpha.
+local TAB_ICON_SIZE       = 20
+local TAB_ICON_GAP        = 6
+local TAB_PADDING_X       = 10
+local TAB_ICON_IDLE_ALPHA = 0.85
+
 local TAB_DEFS = {
     {
         id   = "historial",
@@ -121,12 +129,13 @@ function Tabs:CreateTabButton(parent, tabDef, index)
     Theme:SetVertexColor(rightBorder, Theme.BORDER.separator)
 
     local iconTex = btn:CreateTexture(nil, "OVERLAY")
-    iconTex:SetSize(20, 20)   -- textura 64x64 mostrada a 20px
-    iconTex:SetPoint("LEFT", btn, "LEFT", 10, 0)
+    iconTex:SetSize(TAB_ICON_SIZE, TAB_ICON_SIZE)
+    iconTex:SetPoint("LEFT", btn, "LEFT", TAB_PADDING_X, 0)
     iconTex:SetTexture(tabDef.icon)
+    iconTex:SetAlpha(TAB_ICON_IDLE_ALPHA)
 
     local text = btn:CreateFontString(nil, "OVERLAY")
-    text:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
+    text:SetPoint("LEFT", iconTex, "RIGHT", TAB_ICON_GAP, 0)
     Theme:ApplyFont(text, "normal", 13)
     text:SetText(tabDef.text)
     Theme:SetTextColor(text, Theme.TEXT.tertiary)
@@ -136,7 +145,7 @@ function Tabs:CreateTabButton(parent, tabDef, index)
     btn.tabId   = tabDef.id
 
     local textWidth = text:GetStringWidth()
-    btn:SetWidth(textWidth + 46)  -- 10 + icono 20 + 6 + texto + 10
+    btn:SetWidth(TAB_PADDING_X + TAB_ICON_SIZE + TAB_ICON_GAP + textWidth + TAB_PADDING_X)
 
     if tabDef.badge then
         local badge = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate")
@@ -207,6 +216,7 @@ function Tabs:CreateTabButton(parent, tabDef, index)
         if self.tabId ~= Tabs.activeTab then
             Theme:SetTextColor(self.text, Theme.GOLD.gold4)
             Theme:SetBackdropColor(self, { r = 0.118, g = 0.086, b = 0.024, a = 0.65 })
+            self.iconTex:SetAlpha(1)
         end
     end)
 
@@ -214,6 +224,7 @@ function Tabs:CreateTabButton(parent, tabDef, index)
         if self.tabId ~= Tabs.activeTab then
             Theme:SetTextColor(self.text, Theme.TEXT.tertiary)
             Theme:SetBackdropColor(self, Theme.BG.void)
+            self.iconTex:SetAlpha(TAB_ICON_IDLE_ALPHA)
         end
     end)
 
@@ -270,10 +281,12 @@ function Tabs:SetActiveTab(tabId)
             -- Fase 2.7: doble indicador — fondo dorado sutil + subrayado
             Theme:SetBackdropColor(btn, { r = 0.290, g = 0.235, b = 0.094, a = 0.15 })
             btn.activeIndicator:Show()
+            btn.iconTex:SetAlpha(1)
         else
             Theme:SetTextColor(btn.text, Theme.TEXT.tertiary)
             Theme:SetBackdropColor(btn, Theme.BG.void)
             btn.activeIndicator:Hide()
+            btn.iconTex:SetAlpha(btn:IsMouseOver() and 1 or TAB_ICON_IDLE_ALPHA)
         end
     end
 

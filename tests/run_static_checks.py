@@ -104,7 +104,11 @@ def check_savedvariables_and_media(c):
     for path in sources:
         text = read(path)
         referenced |= {m.lower() for m in re.findall(r"Media\\+Icons\\+(\w+)", text)}
+        # Names joined to an icon path prefix, e.g. ICON_PATH .. "tab_history_64"
+        # or CreateWindowControl(parent, "btn_close_64").
+        stems = {Path(a).stem.lower() for a in actual}
         referenced |= {m.lower() for m in re.findall(r"ICON_PATH\s*\.\.\s*\"(\w+)\"", text)}
+        referenced |= {m.lower() for m in re.findall(r"\"(\w+)\"", text) if m.lower() in stems}
     missing = sorted(name for name in referenced if f"{name}.tga" not in {a.lower() for a in actual})
     c.check(not missing, f"referenced icon texture missing from Media/Icons: {missing}")
     c.check(expected - {"btn_minimize_64.tga"} <= {f"{name}.tga" for name in referenced},
