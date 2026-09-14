@@ -40,7 +40,6 @@ def compile_lua(c):
 def check_manifest(c, lua_files):
     meta, entries = metadata(), toc_files()
     c.check(meta.get("Title") == "MitzuMPlus", "TOC title is not MitzuMPlus")
-    c.check(meta.get("Version") == "7.14.0-rc1", "version changed during cleanup")
     c.check(meta.get("SavedVariables") == "MitzuMPlusDB", "unexpected SavedVariables")
     optional = meta.get("OptionalDeps", "")
     c.check("MythicDungeonTools" not in optional, "MDT remains an optional runtime dependency")
@@ -80,7 +79,10 @@ def check_ui_and_commands(c):
     for command in ["route", "routes", "pull", "next", "prev", "mdt", "alignment", "evidence", "coach"]:
         c.check(f'cmd == "{command}"' not in init, f"legacy command remains: {command}")
     dropdown = read(ADDON / "modules" / "UI_SimpleDropdown.lua")
-    c.check('arrow:SetText("▼")' in dropdown, "dropdown does not use a clear down indicator")
+    # WoW fonts can draw Unicode arrows as empty squares, so the indicator is the
+    # ASCII "v" (see UI_SimpleDropdown.lua), never a glyph such as U+25BC.
+    arrow = re.search(r'arrow:SetText\("([^"]*)"\)', dropdown)
+    c.check(arrow is not None and arrow.group(1) == "v", "dropdown does not use the ASCII down indicator")
     history = read(ADDON / "UI" / "Panels" / "Historial.lua")
     for label in ["MAZMORRA", "NIVEL", "RESULTADO", "DURACIÓN", "PERSONAJE", "ROL", "FECHA"]:
         c.check(label in history, f"History V2 column missing: {label}")
@@ -107,17 +109,41 @@ def check_savedvariables_and_media(c):
     c.check(not missing, f"referenced icon texture missing from Media/Icons: {missing}")
     c.check(expected - {"btn_minimize_64.tga"} <= {f"{name}.tga" for name in referenced},
             "approved icon asset is not referenced by the UI")
-    icon_ui = [ADDON / "Init.lua", ADDON / "UI" / "Tabs.lua", ADDON / "modules" / "MinimapIcon.lua"]
-    emoji = re.compile("[\U0001F000-\U0001FFFF☀-➿️]")
-    for path in icon_ui:
+
+def check_no_emoji(c):
+    # Project policy: WoW fonts do not render emoji reliably, so no emoji anywhere
+    # in addon code, comments, manifests or the repo's tests/tools. Ranges are
+    # built with chr() to keep this file ASCII-only.
+    emoji = re.compile("[" + chr(0x1F000) + "-" + chr(0x1FFFF) + chr(0x2600) + "-" + chr(0x27BF)
+                       + chr(0x2B00) + "-" + chr(0x2BFF) + chr(0xFE0F) + "]")
+    paths = [p for p in ADDON.rglob("*") if p.suffix.lower() in {".lua", ".toc", ".xml"}]
+    paths += list((ROOT / "tests").rglob("*.lua")) + list((ROOT / "tests").rglob("*.py"))
+    paths += list((ROOT / "tools").rglob("*.py"))
+    for path in sorted(paths):
         for number, line in enumerate(read(path).splitlines(), 1):
-            code = line.split("--", 1)[0]
-            c.check(not emoji.search(code), f"emoji in WoW UI code: {relative(path)}:{number}")
+            c.check(not emoji.search(line), f"emoji in source: {relative(path)}:{number}")
+
+def check_version_consistency(c):
+    version = metadata().get("Version", "")
+    c.check(re.fullmatch(r"1\.\d+\.\d+(-(beta\.\d+|rc\d+))?", version) is not None,
+            f"TOC version is not in the 1.x release series: {version!r}")
+    release_changelog = read(ROOT / "release" / "CHANGELOG.md")
+    first = re.search(r"^## (\S+)", release_changelog, re.MULTILINE)
+    c.check(first is not None and first.group(1) == version,
+            f"release/CHANGELOG.md top entry does not match TOC version {version}")
+    c.check(re.search(rf"^### {re.escape(version)}\b", read(ROOT / "CHANGELOG.md"), re.MULTILINE) is not None,
+            f"root CHANGELOG.md has no entry for {version}")
+    c.check(f"Current candidate: `{version}`" in read(ROOT / "docs" / "RELEASE.md"),
+            f"docs/RELEASE.md does not name candidate {version}")
+    c.check(f"MitzuMPlus-{version}.zip" in read(ROOT / "release" / "CURSEFORGE_PAGE.md"),
+            f"release/CURSEFORGE_PAGE.md does not name MitzuMPlus-{version}.zip")
+    for asset in ["README.md", "CURSEFORGE_PAGE.md", "assets/MitzuMPlus_Logo_512.png"]:
+        c.check((ROOT / "release" / asset).is_file(), f"release material missing: release/{asset}")
 
 def main():
     c = Checks(); lua_files = compile_lua(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
-    check_savedvariables_and_media(c)
+    check_savedvariables_and_media(c); check_no_emoji(c); check_version_consistency(c)
     if c.failures:
         print(f"Static: {c.count} checks, {len(c.failures)} failures ({len(lua_files)} product Lua files parsed)")
         for failure in c.failures: print(failure)

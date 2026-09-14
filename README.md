@@ -47,6 +47,10 @@ python tools/package_mitzumplus.py --check
 The packaging command creates one validation archive containing only the
 `MitzuMPlus/` runtime folder and the MIT license. It does not upload or publish.
 
+Release material that must not ship inside the addon folder (player README,
+public changelog, CurseForge page draft and the 512 px logo) lives in `release/`.
+See `docs/RELEASE.md`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE). The distributable product contains no bundled route

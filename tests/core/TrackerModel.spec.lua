@@ -30,7 +30,7 @@ end)
 test("optional detail toggles have a real effect",function()
     local model={mode="RUN",dungeon="Arena",level=11,elapsed=600,limit=1800,
         prediction={code="+2",confidence=80,confident=true,estimatedFinish=1400},showConfidence=true,showETA=true}
-    local lines=H:Lines(model);equal(lines.prediction,"+2");equal(lines.detail,"Confianza 80% · Final ~23:20")
+    local lines=H:Lines(model);equal(lines.prediction,"+2");equal(lines.detail,"Confianza 80%  -  Final ~23:20")
     model.showConfidence=false;lines=H:Lines(model);equal(lines.detail,"Final ~23:20")
     model.showETA=false;lines=H:Lines(model);equal(lines.detail,nil)
 end)

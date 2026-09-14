@@ -112,6 +112,8 @@ def validate(target: Path) -> list[str]:
                 problems.append(f"experimental addon file in zip: {name}")
             if lowered.endswith((".py", ".spec.lua", ".bak", ".tmp", ".log")):
                 problems.append(f"development file in zip: {name}")
+            if lowered.endswith((".md", ".png", ".jpg")):
+                problems.append(f"non-runtime file in zip (belongs in release/): {name}")
         experimental = ("RouteArrows", "RouteProgress", "RouteManager", "RouteAdvisor",
                         "RouteSchema", "AdaptiveRoute", "MDTImporter", "MDTEnemyData",
                         "CoachAdvice", "PullUnitResolver", "GuidanceEngine", "Evidence",

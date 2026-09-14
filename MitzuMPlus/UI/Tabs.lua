@@ -226,7 +226,7 @@ end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CREATE CONTENT AREA
--- ✅ FIX BUG1: se ancla al BOTTOMLEFT de tabsBar, no al TOPLEFT del body.
+-- FIX BUG1: se ancla al BOTTOMLEFT de tabsBar, no al TOPLEFT del body.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 function Tabs:CreateContentArea(parent)
@@ -245,7 +245,7 @@ end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CREATE PANEL CONTAINER
--- ✅ FIX BUG2: cada panel obtiene su propio frame hijo dentro del contentArea
+-- FIX BUG2: cada panel obtiene su propio frame hijo dentro del contentArea
 -- ═══════════════════════════════════════════════════════════════════════════
 
 function Tabs:CreatePanelContainer(contentArea)

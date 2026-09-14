@@ -82,11 +82,11 @@ Use clean screenshots from the current build, without white arrows or debug anno
 Recommended first public file type: **Beta**.
 
 Suggested file name:
-`MitzuMPlus-1.0.0-beta.1.zip`
+`MitzuMPlus-1.0.0-rc1.zip`
 
 Suggested changelog for CurseForge:
 
-Initial beta candidate for MitzuMPlus.
+Initial release candidate for MitzuMPlus (1.0.0-rc1).
 
 Includes Mythic+ history, filters, player profiles, optional Puntaje mítico through Raider.IO, live key prediction HUD, notifications, group loot tracking, notes, favorites, copy/export actions, and bug report tooling.
 

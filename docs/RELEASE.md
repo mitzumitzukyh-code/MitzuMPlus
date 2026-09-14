@@ -1,17 +1,37 @@
 # Local release-candidate checklist
 
-Current candidate: `7.14.0-rc1`. This cleanup does not change the version and is
-not authorization to publish.
+Current candidate: `1.0.0-rc1`. This checklist is not authorization to publish.
+
+The version lives in `## Version` of `MitzuMPlus/MitzuMPlus.toc`; the packager
+names the ZIP from it, and `tests/run_static_checks.py` checks that this file,
+`release/CHANGELOG.md`, `release/CURSEFORGE_PAGE.md` and the root `CHANGELOG.md`
+name the same version.
 
 ## Runtime contract
 
 - One addon folder and one TOC: `MitzuMPlus/MitzuMPlus.toc`.
+- The addon folder holds runtime files only (`.lua`, `.toc`, `.xml`, `.tga`,
+  `.blp`, audio, fonts, `libs/LICENSE.txt`). No Markdown, PNG or loose `LICENSE`.
 - No required dependencies.
 - Optional dependency: `LibSharedMedia-3.0` only.
 - SavedVariables: `MitzuMPlusDB` only.
 - Official icons: the approved `Media/Icons/` set (`mitzu_logo_*`, `tab_*_64`, `btn_*_64`); the addon list uses `mitzu_logo_small_32.tga`.
 - No route modules, route datasets, MDT-derived datasets or MitzuRouteArrows files.
 - Package license: MIT; `GPL_BLOCKER_PRESENT=false` for this package.
+
+## Package layout
+
+`python tools/package_mitzumplus.py --check` builds `dist/MitzuMPlus-<version>.zip`
+with a single `MitzuMPlus/` folder: the runtime files plus the root `LICENSE`.
+The ZIP carries no README or changelog; CurseForge shows its own description and
+file changelog.
+
+Release material outside the runtime folder, in `release/`:
+
+- `README.md`: player-facing readme (features, installation, first-run checks).
+- `CHANGELOG.md`: public changelog to paste into the CurseForge file upload.
+- `CURSEFORGE_PAGE.md`: project page draft.
+- `assets/MitzuMPlus_Logo_512.png`: project avatar/logo for CurseForge.
 
 ## Validation before publication
 

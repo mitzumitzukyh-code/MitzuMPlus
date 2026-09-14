@@ -7,6 +7,8 @@
 - Notification text colors by type: run completed (soft green), new record (gold), personal best (light gold), out of time (soft red).
 - Short fade-in and fade-out inside the existing duration; queue, timers, position and triggers are unchanged.
 - New approved icon set: Mitzu "M" logo in the title bar (24 px), minimap button and addon list; History / Statistics / Players / Settings tab icons (17 px); options (18 px) and close (19 px) title-bar buttons. The old logo and tab/button textures were removed.
+- The addon folder now contains runtime files only. The ZIP carries the addon plus `LICENSE`; README, changelog, CurseForge page and the 512 px logo live in the repository `release/` folder.
+- Removed the unloaded `modules/SpecDatabase.lua` scaffold from the addon folder.
 
 ### Fixed
 - Long notifications such as "NUEVO RECORD! Mejor llave en ..." were cut at 80 characters. They now use up to 640 px and wrap to a second line when needed.

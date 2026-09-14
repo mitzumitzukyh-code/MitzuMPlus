@@ -101,7 +101,7 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         if frame.SetMaxResize then frame:SetMaxResize(maxW, maxH) end
     end
 
-    -- ✅ Crear el resize handle
+    -- Crear el resize handle
     local resizeHandle = CreateFrame("Button", nil, frame)
     resizeHandle:SetSize(20, 20)
     resizeHandle:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
@@ -110,7 +110,7 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         resizeHandle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     end
 
-    -- ✅ Crear líneas del grip (visual)
+    -- Crear líneas del grip (visual)
     local gripLines = {}
     local lineData = {
         { w = 12, xOff = -1, yOff = 1 },
@@ -125,7 +125,7 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         table.insert(gripLines, ln)
     end
 
-    -- ✅ OnEnter: mostrar tooltip + highlight
+    -- OnEnter: mostrar tooltip + highlight
     resizeHandle:SetScript("OnEnter", function(self)
         if not (GameTooltip and GameTooltip.SetOwner) then return end
         for _, ln in ipairs(gripLines) do
@@ -139,7 +139,7 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         GameTooltip:Show()
     end)
 
-    -- ✅ OnLeave: restablecer color
+    -- OnLeave: restablecer color
     resizeHandle:SetScript("OnLeave", function()
         for _, ln in ipairs(gripLines) do
             ln:SetColorTexture(0.78, 0.66, 0.29, 0.85)
@@ -149,7 +149,7 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         end
     end)
 
-    -- ✅ Manejo de scaling con SHIFT
+    -- Manejo de scaling con SHIFT
     local scaling = false
     local startX, startY, startScale
 
@@ -158,14 +158,14 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         resizeHandle:SetScript("OnUpdate", nil)
     end
 
-    -- ✅ OnMouseDown: iniciar resize o scale
+    -- OnMouseDown: iniciar resize o scale
     resizeHandle:SetScript("OnMouseDown", function(_, button)
         if button ~= "LeftButton" then return end
         for _, ln in ipairs(gripLines) do
             ln:SetColorTexture(1, 0.5, 0.1, 1)
         end
         if IsShiftKeyDown and IsShiftKeyDown() then
-            -- ✅ SCALE CON SHIFT
+            -- SCALE CON SHIFT
             scaling = true
             startScale = frame.GetScale and frame:GetScale() or 1.0
             startX, startY = GetCursorPosition()
@@ -181,12 +181,12 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
                 frame:SetScale(Render.FitScale(frame:GetWidth(), frame:GetHeight(), sw, sh, s))
             end)
         else
-            -- ✅ RESIZE NORMAL (BOTTOMRIGHT)
+            -- RESIZE NORMAL (BOTTOMRIGHT)
             frame:StartSizing("BOTTOMRIGHT")
         end
     end)
 
-    -- ✅ OnMouseUp: terminar resize/scale + guardar
+    -- OnMouseUp: terminar resize/scale + guardar
     resizeHandle:SetScript("OnMouseUp", function(_, button)
         if button == "LeftButton" then
             _StopScaling()
@@ -203,19 +203,19 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
                 ln:SetColorTexture(0.78, 0.66, 0.29, 0.85)
             end
 
-            -- ✅ Guardar en DB
+            -- Guardar en DB
             if MitzuMPlus.db and MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings then
                 MitzuMPlus.db.profile.settings.windowWidth = w
                 MitzuMPlus.db.profile.settings.windowHeight = h
                 MitzuMPlus.db.profile.settings.windowScale = frame.GetScale and frame:GetScale() or 1.0
             end
         elseif button == "RightButton" then
-            -- ✅ RIGHT-CLICK PARA RESETEAR
+            -- RIGHT-CLICK PARA RESETEAR
             ResetearVentana(frame)
         end
     end)
 
-    -- ✅ OnSizeChanged: validar límites
+    -- OnSizeChanged: validar límites
     local prevOnSizeChanged = frame:GetScript("OnSizeChanged")
     frame:SetScript("OnSizeChanged", function(self, w, h)
         if prevOnSizeChanged then
@@ -243,14 +243,14 @@ function Render:AttachDragHandlers(frame)
     frame:SetMovable(true)
     frame:RegisterForDrag("LeftButton")
 
-    -- ✅ OnDragStart
+    -- OnDragStart
     frame:SetScript("OnDragStart", function()
         local settings = MitzuMPlus.db and MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings
         if settings and settings.windowLocked then return end
         frame:StartMoving()
     end)
 
-    -- ✅ OnDragStop: guardar posición
+    -- OnDragStop: guardar posición
     frame:SetScript("OnDragStop", function()
         frame:StopMovingOrSizing()
         
@@ -284,10 +284,10 @@ function Render:RestoreOnlyPosition(frame)
         return
     end
 
-    -- ✅ Escala siempre 1.0 — ventana de tamaño fijo no escala
+    -- Escala siempre 1.0 — ventana de tamaño fijo no escala
     frame:SetScale(1.0)
 
-    -- ✅ Restaurar posición si fue guardada previamente
+    -- Restaurar posición si fue guardada previamente
     frame:ClearAllPoints()
     local pos = db.position
     if pos and pos.x and pos.y then
@@ -327,7 +327,7 @@ function Render:RestorePositionAndSize(frame)
         db.settings.windowHeight = h
     end
 
-    -- ✅ Restaurar escala
+    -- Restaurar escala
     local scale = tonumber(settings.windowScale)
     if scale then
         scale = _Clamp(scale, 0.5, 2.0)
@@ -337,7 +337,7 @@ function Render:RestorePositionAndSize(frame)
     end
     if db.settings then db.settings.windowScale = frame:GetScale() end
 
-    -- ✅ Restaurar posición
+    -- Restaurar posición
     frame:ClearAllPoints()
     local pos = db.position
     if pos and pos.x and pos.y then
@@ -413,7 +413,7 @@ function Render:InitializeWindow(frame)
     frame:RegisterEvent("DISPLAY_SIZE_CHANGED")
     frame:HookScript("OnEvent", function() Render:FitToScreen(frame) end)
 
-    -- ✅ Asegurar que sea visible en pantalla
+    -- Asegurar que sea visible en pantalla
     self:EnsureVisible(frame)
 end
 

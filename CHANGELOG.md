@@ -7,10 +7,28 @@ El historial anterior a la separación está en `docs/history/CHANGELOG_legacy.t
 
 ## MitzuMPlus
 
-### Sin versión todavía (sobre 7.14.0-rc1) — limpieza final de producto
+Numeración: tras `7.14.0-rc1` el producto pasó a la serie pública `1.0.0`
+(`1.0.0-beta.1` → `1.0.0-rc1`). Las entradas `7.x` quedan como historial.
+El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
-Simplificación de producto en feature freeze. Versión **sin cambiar** hasta la
-prueba en vivo.
+### 1.0.0-rc1 — notificaciones, iconos e higiene de release
+
+- Notificaciones como texto flotante, sin panel.
+- Set de iconos aprobado (header 24 px, pestañas 17 px, opciones 18 px,
+  cerrar 19 px, minimapa y lista de addons). Retirados `logo_64.tga`,
+  `2_settings.tga`, `3_close.tga` y `5a/5b/5e_tab_*.tga`.
+- Carpeta runtime limpia: `README.md`, `CHANGELOG.md`, `CURSEFORGE_PAGE.md` y
+  `MitzuMPlus_Logo_512.png` pasan a `release/`; `MitzuMPlus/LICENSE` se retira
+  (el empaquetador copia el `LICENSE` raíz al ZIP).
+- Retirado `modules/SpecDatabase.lua` (fuera del TOC y sin consumidores) y
+  `tools/convert_logo.py` (generaba el `logo_64.tga` obsoleto).
+- Tests alineados con cambios intencionales de 1.0.0-beta.1: resultado
+  `Incompleta` para runs sin tiempo final, separador ASCII `  -  ` en el HUD y
+  flecha ASCII `v` en los desplegables. Sin emoji en el código.
+
+### 1.0.0-beta.1 (sobre 7.14.0-rc1) — limpieza final de producto
+
+Simplificación de producto en feature freeze.
 
 - Historial V2 reconstruido con filtros compactos, tabla 65/35, detalle,
   selección, exportación y paginación.

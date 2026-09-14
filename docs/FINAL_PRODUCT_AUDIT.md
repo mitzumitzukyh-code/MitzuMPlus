@@ -1,6 +1,6 @@
 # MitzuMPlus final product audit — local cleanup
 
-Version inspected: `7.14.0-rc1`. No version bump, commit, push, merge, tag or release.
+Version inspected: `7.14.0-rc1` (the product was later renumbered to the `1.0.0` series; current `1.0.0-rc1`). No version bump, commit, push, merge, tag or release.
 
 ## Module inventory and decision
 
@@ -26,7 +26,7 @@ Version inspected: `7.14.0-rc1`. No version bump, commit, push, merge, tag or re
 | `KeyPredictionHUD` | Replaces route Coach HUD | Config, QA, keybindings | KEEP | One discreet `+3/+2/+1/OVERTIME` view |
 | `PartyProfiler` | Party identity/spec cache | Core, Players, Bug Report | SIMPLIFY | Route consumers removed; roster diagnostics retained |
 | `InspectQueue` | Async party spec enrichment | PartyProfiler/Core | KEEP | Improves player profiles without inventing data |
-| `SpecDatabase` | Spec/role metadata | PartyProfiler | KEEP | Player analysis |
+| `SpecDatabase` | Spec/role metadata scaffold | None (never loaded by the TOC) | REMOVED | Deleted in 1.0.0-rc1: no consumers, dead code |
 | `LootTracker` | Capture group loot | Players profile | KEEP | Has a visible consumer and real settings |
 | `RuntimeCapabilities` | Capability matrix | Bug Report | SIMPLIFY | Only final-product capabilities remain |
 | `RuntimeVersion` | Runtime compatibility metadata | Initialization | KEEP | Load diagnostics |

@@ -63,9 +63,12 @@ test("sorting date level result and dungeon",function()
 end)
 
 test("partial data stays readable",function()
+    -- Sin completionTime la run no termino: es "Incompleta", no "Fuera" de tiempo.
     local partial={runID=88,inTime=false}
-    local code,margin,display=H.FormatResult(partial);equal(code,"Fuera");equal(margin,nil);equal(type(display),"string")
+    local code,margin,display=H.FormatResult(partial);equal(code,"Incompleta");equal(margin,nil)
+    equal(type(display),"string");equal(display:find("Incompleta",1,true)~=nil,true)
     equal(#H.FilterRuns({partial},{}),1)
+    equal(#H.FilterRuns({partial},{result="Incompleta"}),1);equal(#H.FilterRuns({partial},{result="Fuera"}),0)
 end)
 
 test("similar legitimate runs are both visible",function()
