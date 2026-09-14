@@ -1,0 +1,14 @@
+<Bindings>
+    <Binding name="MITZUMPLUS_TOGGLE" header="MITZUMPLUS" runOnUp="false">
+        MitzuMPlus_ToggleBinding()
+    </Binding>
+    <Binding name="MITZUMPLUS_HISTORIAL" runOnUp="false">
+        MitzuMPlus_HistoryTabBinding()
+    </Binding>
+    <Binding name="MITZUMPLUS_STATS" runOnUp="false">
+        MitzuMPlus_StatsBinding()
+    </Binding>
+    <Binding name="MITZUMPLUS_OVERLAY" runOnUp="false">
+        MitzuMPlus_OverlayBinding()
+    </Binding>
+</Bindings>

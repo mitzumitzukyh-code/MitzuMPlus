@@ -1,0 +1,104 @@
+## Interface: 120100
+## Title: MitzuMPlus
+## Notes: Mythic+ history, statistics, player analysis and live key prediction.
+## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
+## Author: Mutzuki Mizt
+## Version: 1.0.0-beta.1
+## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
+## SavedVariables: MitzuMPlusDB
+## OptionalDeps: LibSharedMedia-3.0, RaiderIO
+## X-License: MIT
+## X-Category: Dungeons & Raids
+
+# -----------------------------------------------------------------------------
+# MitzuMPlus - historial, estadísticas, jugadores y predicción de llave.
+# No contiene rutas, navegación de pulls ni datos derivados de MDT.
+# -----------------------------------------------------------------------------
+
+# Libraries
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+libs\LibDBIcon-1.0\lib.xml
+libs\AceAddon-3.0\AceAddon-3.0.xml
+libs\AceEvent-3.0\AceEvent-3.0.xml
+libs\AceDB-3.0\AceDB-3.0.xml
+libs\AceLocale-3.0\AceLocale-3.0.xml
+libs\AceConsole-3.0\AceConsole-3.0.xml
+libs\AceSerializer-3.0\AceSerializer-3.0.xml
+
+# Localization
+Locales\enUS.lua
+Locales\esES.lua
+
+# Bootstrap / core
+Bootstrap.lua
+MitzuMPlus_main.lua
+modules\Constants.lua
+Utils\Helpers.lua
+Utils\Formatters.lua
+modules\Database.lua
+modules\EventBus.lua
+# QA: saneado de valores y caja negra. Antes que DungeonContext, para oir
+# desde la primera transicion.
+modules\QA\SafeValue.lua
+modules\QA\FlightRecorder.lua
+# RuntimeCapabilities: que se puede leer de verdad en este cliente.
+# Sin dependencias; se sondea bajo demanda, no al cargar.
+modules\RuntimeCapabilities.lua
+# ChallengeClock: tiempo de llave del servidor para predicción y RunSession.
+modules\ChallengeClock.lua
+# DungeonRegistry: converge instanceID / uiMapID / challengeMapID en una
+# identidad canonica. Antes que DungeonContext, que lo consulta.
+modules\DungeonRegistry.lua
+# DungeonContext: donde estoy y en que punto de la llave. Fuente unica.
+# Va antes que Core, que se suscribe a su MITZU_KEY_STARTED.
+modules\DungeonContext.lua
+# PartyProfiler: los cinco del grupo. Incluye PartyContext y SpecCache.
+modules\PartyProfiler.lua
+# RunSession: identidad persistente de la partida y recuperación tras /reload.
+modules\RunSession.lua
+modules\Validation.lua
+modules\RunMetrics.lua
+modules\RuntimeVersion.lua
+
+# Mythic+ tracking
+modules\LootTracker.lua
+modules\KeystoneTracker.lua
+modules\PredictionEngine.lua
+modules\PersonalBest.lua
+modules\DataManager.lua
+
+# Runtime
+modules\Export.lua
+modules\StaticPopups.lua
+modules\ErrorLogger.lua
+modules\Core.lua
+modules\MidnightSafeTracking.lua
+modules\MinimapIcon.lua
+modules\InspectQueue.lua
+modules\Keybindings.lua
+
+# UI
+UI\Theme.lua
+UI\Colors.lua
+UI\WidgetsCompat.lua
+modules\UI_Common.lua
+modules\UI_SimpleDropdown.lua
+UI\RenderizadoNuevo.lua
+UI\Tabs.lua
+UI\Footer.lua
+UI\Panels\Historial.lua
+UI\Panels\Stats.lua
+UI\Panels\Players.lua
+UI\Panels\Config.lua
+# Key Prediction HUD: el UNICO HUD en vivo durante la llave. Solo predice
+# +3/+2/+1/OVERTIME (lee autoridades, no escribe, no sabe de pulls ni rutas).
+modules\KeyPredictionHUD.lua
+# Bug Report V2: invariantes e informe de QA.
+modules\QA\Invariants.lua
+modules\QA\BugReport.lua
+
+# Initialization
+Init.lua
+

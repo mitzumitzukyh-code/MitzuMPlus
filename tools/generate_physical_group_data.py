@@ -85,7 +85,7 @@ def generate(mdt_root: Path, output: Path) -> None:
 
     lines = [
         "-- ==========================================================================",
-        "-- MitzuMPlus - data/MDTPhysicalGroupData.lua - GENERADO, NO EDITAR A MANO",
+        "-- MitzuRouteArrows - Data/MDTPhysicalGroupData.lua - GENERADO, NO EDITAR A MANO",
         "--",
         "-- Fuente: Mythic Dungeon Tools " + version + " (GPL-2.0), ficheros de datos.",
         "-- Generador: tools/generate_physical_group_data.py",
@@ -93,11 +93,11 @@ def generate(mdt_root: Path, output: Path) -> None:
         "-- g es contexto fisico de MDT; NO implica combat pack, identidad ni MATCH.",
         "-- ==========================================================================",
         "",
-        "local MitzuMPlus = _G.MitzuMPlus",
-        "if not MitzuMPlus then return end",
+        "local MRA = _G.MitzuRouteArrows",
+        "if not MRA then return end",
         "",
-        f'MitzuMPlus.MDTPhysicalGroupDataVersion = "MDT {version}"',
-        "MitzuMPlus.MDTPhysicalGroupData = {",
+        f'MRA.MDTPhysicalGroupDataVersion = "MDT {version}"',
+        "MRA.MDTPhysicalGroupData = {",
     ]
 
     for dungeon_idx, filename, display_name in SOURCES:
@@ -124,7 +124,7 @@ def main() -> None:
         help="Path to a development checkout/install of MythicDungeonTools",
     )
     parser.add_argument(
-        "--output", type=Path, default=ROOT / "data" / "MDTPhysicalGroupData.lua",
+        "--output", type=Path, default=ROOT / "MitzuRouteArrows" / "Data" / "MDTPhysicalGroupData.lua",
     )
     args = parser.parse_args()
     generate(args.mdt_root.resolve(), args.output.resolve())

@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="MITZUMPLUS_ROUTE_MARK_TARGET" header="MITZUROUTEARROWS" runOnUp="false">
+        MitzuRouteArrows_MarkTargetBinding()
+    </Binding>
+</Bindings>
