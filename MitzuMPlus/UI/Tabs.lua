@@ -121,7 +121,7 @@ function Tabs:CreateTabButton(parent, tabDef, index)
     Theme:SetVertexColor(rightBorder, Theme.BORDER.separator)
 
     local iconTex = btn:CreateTexture(nil, "OVERLAY")
-    iconTex:SetSize(17, 17)   -- textura 64x64 mostrada a 17px
+    iconTex:SetSize(20, 20)   -- textura 64x64 mostrada a 20px
     iconTex:SetPoint("LEFT", btn, "LEFT", 10, 0)
     iconTex:SetTexture(tabDef.icon)
 
@@ -136,7 +136,7 @@ function Tabs:CreateTabButton(parent, tabDef, index)
     btn.tabId   = tabDef.id
 
     local textWidth = text:GetStringWidth()
-    btn:SetWidth(textWidth + 43)  -- 10 + icono 17 + 6 + texto + 10
+    btn:SetWidth(textWidth + 46)  -- 10 + icono 20 + 6 + texto + 10
 
     if tabDef.badge then
         local badge = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate")

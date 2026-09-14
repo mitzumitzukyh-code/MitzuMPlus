@@ -324,9 +324,9 @@ function MitzuMPlus:CreateMainWindow()
     Theme:SetBackdropColor(titlebar, Theme.BG.titlebar)
     Theme:SetBackdropBorderColor(titlebar, Theme.BORDER.titlebar)
 
-    -- Logo 24x24 (textura 64x64), centrado con el bloque titulo+subtitulo.
+    -- Logo 28x28 (textura 64x64), centrado con el bloque titulo+subtitulo.
     local addonIcon = titlebar:CreateTexture(nil, "OVERLAY")
-    addonIcon:SetSize(24, 24)
+    addonIcon:SetSize(28, 28)
     addonIcon:SetPoint("LEFT", titlebar, "LEFT", 14, 2)
     addonIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\mitzu_logo_header_64")
 
@@ -356,7 +356,7 @@ function MitzuMPlus:CreateMainWindow()
     Theme:SetBackdropBorderColor(settingsBtn, CONTROL_REST)
 
     local settingsIcon = settingsBtn:CreateTexture(nil, "OVERLAY")
-    settingsIcon:SetSize(18, 18)
+    settingsIcon:SetSize(21, 21)
     settingsIcon:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
     settingsIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\btn_options_64")
 
@@ -391,7 +391,7 @@ function MitzuMPlus:CreateMainWindow()
     Theme:SetBackdropBorderColor(closeBtn, CONTROL_REST)
 
     local closeIcon = closeBtn:CreateTexture(nil, "OVERLAY")
-    closeIcon:SetSize(19, 19)
+    closeIcon:SetSize(21, 21)
     closeIcon:SetPoint("CENTER", closeBtn, "CENTER", 0, 0)
     closeIcon:SetTexture("Interface\\AddOns\\MitzuMPlus\\Media\\Icons\\btn_close_64")
 

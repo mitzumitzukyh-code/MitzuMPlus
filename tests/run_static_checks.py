@@ -110,6 +110,40 @@ def check_savedvariables_and_media(c):
     c.check(expected - {"btn_minimize_64.tga"} <= {f"{name}.tga" for name in referenced},
             "approved icon asset is not referenced by the UI")
 
+def tga_alpha(path):
+    """Header fields and alpha rows (top row first) of an uncompressed TGA."""
+    data = path.read_bytes()
+    id_len, cmap_type, image_type = data[0], data[1], data[2]
+    width, height = int.from_bytes(data[12:14], "little"), int.from_bytes(data[14:16], "little")
+    bpp, flags = data[16], data[17]
+    rows = []
+    if image_type == 2 and cmap_type == 0 and bpp == 32:
+        start = 18 + id_len
+        for y in range(height):
+            row = data[start + y * width * 4:start + (y + 1) * width * 4]
+            rows.append(row[3::4])
+        if not flags & 0x20: rows.reverse()
+    return image_type, width, height, bpp, flags, rows
+
+def check_icon_textures(c):
+    # Approved icons must stay WoW-safe (uncompressed 32-bit RGBA, square,
+    # power of two) and keep the visible art (alpha >= 32) at 88-94% of the
+    # canvas, so no icon slides back to heavy transparent padding. The minimap
+    # logo keeps ~87.5% on purpose: LibDBIcon trims 5% per side of its texture.
+    for path in sorted((ADDON / "Media" / "Icons").glob("*.tga")):
+        low, high = (0.86, 0.90) if path.name == "mitzu_logo_minimap_64.tga" else (0.88, 0.94)
+        image_type, width, height, bpp, flags, rows = tga_alpha(path)
+        name = relative(path)
+        c.check(image_type == 2 and bpp == 32 and flags & 0x0F == 8, f"icon is not uncompressed 32-bit RGBA: {name}")
+        c.check(width == height and width & (width - 1) == 0, f"icon canvas is not a square power of two: {name}")
+        if not rows: continue
+        c.check(min(min(r) for r in rows) == 0, f"icon has no transparent pixels: {name}")
+        xs = [x for row in rows for x, a in enumerate(row) if a >= 32]
+        ys = [y for y, row in enumerate(rows) if max(row) >= 32]
+        occupancy = max(max(xs) - min(xs) + 1, max(ys) - min(ys) + 1) / width if xs else 0
+        c.check(low <= occupancy <= high,
+                f"icon art fills {occupancy:.1%} of the canvas ({low:.0%}-{high:.0%} expected): {name}")
+
 def check_no_emoji(c):
     # Project policy: WoW fonts do not render emoji reliably, so no emoji anywhere
     # in addon code, comments, manifests or the repo's tests/tools. Ranges are
@@ -143,7 +177,7 @@ def check_version_consistency(c):
 def main():
     c = Checks(); lua_files = compile_lua(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
-    check_savedvariables_and_media(c); check_no_emoji(c); check_version_consistency(c)
+    check_savedvariables_and_media(c); check_icon_textures(c); check_no_emoji(c); check_version_consistency(c)
     if c.failures:
         print(f"Static: {c.count} checks, {len(c.failures)} failures ({len(lua_files)} product Lua files parsed)")
         for failure in c.failures: print(failure)

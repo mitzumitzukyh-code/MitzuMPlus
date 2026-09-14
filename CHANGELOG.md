@@ -14,8 +14,11 @@ El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 ### 1.0.0-rc1 — notificaciones, iconos e higiene de release
 
 - Notificaciones como texto flotante, sin panel.
-- Set de iconos aprobado (header 24 px, pestañas 17 px, opciones 18 px,
-  cerrar 19 px, minimapa y lista de addons). Retirados `logo_64.tga`,
+- Set de iconos aprobado (header 28 px, pestañas 20 px, opciones y cerrar
+  21 px, minimapa y lista de addons). Texturas recortadas para que el arte
+  ocupe ~90% del lienzo (el minimapa conserva 87.5% por el recorte del 5% de
+  LibDBIcon); retirada una línea casi transparente que descentraba
+  `btn_options_64` y `btn_minimize_64`. Retirados `logo_64.tga`,
   `2_settings.tga`, `3_close.tga` y `5a/5b/5e_tab_*.tga`.
 - Carpeta runtime limpia: `README.md`, `CHANGELOG.md`, `CURSEFORGE_PAGE.md` y
   `MitzuMPlus_Logo_512.png` pasan a `release/`; `MitzuMPlus/LICENSE` se retira
