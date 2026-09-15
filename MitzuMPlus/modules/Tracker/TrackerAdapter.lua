@@ -77,6 +77,7 @@ TA.API = {
     { key = "challenge.completion", path = "C_ChallengeMode.GetChallengeCompletionInfo", kind = "function" },
     { key = "timer.list",         path = "GetWorldElapsedTimers",                   kind = "function", required = true },
     { key = "timer.read",         path = "GetWorldElapsedTime",                     kind = "function", required = true },
+    { key = "timer.typeEnum",     path = "Enum.WorldElapsedTimerTypes.ChallengeMode", kind = "constant" },
     { key = "timer.typeCM",       path = "LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE", kind = "constant" },
     { key = "scenario.info",      path = "C_ScenarioInfo.GetScenarioInfo",          kind = "function" },
     { key = "scenario.infoLegacy", path = "C_Scenario.GetInfo",                     kind = "function" },
@@ -336,13 +337,25 @@ end
 -- hara TrackerState. Aqui solo se lee lo que el servidor dice.
 -- ---------------------------------------------------------------------------
 
--- elapsed (segundos), timerID. nil si no hay temporizador de Challenge Mode.
+-- Tipo de temporizador de Challenge Mode. El propio tracker de Blizzard (12.1.0
+-- y 12.1.5, Blizzard_ScenarioObjectiveTracker.lua, ScenarioTimerMixin) compara
+-- contra Enum.WorldElapsedTimerTypes.ChallengeMode; la constante LE_ heredada
+-- no aparece en su codigo, asi que solo es red. Devuelve valor y fuente.
+function TA.ChallengeTimerType()
+    local v = TA.Number(TA.Resolve("Enum.WorldElapsedTimerTypes.ChallengeMode"))
+    if v then return v, "ENUM" end
+    v = TA.Number(rawget(_G, "LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE"))
+    if v then return v, "LE_CONSTANT" end
+    return nil
+end
+
+-- elapsed (segundos), timerID, fuente. nil si no hay temporizador de Challenge Mode.
 function TA:GetElapsedTime()
     -- GetWorldElapsedTimers devuelve una lista variable de IDs.
     local r = pack(self:Call("GetWorldElapsedTimers"))
     if not r[1] then return nil end
 
-    local typeCM = TA.Number(rawget(_G, "LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE"))
+    local typeCM = TA.ChallengeTimerType()
     for i = 2, r.n do
         local id = TA.Number(r[i])
         if id then
@@ -685,7 +698,7 @@ function TA:ProbeCapabilities()
         if api.kind == "function" then
             status = self:HasFunction(api.path) and AVAILABLE or MISSING
         elseif api.kind == "constant" then
-            status = (TA.Number(rawget(_G, api.path)) ~= nil) and AVAILABLE or MISSING
+            status = (TA.Number(TA.Resolve(api.path)) ~= nil) and AVAILABLE or MISSING
         elseif api.kind == "event" then
             if type(validator) == "function" then
                 local ok, valid = pcall(validator, api.path)

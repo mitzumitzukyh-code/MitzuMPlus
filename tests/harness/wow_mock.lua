@@ -453,6 +453,9 @@ Enum = setmetatable({}, { __index = function(t, k)
     rawset(t, k, v)
     return v
 end })
+-- Valores reales (Blizzard_APIDocumentationGenerated, 12.1.0 y 12.1.5): el
+-- tracker de Blizzard filtra el cronometro de la llave con este Enum.
+Enum.WorldElapsedTimerTypes = { None = 0, ChallengeMode = 1, ProvingGround = 2 }
 Settings = nil
 SOUNDKIT = setmetatable({}, { __index = function() return 0 end })
 

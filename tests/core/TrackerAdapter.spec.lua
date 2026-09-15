@@ -26,7 +26,7 @@ local function secret() local s = {}; SECRETS[s] = true; return s end
 
 local GLOBALS = { "C_ChallengeMode", "C_Scenario", "C_ScenarioInfo", "C_MythicPlus", "C_EventUtils",
     "GetWorldElapsedTimers", "GetWorldElapsedTime", "LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE",
-    "LE_SCENARIO_TYPE_CHALLENGE_MODE", "issecretvalue", "canaccessvalue", "GetTime", "GetBuildInfo" }
+    "LE_SCENARIO_TYPE_CHALLENGE_MODE", "issecretvalue", "canaccessvalue", "GetTime", "GetBuildInfo", "Enum" }
 
 local W   -- simulated client state
 local records
@@ -53,7 +53,9 @@ local function install(opts)
     _G.GetTime = function() return W.now end
     _G.GetBuildInfo = function() return "12.1.5", "69594", "Aug 28 2026", 120105 end
     _G.issecretvalue = function(v) return SECRETS[v] == true end
-    _G.LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE = 1
+    -- As in 12.1.5: Blizzard's own tracker uses the Enum; the LE_ global is
+    -- only a fallback that tests switch on explicitly.
+    _G.Enum = { WorldElapsedTimerTypes = { None = 0, ChallengeMode = 1, ProvingGround = 2 } }
     _G.LE_SCENARIO_TYPE_CHALLENGE_MODE = 8
     _G.C_ChallengeMode = {
         IsChallengeModeActive = function() return W.active end,
@@ -233,12 +235,22 @@ test("timer: no challenge timer -> nil, never 0", function()
     equal(TA:GetElapsedTime(), nil)
 end)
 
-test("timer: without the type constant the first timer is flagged untyped", function()
+test("timer type: Enum first, LE_ constant as fallback", function()
     local TA = install()
-    _G.LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE = nil
+    local v, src = TA.ChallengeTimerType(); equal(v, 1); equal(src, "ENUM")
+    _G.Enum = nil; _G.LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE = 1
+    v, src = TA.ChallengeTimerType(); equal(v, 1); equal(src, "LE_CONSTANT")
+    W.timers = { { id = 3, elapsed = 50, type = 2 }, { id = 7, elapsed = 91, type = 1 } }
+    local e, id, source = TA:GetElapsedTime(); equal(e, 91); equal(id, 7); equal(source, "WORLD_ELAPSED_TIMER")
+end)
+
+test("timer: without any type constant the first timer is flagged untyped", function()
+    local TA = install()
+    _G.Enum = nil; _G.LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE = nil
     W.timers = { { id = 2, elapsed = 30, type = 99 } }
     local e, _, source = TA:GetElapsedTime()
     equal(e, 30); equal(source, "WORLD_ELAPSED_TIMER_UNTYPED")
+    equal(TA.ChallengeTimerType(), nil)
 end)
 
 test("timer boundaries: zero, exact limit, overtime, negative", function()
@@ -484,11 +496,14 @@ test("capability probe covers functions, constants and events", function()
     equal(by["C_ChallengeMode.IsChallengeModeActive"].status, "AVAILABLE")
     equal(by["C_ChallengeMode.IsChallengeModeActive"].required, true)
     equal(by["C_Scenario.GetCriteriaInfo"].status, "MISSING")
-    equal(by["LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE"].status, "AVAILABLE")
+    equal(by["Enum.WorldElapsedTimerTypes.ChallengeMode"].status, "AVAILABLE")
+    equal(by["LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE"].status, "MISSING")
     equal(by["CHALLENGE_MODE_START"].status, "AVAILABLE")
     equal(by["CHALLENGE_MODE_DEATH_COUNT_UPDATED"].status, "MISSING")
     _G.C_EventUtils = nil
-    equal(TA:ProbeCapabilities()[21].status, "UNKNOWN", "events are UNKNOWN without a validator")
+    for _, c in ipairs(TA:ProbeCapabilities()) do
+        if c.kind == "event" then equal(c.status, "UNKNOWN", "events are UNKNOWN without a validator") end
+    end
     truthy(TA:CapabilitySignature(caps):find("scenario.criteriaLegacy", 1, true))
 end)
 
