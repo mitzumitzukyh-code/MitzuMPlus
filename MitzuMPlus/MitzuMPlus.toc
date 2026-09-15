@@ -46,6 +46,9 @@ modules\QA\FlightRecorder.lua
 # RuntimeCapabilities: que se puede leer de verdad en este cliente.
 # Sin dependencias; se sondea bajo demanda, no al cargar.
 modules\RuntimeCapabilities.lua
+# TrackerAdapter (1.1): la unica capa del tracker que lee APIs de Blizzard.
+# Sin dependencias duras; solo escucha el bus interno para la caja negra.
+modules\Tracker\TrackerAdapter.lua
 # ChallengeClock: tiempo de llave del servidor para predicción y RunSession.
 modules\ChallengeClock.lua
 # DungeonRegistry: converge instanceID / uiMapID / challengeMapID en una
