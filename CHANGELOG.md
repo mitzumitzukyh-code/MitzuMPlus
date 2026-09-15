@@ -19,6 +19,13 @@ Rama `develop/1.1.0`. La beta pública sigue siendo `1.0.0-beta.1`.
 
 - TOC con `## Interface: 120100, 120105`: la misma build carga en Retail
   12.1.0 y en el PTR 12.1.5.
+- Nuevo `TrackerAdapter`: única capa que habla con las APIs de Challenge Mode,
+  escenario y temporizador del servidor. Normaliza timer, mapa, nivel,
+  criterios, fuerzas enemigas y bosses; se degrada a "desconocido" ante APIs
+  ausentes, valores secretos o datos parciales. Todavía no alimenta al HUD.
+- Informe de desarrollo `/emp dev tracker` (capacidades de API y paridad con
+  los módulos 1.0) y sección `TRACKER ADAPTER` en el Bug Report.
+- `tools/deploy_ptr.py`: sincronización al PTR con backup y validación.
 
 ### 1.0.0-beta.1 — primera beta pública
 
