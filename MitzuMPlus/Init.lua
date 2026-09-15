@@ -584,6 +584,7 @@ end
 
 -- [DEV/QA] /emp dev tracker  -> informe completo del TrackerAdapter (copiable)
 --          /emp dev blizzard -> sonda de solo lectura del Objective Tracker nativo
+--          /emp dev state    -> snapshot normalizado de TrackerState
 --          /emp dev caps     -> capacidades de API en el chat
 function MitzuMPlus:ShowDevReport(module, title)
     local ok, lines = pcall(module.ReportLines, module)
@@ -606,6 +607,15 @@ end
 
 function MitzuMPlus:HandleDevCommand(args)
     local sub = args[2]
+    if sub == "state" then
+        if not self.TrackerState then
+            self:Print("|cFFff5555[DEV] TrackerState no disponible.|r")
+            return
+        end
+        self.TrackerState:Refresh("DEV_COMMAND")
+        self:ShowDevReport(self.TrackerState, "MITZUMPLUS [DEV] TRACKER STATE")
+        return
+    end
     if sub == "blizzard" then
         if not self.BlizzardTrackerProbe then
             self:Print("|cFFff5555[DEV] BlizzardTrackerProbe no disponible.|r")
@@ -639,7 +649,7 @@ function MitzuMPlus:HandleDevCommand(args)
         self:Print(string.format("[DEV] APIs sondeadas: %d, no disponibles: %d, redes heredadas opcionales ausentes: %d",
             #caps, missing, optional))
     else
-        self:Print("|cFFff9922[DEV] Uso: /emp dev tracker|blizzard|caps|r")
+        self:Print("|cFFff9922[DEV] Uso: /emp dev tracker|state|blizzard|caps|r")
     end
 end
 

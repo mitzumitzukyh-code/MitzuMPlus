@@ -154,6 +154,16 @@ SECTIONS[#SECTIONS + 1] = { "TRACKER ADAPTER", function(add)
     end
 end }
 
+-- 1.1: snapshot normalizado que consumiran pace, prediccion y el enhancer.
+SECTIONS[#SECTIONS + 1] = { "TRACKER STATE", function(add)
+    local TS = MitzuMPlus.TrackerState
+    local fields = call(TS, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", TS and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
 -- 1.1: estructura y taint del Objective Tracker nativo que se va a decorar.
 SECTIONS[#SECTIONS + 1] = { "BLIZZARD TRACKER", function(add)
     local BTP = MitzuMPlus.BlizzardTrackerProbe
