@@ -734,14 +734,34 @@ function TA:ProbeCapabilities()
     return out
 end
 
--- Firma compacta de lo que falta, para registrar solo cuando cambia.
-function TA:CapabilitySignature(caps)
+-- Clasifica lo que falta. Devuelve { required = {keys}, optional = {keys},
+-- legacyAbsent = n }. `required` vacio significa que el tracker puede funcionar;
+-- `optional` son APIs no imprescindibles ausentes; `legacyAbsent` cuenta redes
+-- heredadas que no hacen falta porque su API principal existe.
+function TA:MissingCapabilities(caps)
     caps = caps or self:ProbeCapabilities()
-    local missing = {}
+    local out = { required = {}, optional = {}, legacyAbsent = 0 }
     for _, c in ipairs(caps) do
-        if c.status == MISSING then missing[#missing + 1] = c.key end
+        if c.status == MISSING then
+            local list = c.required and out.required or out.optional
+            list[#list + 1] = c.key
+        elseif c.status == OPTIONAL_MISSING then
+            out.legacyAbsent = out.legacyAbsent + 1
+        end
     end
-    return (#missing == 0) and "all" or table.concat(missing, ",")
+    return out
+end
+
+local function listOrNone(list)
+    return (#list == 0) and "none" or table.concat(list, ",")
+end
+TA.ListOrNone = listOrNone
+
+-- Firma compacta, para registrar solo cuando cambia. Nunca "all": con todo
+-- presente dice explicitamente "required=none;optional=none".
+function TA:CapabilitySignature(caps)
+    local m = self:MissingCapabilities(caps)
+    return "required=" .. listOrNone(m.required) .. ";optional=" .. listOrNone(m.optional)
 end
 
 -- Deja constancia en la caja negra una vez por firma distinta (sin spam).
@@ -753,8 +773,11 @@ function TA:LogCapabilities(reason)
     local FR = MitzuMPlus.FlightRecorder
     if FR and FR.Record then
         local available = self:IsAvailable()
+        local m = self:MissingCapabilities(caps)
         FR:Record("TRACKER", "ADAPTER_CAPS", {
-            available = available, missing = sig, reason = reason or "probe",
+            available = available, requiredMissing = listOrNone(m.required),
+            optionalMissing = listOrNone(m.optional), legacyAbsent = m.legacyAbsent,
+            reason = reason or "probe",
         })
     end
     return true
@@ -891,7 +914,10 @@ function TA:ReportLines()
             c.fallbackFor and (",legacyFallbackFor=" .. c.fallbackFor) or "", text(c.lastCall),
             c.calls, c.errors, c.lastError and (" lastError=" .. c.lastError) or "")
     end
-    L[#L + 1] = "missingSignature=" .. self:CapabilitySignature(caps)
+    local m = self:MissingCapabilities(caps)
+    L[#L + 1] = "requiredMissing=" .. listOrNone(m.required)
+    L[#L + 1] = "optionalMissing=" .. listOrNone(m.optional)
+    L[#L + 1] = "legacyFallbacksAbsent=" .. m.legacyAbsent .. " (redes heredadas no necesarias: su API principal existe)"
     L[#L + 1] = "=== END ==="
     return L
 end
@@ -917,7 +943,8 @@ function TA:DiagnosticFields()
         { "bossesTotal", s.bossesTotal },
         { "criteriaSource", s.criteriaSource },
         { "warnings", (#s.warnings > 0) and table.concat(s.warnings, ",") or "none" },
-        { "missingApis", self:CapabilitySignature(caps) },
+        { "requiredMissing", listOrNone(self:MissingCapabilities(caps).required) },
+        { "optionalMissing", listOrNone(self:MissingCapabilities(caps).optional) },
     }
 end
 

@@ -511,6 +511,25 @@ test("capability probe covers functions, constants and events", function()
     equal(TA:CapabilitySignature(caps):find("Legacy", 1, true), nil, "optional fallbacks are not missing APIs")
 end)
 
+test("capability summary says none explicitly, never all", function()
+    local TA = install()
+    local m = TA:MissingCapabilities()
+    equal(#m.required, 0); equal(m.legacyAbsent, 4)
+    equal(TA:CapabilitySignature(), "required=none;optional=" .. TA.ListOrNone(m.optional))
+    local text = table.concat(TA:ReportLines(), "\n")
+    truthy(text:find("requiredMissing=none", 1, true), text)
+    truthy(text:find("legacyFallbacksAbsent=4", 1, true), text)
+    equal(text:find("missingSignature", 1, true), nil)
+    equal(text:find("=all", 1, true), nil)
+    local fields = {}
+    for _, f in ipairs(TA:DiagnosticFields()) do fields[f[1]] = f[2] end
+    equal(fields.requiredMissing, "none"); equal(fields.missingApis, nil)
+    _G.GetWorldElapsedTimers = nil
+    m = TA:MissingCapabilities()
+    equal(table.concat(m.required, ","), "timer.list")
+    truthy(TA:CapabilitySignature():find("required=timer.list;", 1, true))
+end)
+
 test("a missing legacy fallback is a real gap when its primary API is also missing", function()
     local TA = install()
     _G.C_ScenarioInfo.GetCriteriaInfo = nil
@@ -534,7 +553,8 @@ test("capabilities are logged once per distinct signature", function()
     equal(#records, 1); equal(records[1].e, "ADAPTER_CAPS")
     _G.C_ChallengeMode.GetDeathCount = nil
     equal(TA:LogCapabilities("t3"), true); equal(#records, 2)
-    equal(records[2].d.available, true); truthy(records[2].d.missing:find("challenge.deaths", 1, true))
+    equal(records[2].d.available, true); equal(records[2].d.requiredMissing, "none")
+    truthy(records[2].d.optionalMissing:find("challenge.deaths", 1, true))
 end)
 
 test("bus lifecycle hooks record compact adapter snapshots", function()
