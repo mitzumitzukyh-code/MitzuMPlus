@@ -1,9 +1,9 @@
-## Interface: 120100
+## Interface: 120100, 120105
 ## Title: MitzuMPlus
 ## Notes: Mythic+ history, statistics, player analysis and live key prediction.
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzuki Mizt
-## Version: 1.0.0-beta.1
+## Version: 1.1.0-dev.1
 ## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO

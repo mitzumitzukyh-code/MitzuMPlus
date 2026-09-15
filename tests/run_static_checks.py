@@ -163,18 +163,26 @@ def check_no_emoji(c):
 
 def check_version_consistency(c):
     version = metadata().get("Version", "")
-    c.check(re.fullmatch(r"1\.\d+\.\d+(-(beta\.\d+|rc\d+))?", version) is not None,
+    c.check(re.fullmatch(r"1\.\d+\.\d+(-(dev\.\d+|alpha\.\d+|beta\.\d+|rc\d+))?", version) is not None,
             f"TOC version is not in the 1.x release series: {version!r}")
-    release_changelog = read(ROOT / "release" / "CHANGELOG.md")
-    first = re.search(r"^## (\S+)", release_changelog, re.MULTILINE)
-    c.check(first is not None and first.group(1) == version,
-            f"release/CHANGELOG.md top entry does not match TOC version {version}")
     c.check(re.search(rf"^### {re.escape(version)}\b", read(ROOT / "CHANGELOG.md"), re.MULTILINE) is not None,
             f"root CHANGELOG.md has no entry for {version}")
-    c.check(f"Current candidate: `{version}`" in read(ROOT / "docs" / "RELEASE.md"),
-            f"docs/RELEASE.md does not name candidate {version}")
-    c.check(f"MitzuMPlus-{version}.zip" in read(ROOT / "release" / "CURSEFORGE_PAGE.md"),
-            f"release/CURSEFORGE_PAGE.md does not name MitzuMPlus-{version}.zip")
+    # Internal dev/alpha builds only run on the PTR and are never published, so
+    # the public release material keeps naming the last public version.
+    if re.search(r"-(dev|alpha)\.\d+$", version) is None:
+        release_changelog = read(ROOT / "release" / "CHANGELOG.md")
+        first = re.search(r"^## (\S+)", release_changelog, re.MULTILINE)
+        c.check(first is not None and first.group(1) == version,
+                f"release/CHANGELOG.md top entry does not match TOC version {version}")
+        c.check(f"Current candidate: `{version}`" in read(ROOT / "docs" / "RELEASE.md"),
+                f"docs/RELEASE.md does not name candidate {version}")
+        c.check(f"MitzuMPlus-{version}.zip" in read(ROOT / "release" / "CURSEFORGE_PAGE.md"),
+                f"release/CURSEFORGE_PAGE.md does not name MitzuMPlus-{version}.zip")
+    # The PTR and Retail may run different interface numbers; the TOC lists
+    # every supported client so one build loads on both.
+    interfaces = [v.strip() for v in metadata().get("Interface", "").split(",")]
+    c.check(all(re.fullmatch(r"\d{6}", v) for v in interfaces) and interfaces != [""],
+            f"TOC Interface is not a list of six-digit versions: {interfaces!r}")
     author = "Mutzuki Mizt"
     c.check(metadata().get("Author") == author, f"TOC Author is not {author}")
     c.check(f"Copyright (c) 2026 {author}" in read(ROOT / "LICENSE"), f"LICENSE copyright holder is not {author}")

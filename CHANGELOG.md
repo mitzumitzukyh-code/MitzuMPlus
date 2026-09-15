@@ -13,6 +13,13 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.1 — desarrollo interno (solo PTR, sin publicar)
+
+Rama `develop/1.1.0`. La beta pública sigue siendo `1.0.0-beta.1`.
+
+- TOC con `## Interface: 120100, 120105`: la misma build carga en Retail
+  12.1.0 y en el PTR 12.1.5.
+
 ### 1.0.0-beta.1 — primera beta pública
 
 Reúne la limpieza de producto (build interna) y el trabajo de la build interna
