@@ -154,6 +154,16 @@ SECTIONS[#SECTIONS + 1] = { "TRACKER ADAPTER", function(add)
     end
 end }
 
+-- 1.1: estructura y taint del Objective Tracker nativo que se va a decorar.
+SECTIONS[#SECTIONS + 1] = { "BLIZZARD TRACKER", function(add)
+    local BTP = MitzuMPlus.BlizzardTrackerProbe
+    local fields = call(BTP, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", BTP and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
 SECTIONS[#SECTIONS + 1] = { "PREDICTION", function(add)
     local run = rawget(_G, "MitzuMPlusCurrentRun")
     local snap = run and call(MitzuMPlus.PredictionEngine, "GetSnapshot", run) or nil

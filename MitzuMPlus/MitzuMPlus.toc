@@ -49,6 +49,8 @@ modules\RuntimeCapabilities.lua
 # TrackerAdapter (1.1): la unica capa del tracker que lee APIs de Blizzard.
 # Sin dependencias duras; solo escucha el bus interno para la caja negra.
 modules\Tracker\TrackerAdapter.lua
+# BlizzardTrackerProbe (1.1): sonda de solo lectura del Objective Tracker nativo.
+modules\Tracker\BlizzardTrackerProbe.lua
 # ChallengeClock: tiempo de llave del servidor para predicción y RunSession.
 modules\ChallengeClock.lua
 # DungeonRegistry: converge instanceID / uiMapID / challengeMapID en una

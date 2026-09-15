@@ -583,31 +583,44 @@ function MitzuMPlus:HandleSlashCommand(input)
 end
 
 -- [DEV/QA] /emp dev tracker  -> informe completo del TrackerAdapter (copiable)
+--          /emp dev blizzard -> sonda de solo lectura del Objective Tracker nativo
 --          /emp dev caps     -> capacidades de API en el chat
+function MitzuMPlus:ShowDevReport(module, title)
+    local ok, lines = pcall(module.ReportLines, module)
+    if not ok then
+        self:Print("|cFFff5555[DEV] Error al generar el informe:|r " ..
+            (self.QASafe and self.QASafe.Text(lines, 200) or "?"))
+        return
+    end
+    local text = table.concat(lines, "\n")
+    local EX = self.Export
+    local shown = EX and EX.CopyToClipboard and pcall(EX.CopyToClipboard, EX, text, {
+        title = title,
+        hint = "Ctrl+A y Ctrl+C para copiar todo.",
+        autoClose = false, mono = true,
+    })
+    if not shown then
+        for _, line in ipairs(lines) do self:Print(line) end
+    end
+end
+
 function MitzuMPlus:HandleDevCommand(args)
-    local TA = self.TrackerAdapter
     local sub = args[2]
+    if sub == "blizzard" then
+        if not self.BlizzardTrackerProbe then
+            self:Print("|cFFff5555[DEV] BlizzardTrackerProbe no disponible.|r")
+            return
+        end
+        self:ShowDevReport(self.BlizzardTrackerProbe, "MITZUMPLUS [DEV] BLIZZARD TRACKER")
+        return
+    end
+    local TA = self.TrackerAdapter
     if not TA then
         self:Print("|cFFff5555[DEV] TrackerAdapter no disponible.|r")
         return
     end
     if sub == "tracker" then
-        local ok, lines = pcall(TA.ReportLines, TA)
-        if not ok then
-            self:Print("|cFFff5555[DEV] Error al generar el informe:|r " ..
-                (self.QASafe and self.QASafe.Text(lines, 200) or "?"))
-            return
-        end
-        local text = table.concat(lines, "\n")
-        local EX = self.Export
-        local shown = EX and EX.CopyToClipboard and pcall(EX.CopyToClipboard, EX, text, {
-            title = "MITZUMPLUS [DEV] TRACKER ADAPTER",
-            hint = "Ctrl+A y Ctrl+C para copiar todo.",
-            autoClose = false, mono = true,
-        })
-        if not shown then
-            for _, line in ipairs(lines) do self:Print(line) end
-        end
+        self:ShowDevReport(TA, "MITZUMPLUS [DEV] TRACKER ADAPTER")
     elseif sub == "caps" then
         local ok, caps = pcall(TA.ProbeCapabilities, TA)
         if not ok then
@@ -623,7 +636,7 @@ function MitzuMPlus:HandleDevCommand(args)
         end
         self:Print(string.format("[DEV] APIs sondeadas: %d, no disponibles: %d", #caps, missing))
     else
-        self:Print("|cFFff9922[DEV] Uso: /emp dev tracker|caps|r")
+        self:Print("|cFFff9922[DEV] Uso: /emp dev tracker|blizzard|caps|r")
     end
 end
 

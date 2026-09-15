@@ -116,8 +116,13 @@ test("bug report and DEV command expose the adapter", function()
         truthy(report:find("forcesTotal=686", 1, true), report)
         truthy(report:find("keystoneLevel=10", 1, true), report)
         truthy(report:find("sectionsFailed=none", 1, true), report)
+        -- The simulated client has no Blizzard Objective Tracker: the probe must
+        -- say so instead of failing.
+        truthy(report:find("[BLIZZARD TRACKER]", 1, true), "probe section present")
+        truthy(report:find("enhanceable=false", 1, true), report)
 
         local before = #env.WoW.printed
+        MP:HandleSlashCommand("dev blizzard")
         MP:HandleSlashCommand("dev tracker")
         MP:HandleSlashCommand("dev caps")
         MP:HandleSlashCommand("dev")
