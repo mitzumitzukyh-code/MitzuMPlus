@@ -182,7 +182,7 @@ test("real Retail sample is stored with normalized fields only", function()
         "mapID", "mapName", "keystoneLevel", "timeLimit", "deaths", "deathTimeLost", "forcesCurrent", "forcesTotal",
         "forcesPercent", "forcesRemaining", "forcesRemainingPercent", "forcesSource", "bossesCompleted", "bossesTotal",
         "elapsedBase", "elapsedAt", "timerSource", "timerStale", "forcesStale", "bossesStale", "timestamp", "reason",
-        "revision", "recovered", "firstSeenAt", "completedAt", "finalElapsed", "adapterAvailable", "runWarnings" }) do allowed[k] = true end
+        "revision", "recovered", "firstSeenAt", "completedAt", "finalElapsed", "adapterAvailable", "runWarnings", "transient" }) do allowed[k] = true end
     for k in pairs(s) do truthy(allowed[k], "unexpected snapshot field " .. tostring(k)) end
 end)
 
@@ -266,6 +266,45 @@ test("adapter warnings are propagated with a prefix (partial criteria)", functio
     raw = retailSample(20); raw.warnings = { "CRITERIA_PARTIAL" }
     TS:Refresh("t")
     has(TS:GetSnapshot().warnings, "ADAPTER_CRITERIA_PARTIAL")
+end)
+
+test("startup timer race is transient: no run warning, sync duration recorded", function()
+    local TS = install()
+    raw = retailSample(nil); raw.warnings = { "ACTIVE_WITHOUT_TIMER" }
+    TS:OnEvent("CHALLENGE_MODE_START"); advance(0.3)
+    local s = TS:GetSnapshot()
+    equal(TS:GetStatus(), "PENDING")
+    has(s.transient, "ADAPTER_ACTIVE_WITHOUT_TIMER")
+    equal(#s.warnings, 0); equal(#s.runWarnings, 0)
+    advance(3)
+    equal(#TS:GetSnapshot().runWarnings, 0, "still inside the synchronization window")
+    raw = running(4); raw.warnings = {}
+    advance(1)
+    s = TS:GetSnapshot()
+    equal(TS:GetStatus(), "RUNNING"); equal(#s.transient, 0); equal(#s.runWarnings, 0)
+    equal(count(records, "STATE_WARN"), 0)
+    equal(count(records, "STATE_SYNC"), 1)
+    local sync
+    for _, r in ipairs(records) do if r.e == "STATE_SYNC" then sync = r.d end end
+    equal(sync.code, "ADAPTER_ACTIVE_WITHOUT_TIMER"); equal(sync.seconds, "4.0")
+end)
+
+test("a synchronization gap that persists past the window becomes a run warning", function()
+    local TS = install()
+    raw = retailSample(nil); raw.warnings = { "ACTIVE_WITHOUT_TIMER", "CRITERIA_PARTIAL" }
+    TS:OnEvent("CHALLENGE_MODE_START"); advance(0.3)
+    local s = TS:GetSnapshot()
+    has(s.warnings, "ADAPTER_CRITERIA_PARTIAL", "non-transient codes are immediate")
+    equal(#s.transient, 1)
+    advance(11)
+    s = TS:GetSnapshot()
+    has(s.warnings, "ADAPTER_ACTIVE_WITHOUT_TIMER"); has(s.runWarnings, "ADAPTER_ACTIVE_WITHOUT_TIMER")
+    equal(#s.transient, 0)
+    equal(count(records, "STATE_WARN"), 2, "each code recorded once")
+    raw = running(20); raw.warnings = {}
+    advance(1)
+    equal(count(records, "STATE_SYNC"), 0, "a promoted warning is not also reported as a normal sync")
+    has(TS:GetSnapshot().runWarnings, "ADAPTER_ACTIVE_WITHOUT_TIMER")
 end)
 
 test("reload mid-key: timer gap then recovery flag", function()

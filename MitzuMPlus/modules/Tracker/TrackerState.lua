@@ -46,6 +46,17 @@ TS.RECOVERED_THRESHOLD = 15    -- primera lectura con mas tiempo => llave recupe
 TS.TIMER_REGRESSION    = 2     -- segundos hacia atras tolerados antes de avisar
 TS.MAX_WARNINGS        = 24
 
+-- Carreras normales de sincronizacion: al arrancar la llave (o tras /reload)
+-- Blizzard tarda unos segundos en exponer temporizador y criterios. Mientras
+-- duren menos de TRANSIENT_WINDOW no son un problema de la llave: se muestran
+-- en `transient` y, al resolverse, la caja negra anota cuanto tardaron. Solo si
+-- persisten pasan a `warnings` / `runWarnings`.
+TS.TRANSIENT_WINDOW = 10
+TS.TRANSIENT_CODES = {
+    ACTIVE_WITHOUT_TIMER = true, ACTIVE_WITHOUT_CRITERIA = true,
+    ACTIVE_WITHOUT_FORCES = true, ACTIVE_WITHOUT_MAP = true,
+}
+
 -- Disparadores. Todos documentados en Blizzard_APIDocumentationGenerated 12.1.5;
 -- aun asi se validan antes de registrarse.
 TS.EVENTS = {
@@ -92,7 +103,7 @@ function TS:GetAdapter() return self._adapter or MitzuMPlus.TrackerAdapter end
 -- ---------------------------------------------------------------------------
 
 local function emptySnapshot()
-    return { status = IDLE, active = false, warnings = {}, bosses = {},
+    return { status = IDLE, active = false, warnings = {}, transient = {}, bosses = {},
              -- Reservados para las fases 5-6. Siguen nil hasta que haya motor.
              pace = nil, prediction = nil, eta = nil, confidence = nil }
 end
@@ -156,6 +167,7 @@ function TS:_StartRun(raw, reason)
         mapID = raw.mapID, keystoneLevel = raw.keystoneLevel,
         firstSeenAt = epoch(), recovered = nil,
         warned = {}, warnCount = 0,
+        syncing = {},   -- [codigo] = GetTime() de la primera lectura en que aparecio
     }
     self._awaitingNewRun = false
     self._sawInactive = false
@@ -220,8 +232,30 @@ function TS:_BuildActive(raw, prev)
         snap.bossesStale = true
     end
 
+    local run, seen = self._run, {}
     for _, w in ipairs(type(raw.warnings) == "table" and raw.warnings or {}) do
-        self:_Warn(snap, "ADAPTER_" .. tostring(w))
+        local code = tostring(w)
+        if TS.TRANSIENT_CODES[code] and run then
+            seen[code] = true
+            run.syncing[code] = run.syncing[code] or now
+            if now - run.syncing[code] < TS.TRANSIENT_WINDOW then
+                snap.transient[#snap.transient + 1] = "ADAPTER_" .. code
+            else
+                self:_Warn(snap, "ADAPTER_" .. code)
+            end
+        else
+            self:_Warn(snap, "ADAPTER_" .. code)
+        end
+    end
+    if run then
+        for code, since in pairs(run.syncing) do
+            if not seen[code] then
+                run.syncing[code] = nil
+                if not run.warned["ADAPTER_" .. code] then
+                    record("SYNC", { code = "ADAPTER_" .. code, seconds = string.format("%.1f", now - since) })
+                end
+            end
+        end
     end
     return snap
 end
@@ -525,6 +559,7 @@ function TS:DiagnosticFields()
         { "stale", string.format("timer=%s forces=%s bosses=%s", text(s.timerStale), text(s.forcesStale), text(s.bossesStale)) },
         { "warnings", (#s.warnings > 0) and table.concat(s.warnings, ",") or "none" },
         { "runWarnings", (s.runWarnings and #s.runWarnings > 0) and table.concat(s.runWarnings, ",") or "none" },
+        { "transient", (s.transient and #s.transient > 0) and table.concat(s.transient, ",") or "none" },
         { "refreshes", st.refreshes },
         { "coalesced", st.coalesced },
         { "adapterErrors", st.adapterErrors },
@@ -556,6 +591,8 @@ function TS:ReportLines()
     end
     L[#L + 1] = "warnings=" .. ((#s.warnings > 0) and table.concat(s.warnings, ",") or "none")
     L[#L + 1] = "runWarnings=" .. ((s.runWarnings and #s.runWarnings > 0) and table.concat(s.runWarnings, ",") or "none")
+    L[#L + 1] = "transient=" .. ((s.transient and #s.transient > 0) and table.concat(s.transient, ",")
+        or "none") .. " (sincronizacion normal del cliente; aviso solo si dura mas de " .. TS.TRANSIENT_WINDOW .. " s)"
     local st = self._stats
     local ev = {}
     for name, n in pairs(st.events) do ev[#ev + 1] = name .. "=" .. n end
