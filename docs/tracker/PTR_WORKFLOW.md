@@ -21,7 +21,7 @@
    - `python tools/deploy_ptr.py --verify` compara sin tocar nada.
 5. En el PTR: `/reload` si solo cambió Lua existente; **reinicio completo del
    cliente** si cambió el `.toc` (ficheros nuevos o metadatos).
-6. Prueba guiada, `/emp bugreport` y, en fase de tracker, `/emp dev tracker`.
+6. Prueba guiada, `/emp bugreport` y, en fase de tracker, `/emp dev tracker` y `/emp dev blizzard`.
 7. Bug → reproducir, capturar, test, arreglar, suite, desplegar, volver a probar.
 
 ## Interface

@@ -26,6 +26,13 @@ Rama `develop/1.1.0`. La beta pública sigue siendo `1.0.0-beta.1`.
 - Informe de desarrollo `/emp dev tracker` (capacidades de API y paridad con
   los módulos 1.0) y sección `TRACKER ADAPTER` en el Bug Report.
 - `tools/deploy_ptr.py`: sincronización al PTR con backup y validación.
+- Diseño: 1.1 mejora el tracker nativo de Blizzard en lugar de crear un HUD
+  propio. Auditado `Blizzard_ObjectiveTracker` (idéntico en 12.1.0 y 12.1.5).
+- `BlizzardTrackerProbe`: sonda de solo lectura del bloque Mythic+ nativo
+  (`/emp dev blizzard`, sección `BLIZZARD TRACKER` del Bug Report) con línea
+  base de taint.
+- TrackerAdapter: el tipo del temporizador de la llave se resuelve con
+  `Enum.WorldElapsedTimerTypes.ChallengeMode`, como hace Blizzard.
 
 ### 1.0.0-beta.1 — primera beta pública
 
