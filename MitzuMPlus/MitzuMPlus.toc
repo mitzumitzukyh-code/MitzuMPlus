@@ -51,6 +51,8 @@ modules\RuntimeCapabilities.lua
 modules\Tracker\TrackerAdapter.lua
 # BlizzardTrackerProbe (1.1): sonda de solo lectura del Objective Tracker nativo.
 modules\Tracker\BlizzardTrackerProbe.lua
+# TrackerState (1.1): snapshot normalizado de la llave; solo lee TrackerAdapter.
+modules\Tracker\TrackerState.lua
 # ChallengeClock: tiempo de llave del servidor para predicción y RunSession.
 modules\ChallengeClock.lua
 # DungeonRegistry: converge instanceID / uiMapID / challengeMapID en una
