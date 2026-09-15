@@ -208,8 +208,21 @@ def check_legacy_hud_frozen(c):
     c.check(hashlib.sha256(data).hexdigest() == LEGACY_HUD_SHA256,
             "KeyPredictionHUD.lua changed: the legacy HUD is frozen at v1.0.0-beta.1 (see docs/tracker/ROADMAP.md)")
 
+# Architecture: only TrackerAdapter talks to Blizzard's Mythic+ APIs. The layers
+# above it (state, pace, prediction, enhancer) consume normalized data only.
+BLIZZARD_API_TOKENS = ["C_ChallengeMode", "C_ScenarioInfo", "C_Scenario", "GetWorldElapsedTime",
+                       "GetWorldElapsedTimers", "quantityString"]
+
+def check_tracker_layers(c):
+    for name in ["TrackerState.lua"]:
+        path = ADDON / "modules" / "Tracker" / name
+        code = re.sub(r"--[^\n]*", "", read(path))
+        for token in BLIZZARD_API_TOKENS:
+            c.check(token not in code, f"{relative(path)} bypasses TrackerAdapter: {token}")
+
 def main():
     c = Checks(); lua_files = compile_lua(c)
+    check_tracker_layers(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
     check_savedvariables_and_media(c); check_icon_textures(c); check_no_emoji(c); check_version_consistency(c)
     check_legacy_hud_frozen(c)

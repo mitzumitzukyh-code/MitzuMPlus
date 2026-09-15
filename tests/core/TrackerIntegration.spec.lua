@@ -184,5 +184,88 @@ test("key completion: adapter reports inactive without active-state warnings", f
     end)
 end)
 
+test("TrackerState follows a real key through the full addon", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local TS = MP.TrackerState
+        truthy(TS, "TrackerState registered")
+        equal(TS:GetStatus(), "IDLE")
+
+        S.enterRuby(env)
+        env.WoW.advance(1)
+        equal(TS:GetStatus(), "IDLE", "pre-key")
+
+        S.startKey(env, { level = 9 })
+        env.WoW.advance(1)
+        equal(TS:GetStatus(), "RUNNING")
+        local s = TS:GetSnapshot()
+        equal(s.mapID, 399); equal(s.keystoneLevel, 9); equal(s.timeLimit, 1800); equal(s.recovered, false)
+
+        env.WoW.advance(200)
+        crit.count, crit.bosses[1] = 343, true
+        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+        env.WoW.advance(1)
+        s = TS:GetSnapshot()
+        equal(s.forcesCurrent, 343); equal(s.forcesPercent, 50); equal(s.forcesRemaining, 343)
+        equal(s.bossesCompleted, 1); equal(s.bossesTotal, 3); equal(s.quantityString, nil)
+        local elapsed = TS:GetElapsed()
+        truthy(elapsed >= 200 and elapsed <= 206, "elapsed follows the server timer: " .. tostring(elapsed))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+
+        local report = MP.BugReport:Build()
+        truthy(report:find("[TRACKER STATE]", 1, true), "state section")
+        truthy(report:find("status=RUNNING", 1, true), report)
+        truthy(report:find("forcesPercent=50.00", 1, true), report)
+        local printed = #env.WoW.printed
+        MP:HandleSlashCommand("dev state")
+        equal(#env.WoW.errors, 0, table.concat(env.WoW.errors, "\n"))
+        truthy(#env.WoW.printed >= printed)
+
+        -- Last boss and last forces arrive before the completion event.
+        crit.count, crit.bosses = 686, { true, true, true }
+        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+        env.WoW.advance(1)
+        env.WoW.state.challengeActive = false
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        env.WoW.advance(2)
+        equal(TS:GetStatus(), "COMPLETED")
+        s = TS:GetSnapshot()
+        equal(s.forcesPercent, 100); equal(s.bossesCompleted, 3); truthy(s.finalElapsed and s.finalElapsed >= 200)
+        -- The mock stops exposing criteria once inactive: the final snapshot keeps
+        -- the last reading and says it is not fresh instead of inventing values.
+        equal(s.forcesStale, true)
+        local recorded = lines(MP.FlightRecorder:Lines(200))
+        truthy(recorded:find("STATE_RUN_STARTED", 1, true) and recorded:find("STATE_RUN_COMPLETED", 1, true), recorded)
+    end)
+end)
+
+test("TrackerState recovers a key after /reload", function()
+    local saved = S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        S.enterRubyAndStartKey(env, { level = 14 })
+        env.WoW.advance(640)
+        crit.count = 250
+        return S.captureForReload(env)
+    end)
+    S.isolated(function()
+        local env = S.bootAfterReload(saved, { timerDelay = 4 })
+        installScenario()
+        crit.count = 250
+        env.WoW.fire("PLAYER_ENTERING_WORLD", false, true)
+        env.WoW.advance(0.5)
+        local TS = _G.MitzuMPlus.TrackerState
+        equal(TS:GetStatus(), "PENDING", "timer not back yet")
+        equal(TS:GetSnapshot().forcesCurrent, 250)
+        env.WoW.advance(5)
+        equal(TS:GetStatus(), "RUNNING")
+        equal(TS:GetSnapshot().recovered, true)
+        truthy(TS:GetElapsed() >= 640, "server time, not time since reload: " .. tostring(TS:GetElapsed()))
+        equal(#env.errors, 0, errorsText(env))
+    end)
+end)
+
 if #failures > 0 then error(string.format("TrackerIntegration: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end
 return { tests = tests, assertions = assertions }
