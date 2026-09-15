@@ -19,14 +19,49 @@ Objetivo: **Blizzard Tracker Enhancer + Enemy Forces**. Enhance, don't replace.
 | 4 | Boss state | |
 | 5 | PaceEngine | |
 | 6 | PredictionEngine sobre TrackerState (+3/+2/+1/OVERTIME, ETA, margen, confianza) | |
-| 7 | **BlizzardTrackerEnhancer**: fuerzas precisas en la barra nativa, umbrales +3/+2 en el bloque M+, predicción/ETA/pace | |
-| 8 | Configuración mínima (activar mejoras, qué mostrar) | |
+| 7 | **BlizzardTrackerEnhancer** (interfaz principal): fuerzas precisas en la barra nativa, umbrales +3/+2 en el bloque M+, predicción/ETA/pace; capability check con fallback al HUD legacy | |
+| 8 | Configuración mínima (activar mejoras, qué mostrar, opción LEGACY/fallback) + migración versionada de SavedVariables | |
 | 9 | Bug Report 1.1 | |
 | 10 | Llave completa en PTR | |
 | 11 | Hardening / regresión / taint | |
 | 12 | 1.1.0-beta.1 candidata | |
 
-## Decisión abierta
-`KeyPredictionHUD` (1.0) es una ventana flotante propia. Con el nuevo principio,
-¿se mantiene en 1.1 como está, pasa a desactivado por defecto cuando el enhancer
-funcione, o se retira? No se toca hasta que Mutzuki decida.
+## Decisión: KeyPredictionHUD (2026-09-15)
+
+**KEEP FOR ROLLBACK, DO NOT DEVELOP FURTHER.**
+
+- `BlizzardTrackerEnhancer` = interfaz principal de Mythic+ en 1.1.
+- `KeyPredictionHUD` (ventana flotante de 1.0) = fallback / legacy temporal.
+
+Reglas:
+1. No se borra ni su lógica, ni se reescribe, ni recibe funciones nuevas.
+   `tests/run_static_checks.py` exige que `modules/KeyPredictionHUD.lua` siga
+   idéntico a `v1.0.0-beta.1` (hash). Cambiarlo requiere decisión explícita
+   anotada aquí.
+2. Todo desarrollo visual nuevo va solo a `BlizzardTrackerEnhancer`.
+3. Cuando el enhancer esté funcional y validado: HUD legacy **desactivado por
+   defecto en instalaciones nuevas** de 1.1.0.
+4. Durante la beta se mantiene una opción LEGACY/fallback en configuración.
+5. Si el enhancer falla su capability check (`BlizzardTrackerProbe:IsEnhanceable()`):
+   no toca el tracker de Blizzard, registra el fallo (FlightRecorder + Bug
+   Report) y permite el fallback al HUD legacy si corresponde.
+6. Sin migración destructiva de SavedVariables. Antes de la release candidate,
+   migración versionada e idempotente para usuarios de 1.0.0-beta.1.
+7. Retirada definitiva solo tras: M+ completa, prueba tras `/reload`, cambio de
+   criterios, final de llave, cero taint/errores Lua y regresión completa de 1.0.
+
+### Notas técnicas para la migración (fase 8/12)
+- Ajustes actuales: `profile.settings.hud = { enabled=true, locked, scale, alpha,
+  showConfidence, showETA, point, relPoint, x, y }` (defaults en
+  `MitzuMPlus_main.lua` y `HUD.DEFAULTS`).
+- **AceDB solo guarda valores distintos del default.** Un usuario de 1.0 con el
+  HUD activado no tiene `hud.enabled` guardado; cambiar el default a `false`
+  lo apagaría en silencio y no se distingue de "nunca lo tocó". Por tanto no se
+  cambia el default de `hud.enabled`: el modo se decide con un ajuste nuevo
+  (p. ej. `settings.mplusDisplay = "ENHANCER" | "LEGACY_HUD"`) más un marcador
+  de migración versionado en `global`.
+- `Init.lua` sobrescribe `db.global.version` al cargar. La migración debe leer
+  la versión previa **antes** de esa línea para distinguir instalación nueva
+  (sin `MitzuMPlusDB` previo) de actualización desde `1.0.0-beta.1`.
+- Política para quien actualiza desde 1.0 (¿conserva el HUD o pasa al
+  enhancer?): pendiente de decisión antes de la RC.

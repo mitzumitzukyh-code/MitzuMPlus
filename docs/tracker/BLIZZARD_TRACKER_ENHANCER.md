@@ -93,6 +93,9 @@ base de taint (`issecurevariable`) antes de que exista ningún hook.
 - Cada callback en `pcall`; si falla N veces, el enhancer se desactiva solo y el
   tracker de Blizzard sigue intacto (sus hooks quedan como no-op).
 - Guardas: el enhancer solo arranca si `BlizzardTrackerProbe:IsEnhanceable()`.
+  Si no, no toca el tracker de Blizzard, registra el fallo (FlightRecorder y
+  Bug Report) y, si corresponde, activa el fallback al `KeyPredictionHUD` legacy
+  (congelado en 1.0; ver ROADMAP.md).
 - Datos solo desde TrackerState/Pace/Prediction, nunca desde el texto de Blizzard.
 - Criterio de aceptación en PTR: `/emp dev blizzard` con `tainted=none` durante
   y después de una llave completa, sin `ADDON_ACTION_BLOCKED` en combate.
