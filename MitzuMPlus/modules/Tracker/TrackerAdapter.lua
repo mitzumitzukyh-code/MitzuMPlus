@@ -60,7 +60,11 @@ TA.VERSION = 1
 
 -- Estados de capacidad y de lectura.
 local AVAILABLE, MISSING, ERROR, EMPTY, UNKNOWN = "AVAILABLE", "MISSING", "ERROR", "EMPTY", "UNKNOWN"
-TA.STATUS = { AVAILABLE = AVAILABLE, MISSING = MISSING, ERROR = ERROR, EMPTY = EMPTY, UNKNOWN = UNKNOWN }
+-- Una red heredada ausente cuando su API principal SI existe no es un problema:
+-- se informa aparte y no entra en la firma de APIs que faltan.
+local OPTIONAL_MISSING = "OPTIONAL_FALLBACK_MISSING"
+TA.STATUS = { AVAILABLE = AVAILABLE, MISSING = MISSING, ERROR = ERROR, EMPTY = EMPTY, UNKNOWN = UNKNOWN,
+              OPTIONAL_MISSING = OPTIONAL_MISSING }
 
 -- Umbral a partir del cual el porcentaje calculado y el `quantity` oficial se
 -- consideran en desacuerdo (quantity va truncado a entero: 1 punto es normal).
@@ -68,6 +72,7 @@ TA.FORCES_MISMATCH_POINTS = 3
 
 -- Registro documental de cada API. `kind`: function | event | constant.
 -- `required` indica si sin ella el tracker no puede funcionar en absoluto.
+-- `fallbackFor` marca una red heredada: solo importa si falta su API principal.
 TA.API = {
     { key = "challenge.active",   path = "C_ChallengeMode.IsChallengeModeActive",   kind = "function", required = true },
     { key = "challenge.mapID",    path = "C_ChallengeMode.GetActiveChallengeMapID", kind = "function", required = true },
@@ -78,13 +83,17 @@ TA.API = {
     { key = "timer.list",         path = "GetWorldElapsedTimers",                   kind = "function", required = true },
     { key = "timer.read",         path = "GetWorldElapsedTime",                     kind = "function", required = true },
     { key = "timer.typeEnum",     path = "Enum.WorldElapsedTimerTypes.ChallengeMode", kind = "constant" },
-    { key = "timer.typeCM",       path = "LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE", kind = "constant" },
+    { key = "timer.typeCM",       path = "LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE", kind = "constant",
+      fallbackFor = "Enum.WorldElapsedTimerTypes.ChallengeMode" },
     { key = "scenario.info",      path = "C_ScenarioInfo.GetScenarioInfo",          kind = "function" },
-    { key = "scenario.infoLegacy", path = "C_Scenario.GetInfo",                     kind = "function" },
+    { key = "scenario.infoLegacy", path = "C_Scenario.GetInfo",                     kind = "function",
+      fallbackFor = "C_ScenarioInfo.GetScenarioInfo" },
     { key = "scenario.step",      path = "C_ScenarioInfo.GetScenarioStepInfo",      kind = "function" },
-    { key = "scenario.stepLegacy", path = "C_Scenario.GetStepInfo",                 kind = "function" },
+    { key = "scenario.stepLegacy", path = "C_Scenario.GetStepInfo",                 kind = "function",
+      fallbackFor = "C_ScenarioInfo.GetScenarioStepInfo" },
     { key = "scenario.criteria",  path = "C_ScenarioInfo.GetCriteriaInfo",          kind = "function" },
-    { key = "scenario.criteriaLegacy", path = "C_Scenario.GetCriteriaInfo",        kind = "function" },
+    { key = "scenario.criteriaLegacy", path = "C_Scenario.GetCriteriaInfo",        kind = "function",
+      fallbackFor = "C_ScenarioInfo.GetCriteriaInfo" },
     { key = "scenario.typeCM",    path = "LE_SCENARIO_TYPE_CHALLENGE_MODE",         kind = "constant" },
     { key = "season.current",     path = "C_MythicPlus.GetCurrentSeason",           kind = "function" },
     { key = "secrets.check",      path = "issecretvalue",                           kind = "function" },
@@ -709,9 +718,15 @@ function TA:ProbeCapabilities()
                 status = UNKNOWN
             end
         end
+        if status == MISSING and api.fallbackFor then
+            local primary = TA.Resolve(api.fallbackFor)
+            local primaryPresent = (type(primary) == "function") or (TA.Number(primary) ~= nil)
+            if primaryPresent then status = OPTIONAL_MISSING end
+        end
         local u = TA._usage[api.path]
         out[#out + 1] = {
             key = api.key, path = api.path, kind = api.kind, required = api.required == true,
+            fallbackFor = api.fallbackFor,
             status = status, lastCall = u and u.status or nil,
             calls = u and u.calls or 0, errors = u and u.errors or 0, lastError = u and u.lastError or nil,
         }
@@ -871,8 +886,9 @@ function TA:ReportLines()
     L[#L + 1] = "[CAPABILITIES]"
     local caps = self:ProbeCapabilities()
     for _, c in ipairs(caps) do
-        L[#L + 1] = string.format("%s %s (%s%s) lastCall=%s calls=%d errors=%d%s",
-            c.status, c.path, c.kind, c.required and ",required" or "", text(c.lastCall),
+        L[#L + 1] = string.format("%s %s (%s%s%s) lastCall=%s calls=%d errors=%d%s",
+            c.status, c.path, c.kind, c.required and ",required" or "",
+            c.fallbackFor and (",legacyFallbackFor=" .. c.fallbackFor) or "", text(c.lastCall),
             c.calls, c.errors, c.lastError and (" lastError=" .. c.lastError) or "")
     end
     L[#L + 1] = "missingSignature=" .. self:CapabilitySignature(caps)

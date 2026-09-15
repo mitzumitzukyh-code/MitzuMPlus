@@ -627,14 +627,17 @@ function MitzuMPlus:HandleDevCommand(args)
             self:Print("|cFFff5555[DEV] Error al sondear capacidades.|r")
             return
         end
-        local missing = 0
+        local missing, optional = 0, 0
         for _, c in ipairs(caps) do
-            if c.status ~= "AVAILABLE" then
+            if c.status == "OPTIONAL_FALLBACK_MISSING" then
+                optional = optional + 1
+            elseif c.status ~= "AVAILABLE" then
                 missing = missing + 1
                 self:Print(string.format("[DEV] %s %s (%s)", c.status, c.path, c.kind))
             end
         end
-        self:Print(string.format("[DEV] APIs sondeadas: %d, no disponibles: %d", #caps, missing))
+        self:Print(string.format("[DEV] APIs sondeadas: %d, no disponibles: %d, redes heredadas opcionales ausentes: %d",
+            #caps, missing, optional))
     else
         self:Print("|cFFff9922[DEV] Uso: /emp dev tracker|blizzard|caps|r")
     end

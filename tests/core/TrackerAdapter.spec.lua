@@ -495,16 +495,37 @@ test("capability probe covers functions, constants and events", function()
     for _, c in ipairs(caps) do by[c.path] = c end
     equal(by["C_ChallengeMode.IsChallengeModeActive"].status, "AVAILABLE")
     equal(by["C_ChallengeMode.IsChallengeModeActive"].required, true)
-    equal(by["C_Scenario.GetCriteriaInfo"].status, "MISSING")
+    -- Legacy fallbacks absent while their primary API exists are optional.
+    equal(by["C_Scenario.GetCriteriaInfo"].status, "OPTIONAL_FALLBACK_MISSING")
+    equal(by["C_Scenario.GetCriteriaInfo"].fallbackFor, "C_ScenarioInfo.GetCriteriaInfo")
+    equal(by["C_Scenario.GetStepInfo"].status, "OPTIONAL_FALLBACK_MISSING")
+    equal(by["C_Scenario.GetInfo"].status, "OPTIONAL_FALLBACK_MISSING")
     equal(by["Enum.WorldElapsedTimerTypes.ChallengeMode"].status, "AVAILABLE")
-    equal(by["LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE"].status, "MISSING")
+    equal(by["LE_WORLD_ELAPSED_TIMER_TYPE_CHALLENGE_MODE"].status, "OPTIONAL_FALLBACK_MISSING")
     equal(by["CHALLENGE_MODE_START"].status, "AVAILABLE")
     equal(by["CHALLENGE_MODE_DEATH_COUNT_UPDATED"].status, "MISSING")
     _G.C_EventUtils = nil
     for _, c in ipairs(TA:ProbeCapabilities()) do
         if c.kind == "event" then equal(c.status, "UNKNOWN", "events are UNKNOWN without a validator") end
     end
-    truthy(TA:CapabilitySignature(caps):find("scenario.criteriaLegacy", 1, true))
+    equal(TA:CapabilitySignature(caps):find("Legacy", 1, true), nil, "optional fallbacks are not missing APIs")
+end)
+
+test("a missing legacy fallback is a real gap when its primary API is also missing", function()
+    local TA = install()
+    _G.C_ScenarioInfo.GetCriteriaInfo = nil
+    local by = {}
+    for _, c in ipairs(TA:ProbeCapabilities()) do by[c.path] = c end
+    equal(by["C_ScenarioInfo.GetCriteriaInfo"].status, "MISSING")
+    equal(by["C_Scenario.GetCriteriaInfo"].status, "MISSING")
+    local sig = TA:CapabilitySignature()
+    truthy(sig:find("scenario.criteriaLegacy", 1, true), sig)
+    -- Legacy present and primary present: plain AVAILABLE.
+    local TA2 = install({ legacyOnly = true })
+    _G.C_ScenarioInfo = { GetCriteriaInfo = function() return nil end }
+    by = {}
+    for _, c in ipairs(TA2:ProbeCapabilities()) do by[c.path] = c end
+    equal(by["C_Scenario.GetCriteriaInfo"].status, "AVAILABLE")
 end)
 
 test("capabilities are logged once per distinct signature", function()
