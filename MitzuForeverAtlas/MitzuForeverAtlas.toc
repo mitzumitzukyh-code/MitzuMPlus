@@ -1,0 +1,14 @@
+## Interface: 11509
+## Title: MitzuForeverAtlas
+## Notes: Dungeon atlas and preparation companion for World of Warcraft: Forever.
+## Author: Mutzuki Mizt
+## Version: 0.1.0-dev
+## SavedVariables: MitzuForeverAtlasDB
+## X-Category: Dungeons & Raids
+## X-Website: https://github.com/mitzumitzukyh-code/MitzuMPlus
+## X-Status: Experimental - awaiting WoW Forever beta validation
+
+Data/Dungeons.lua
+Core/Probe.lua
+Core/Core.lua
+UI/MainWindow.lua
