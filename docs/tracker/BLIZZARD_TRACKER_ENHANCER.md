@@ -65,6 +65,28 @@ esos frames/métodos/regiones existen, lee el estado visible y guarda una línea
 base de taint (`issecurevariable`) antes de que exista ningún hook.
 `/emp dev blizzard` [DEV] y sección `[BLIZZARD TRACKER]` del Bug Report.
 
+## 2b. Coexistencia con Angry Keystones (hallazgo 2026-09-15)
+
+La prueba de Retail mostró `Bar.Label = "23.68%"` con `percentage = 23`.
+Blizzard escribe `%d%%` (`23%`); ese texto lo pone **Angry Keystones**
+(instalado y activo en ese cliente). Su código hace exactamente los enganches
+previstos aquí:
+
+- `hooksecurefunc(ScenarioObjectiveTracker.ChallengeModeBlock, "UpdateTime" | "Activate")`
+- `hooksecurefunc(ScenarioObjectiveTracker.ObjectivesBlock, "AddProgressBar")` y
+  `hooksecurefunc(bar, "SetValue")` → `Bar.Label:SetFormattedText("%.2f%%", ...)`
+- `hooksecurefunc(ScenarioObjectiveTracker, "UpdateCriteria")` (splits)
+
+Consecuencias para el diseño:
+- El texto de la barra **no** es fuente de datos (ya era regla) y la sonda no
+  puede asumir que el texto visible es el nativo.
+- Dos addons escribiendo `Bar.Label` = el último hook gana y el texto parpadea
+  según el orden. El enhancer debe **detectar** AK (`C_AddOns.IsAddOnLoaded`) y
+  no escribir sobre regiones que AK ya controla (por defecto: ceder la barra y
+  el bloque de umbrales a AK y limitarse a lo que AK no muestra), con opción
+  explícita del usuario.
+- Probar siempre en dos configuraciones: con y sin Angry Keystones.
+
 ## 3. Diseño propuesto del enhancer (no implementado)
 
 ### Puntos de enganche (solo `hooksecurefunc`, post-hook)

@@ -2,6 +2,28 @@
 
 Objetivo: **Blizzard Tracker Enhancer + Enemy Forces**. Enhance, don't replace.
 
+## Matriz de validación en cliente real
+
+| Qué | Retail 12.1.0.69814 | PTR 12.1.5.69594 |
+|---|---|---|
+| Carga del addon, APIs y capacidades | OK | Pendiente |
+| Llave activa: mapa 249, nivel 6, límite 1980 | OK | Pendiente |
+| Fuerzas no nulas: `quantity=23` (% entero), `quantityString="144%"` (recuento), `totalQuantity=608` → 144/608 = 23.684 % | OK | **Pendiente** |
+| Bosses 1/4 (primero completado) | OK | Pendiente |
+| Paridad adaptador vs 1.0 | OK, sin DIFF | Pendiente |
+| Final de llave: RUNNING → COMPLETED, historial una vez, 0 duplicados, 0 errores, invariantes 9/0/0 | OK | Pendiente |
+| `/reload` con llave activa | Pendiente | Pendiente |
+| Taint baseline tras `/reload` | Pendiente | Pendiente |
+| TrackerState (dev.3) | Pendiente | Pendiente |
+
+Un dato validado en Retail **no** cuenta como validado en PTR.
+
+## Compuertas de BlizzardTrackerEnhancer (fase 7)
+No se implementa ningún hook hasta cumplir **las tres**:
+1. Prueba de recuperación con `/reload` en llave activa.
+2. Fuerzas no nulas confirmadas en PTR 12.1.5.69594.
+3. Línea base de taint en runtime tras `/reload`.
+
 ## Fuera de alcance
 - Rutas, pulls, MDT, navegación, placas, tácticas (→ MitzuRouteArrows).
 - **Retirado por decisión de diseño (2026-09-15):** HUD V2 independiente, modos
@@ -12,9 +34,9 @@ Objetivo: **Blizzard Tracker Enhancer + Enemy Forces**. Enhance, don't replace.
 | Fase | Contenido | Estado |
 |---|---|---|
 | 0 | Auditoría, rama, baseline | Hecho |
-| 1 | TrackerAdapter + capacidades | Hecho; pendiente PRUEBA PTR #1 |
-| 1b | Auditoría del Objective Tracker (fuente 12.1.5) + `BlizzardTrackerProbe` solo lectura | Hecho; se confirma en PRUEBA PTR #1 |
-| 2 | TrackerState (snapshot normalizado, eventos, throttling) | Tras PRUEBA PTR #1 |
+| 1 | TrackerAdapter + capacidades | Hecho; validado en llave real de **Retail** 12.1.0 |
+| 1b | Auditoría del Objective Tracker (fuente 12.1.5) + `BlizzardTrackerProbe` solo lectura | Hecho; pendiente confirmación en PTR |
+| 2 | TrackerState (snapshot normalizado, eventos, throttling) — `docs/tracker/TRACKER_STATE.md` | Hecho (1.1.0-dev.3); pendiente prueba en cliente |
 | 3 | Enemy Forces en TrackerState | |
 | 4 | Boss state | |
 | 5 | PaceEngine | |

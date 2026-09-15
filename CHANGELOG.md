@@ -13,6 +13,19 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.3 — desarrollo interno (solo PTR, sin publicar)
+
+- Nuevo `TrackerState` (fase 2): snapshot normalizado de la llave construido
+  solo desde `TrackerAdapter`. Ciclo IDLE/PENDING/RUNNING/COMPLETED,
+  temporizador del servidor interpolado, fuerzas y bosses, recuperación tras
+  `/reload`, avisos por llave. Eventos agrupados y resync lento solo durante la
+  llave. Una lectura parcial conserva lo sabido marcado como obsoleto.
+- `/emp dev state` y sección `TRACKER STATE` del Bug Report.
+- Capacidades: una red heredada ausente (`C_Scenario.*`, constante `LE_`) con
+  su API principal presente se informa como opcional, no como API que falta.
+- Validado en llave real de Retail 12.1.0: fuerzas 144/608 (23.684 %), bosses
+  1/4, paridad con 1.0 y final de llave. Pendiente en PTR 12.1.5.
+
 ### 1.1.0-dev.2 — desarrollo interno (solo PTR, sin publicar)
 
 - Diseño: 1.1 mejora el tracker nativo de Blizzard en lugar de crear un HUD
