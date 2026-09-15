@@ -32,6 +32,8 @@ def compile_lua(c):
     compile_one = lua.eval("function(s,n) local f,e=load(s,n); return f~=nil,e end")
     files = sorted(p for p in ADDON.rglob("*.lua") if "libs" not in p.relative_to(ADDON).parts)
     tests = sorted((ROOT / "tests" / "core").glob("*.spec.lua"))
+    # Pending specs (contracts for later phases) must at least parse.
+    tests += sorted((ROOT / "tests" / "pending").glob("*.spec.lua"))
     for path in files + tests:
         ok, error = compile_one(read(path), "@" + relative(path))
         c.check(ok, f"{relative(path)}: {error}")

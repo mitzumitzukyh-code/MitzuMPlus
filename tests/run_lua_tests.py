@@ -33,6 +33,9 @@ def main() -> None:
             print(f"[Lua {label}] {suite}/{path.stem}: {result['tests']} tests, "
                   f"{result['assertions']} assertions, 0 failures")
         print(f"TOTAL Lua {label}: {total_tests} tests, {total_assertions} assertions, 0 failures")
+    # Specs for phases not implemented yet: parsed by the static checks, never run.
+    for path in sorted((ROOT / "tests" / "pending").glob("*.spec.lua")):
+        print(f"PENDING (not executed): {path.parent.name}/{path.stem}")
 
 
 if __name__ == "__main__":

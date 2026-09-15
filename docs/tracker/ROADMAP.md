@@ -63,5 +63,8 @@ Reglas:
 - `Init.lua` sobrescribe `db.global.version` al cargar. La migración debe leer
   la versión previa **antes** de esa línea para distinguir instalación nueva
   (sin `MitzuMPlusDB` previo) de actualización desde `1.0.0-beta.1`.
-- Política para quien actualiza desde 1.0 (¿conserva el HUD o pasa al
-  enhancer?): pendiente de decisión antes de la RC.
+- Política para quien actualiza desde 1.0: **decidida (2026-09-15)**, también
+  migra a ENHANCER; el HUD legacy queda solo como elección manual o fallback de
+  runtime. Contrato, requisitos R1-R12 y detalles en
+  `docs/tracker/DISPLAY_MIGRATION.md`; spec preparado en
+  `tests/pending/DisplayMigration.spec.lua` (se activa en fase 8).
