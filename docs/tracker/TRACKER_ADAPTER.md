@@ -61,6 +61,10 @@ unos segundos tras `/reload`), `ACTIVE_WITHOUT_CRITERIA` (normal al arrancar),
 
 ## Capacidades y diagnóstico
 
+- Resumen: `requiredMissing` (imprescindibles ausentes; `none` = el tracker
+  puede funcionar), `optionalMissing` y `legacyFallbacksAbsent` (redes
+  `C_Scenario.*` / `LE_` innecesarias porque su API principal existe:
+  `OPTIONAL_FALLBACK_MISSING`).
 - `ProbeCapabilities()`: `AVAILABLE` / `MISSING` / `UNKNOWN` por función,
   constante y evento (eventos vía `C_EventUtils.IsEventValid`), con el resultado
   de la última llamada real (`OK`, `EMPTY`, `ERROR`).

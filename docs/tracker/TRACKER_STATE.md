@@ -48,6 +48,11 @@ revision, timestamp, reason` y reservados `pace, prediction, eta, confidence`
 - Avisos: `TIMER_REGRESSION`, `FORCES_DECREASED`, `BOSSES_DECREASED`,
   `CHALLENGE_STATE_UNKNOWN` y los del adaptador con prefijo `ADAPTER_`.
   `warnings` = esta lectura; `runWarnings` = todo lo visto en la llave.
+- Sincronización normal del cliente: `ACTIVE_WITHOUT_TIMER|CRITERIA|FORCES|MAP`
+  del adaptador (arranque de la llave, hueco tras `/reload`) van a `transient`
+  durante 10 s y no son avisos. Si se resuelven, FlightRecorder anota
+  `STATE_SYNC code=... seconds=...`; si persisten, pasan a `warnings` y
+  `runWarnings`.
 
 ## Bus interno
 `MITZU_TRACKER_RUN_STARTED`, `MITZU_TRACKER_STATE_CHANGED` (solo si cambia el
@@ -56,5 +61,5 @@ contenido; el reloj que avanza no cuenta), `MITZU_TRACKER_RUN_COMPLETED`,
 
 ## Diagnóstico
 `/emp dev state` [DEV] y sección `[TRACKER STATE]` del Bug Report. FlightRecorder:
-`STATE_RUN_STARTED`, `STATE_STATUS`, `STATE_RUN_RECOVERED`, `STATE_WARN`,
+`STATE_RUN_STARTED`, `STATE_STATUS`, `STATE_RUN_RECOVERED`, `STATE_WARN`, `STATE_SYNC`,
 `STATE_RUN_COMPLETED`, `STATE_RUN_ENDED`, `STATE_ADAPTER_ERROR`.

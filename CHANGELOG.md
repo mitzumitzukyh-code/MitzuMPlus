@@ -13,6 +13,16 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.4 — desarrollo interno (solo PTR, sin publicar)
+
+- Capacidades: `requiredMissing`, `optionalMissing` y `legacyFallbacksAbsent`
+  sustituyen al ambiguo `missingSignature=all`.
+- TrackerState: la espera normal del temporizador y los criterios al arrancar
+  la llave o tras `/reload` se muestra como `transient` y solo se convierte en
+  aviso si dura más de 10 s.
+- Validado en Retail 12.1.0 (dev.3): TrackerState RUNNING y recuperación tras
+  `/reload` con continuidad del temporizador del servidor.
+
 ### 1.1.0-dev.3 — desarrollo interno (solo PTR, sin publicar)
 
 - Nuevo `TrackerState` (fase 2): snapshot normalizado de la llave construido

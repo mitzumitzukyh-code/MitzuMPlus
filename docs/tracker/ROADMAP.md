@@ -12,15 +12,16 @@ Objetivo: **Blizzard Tracker Enhancer + Enemy Forces**. Enhance, don't replace.
 | Bosses 1/4 (primero completado) | OK | Pendiente |
 | Paridad adaptador vs 1.0 | OK, sin DIFF | Pendiente |
 | Final de llave: RUNNING → COMPLETED, historial una vez, 0 duplicados, 0 errores, invariantes 9/0/0 | OK | Pendiente |
-| `/reload` con llave activa | Pendiente | Pendiente |
-| Taint baseline tras `/reload` | Pendiente | Pendiente |
-| TrackerState (dev.3) | Pendiente | Pendiente |
+| `/reload` con llave activa (dev.3, Reposo de los Reyes +13): `recovered=true`, elapsed 4:08 y 5:08 un minuto después (continuidad del servidor), fuerzas 166/608 = 27.30 %, sin stale, adapterErrors=0 | OK | Pendiente |
+| TrackerState RUNNING (dev.3): 66/608 = 10.86 %, bosses 0/4, paridad sin DIFF, coincide con el tracker de Blizzard (27.30 % tras reload) | OK | Pendiente |
+| TrackerState RUNNING → COMPLETED + Bug Report final (dev.3) | **Pendiente** | Pendiente |
+| Taint baseline tras `/reload` (`/emp dev blizzard` → `tainted=none`) | Pendiente | Pendiente |
 
 Un dato validado en Retail **no** cuenta como validado en PTR.
 
 ## Compuertas de BlizzardTrackerEnhancer (fase 7)
 No se implementa ningún hook hasta cumplir **las tres**:
-1. Prueba de recuperación con `/reload` en llave activa.
+1. Prueba de recuperación con `/reload` en llave activa. (Retail: OK)
 2. Fuerzas no nulas confirmadas en PTR 12.1.5.69594.
 3. Línea base de taint en runtime tras `/reload`.
 
@@ -36,7 +37,7 @@ No se implementa ningún hook hasta cumplir **las tres**:
 | 0 | Auditoría, rama, baseline | Hecho |
 | 1 | TrackerAdapter + capacidades | Hecho; validado en llave real de **Retail** 12.1.0 |
 | 1b | Auditoría del Objective Tracker (fuente 12.1.5) + `BlizzardTrackerProbe` solo lectura | Hecho; pendiente confirmación en PTR |
-| 2 | TrackerState (snapshot normalizado, eventos, throttling) — `docs/tracker/TRACKER_STATE.md` | Hecho (1.1.0-dev.3); pendiente prueba en cliente |
+| 2 | TrackerState (snapshot normalizado, eventos, throttling) — `docs/tracker/TRACKER_STATE.md` | RUNNING y `/reload` validados en Retail (dev.3); falta COMPLETED |
 | 3 | Enemy Forces en TrackerState | |
 | 4 | Boss state | |
 | 5 | PaceEngine | |

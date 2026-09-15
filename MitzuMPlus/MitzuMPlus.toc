@@ -3,7 +3,7 @@
 ## Notes: Mythic+ history, statistics, player analysis and live key prediction.
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzuki Mizt
-## Version: 1.1.0-dev.3
+## Version: 1.1.0-dev.4
 ## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO
