@@ -143,6 +143,17 @@ SECTIONS[#SECTIONS + 1] = { "TRACKER", function(add)
     end
 end }
 
+-- 1.1: lectura directa de Blizzard a traves del adaptador, para contrastarla
+-- con la seccion TRACKER (que sigue saliendo de los modulos 1.0).
+SECTIONS[#SECTIONS + 1] = { "TRACKER ADAPTER", function(add)
+    local TA = MitzuMPlus.TrackerAdapter
+    local fields = call(TA, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", TA and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
 SECTIONS[#SECTIONS + 1] = { "PREDICTION", function(add)
     local run = rawget(_G, "MitzuMPlusCurrentRun")
     local snap = run and call(MitzuMPlus.PredictionEngine, "GetSnapshot", run) or nil

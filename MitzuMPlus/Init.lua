@@ -567,12 +567,64 @@ function MitzuMPlus:HandleSlashCommand(input)
         return
     end
 
+    -- [DEV/QA] Herramientas internas del tracker 1.1. Fuera de la ayuda de
+    -- producto a proposito.
+    if cmd == "dev" then
+        self:HandleDevCommand(args)
+        return
+    end
+
     if cmd == "version" or cmd == "v" then
         self:Print("MitzuMPlus |cFFe8b84av" .. tostring(self.VERSION or ADDON_VERSION_FALLBACK) .. "|r")
         return
     end
 
     self:Print("|cFFff9922Comando desconocido.|r Usa |cFFf7d470/emp help|r.")
+end
+
+-- [DEV/QA] /emp dev tracker  -> informe completo del TrackerAdapter (copiable)
+--          /emp dev caps     -> capacidades de API en el chat
+function MitzuMPlus:HandleDevCommand(args)
+    local TA = self.TrackerAdapter
+    local sub = args[2]
+    if not TA then
+        self:Print("|cFFff5555[DEV] TrackerAdapter no disponible.|r")
+        return
+    end
+    if sub == "tracker" then
+        local ok, lines = pcall(TA.ReportLines, TA)
+        if not ok then
+            self:Print("|cFFff5555[DEV] Error al generar el informe:|r " ..
+                (self.QASafe and self.QASafe.Text(lines, 200) or "?"))
+            return
+        end
+        local text = table.concat(lines, "\n")
+        local EX = self.Export
+        local shown = EX and EX.CopyToClipboard and pcall(EX.CopyToClipboard, EX, text, {
+            title = "MITZUMPLUS [DEV] TRACKER ADAPTER",
+            hint = "Ctrl+A y Ctrl+C para copiar todo.",
+            autoClose = false, mono = true,
+        })
+        if not shown then
+            for _, line in ipairs(lines) do self:Print(line) end
+        end
+    elseif sub == "caps" then
+        local ok, caps = pcall(TA.ProbeCapabilities, TA)
+        if not ok then
+            self:Print("|cFFff5555[DEV] Error al sondear capacidades.|r")
+            return
+        end
+        local missing = 0
+        for _, c in ipairs(caps) do
+            if c.status ~= "AVAILABLE" then
+                missing = missing + 1
+                self:Print(string.format("[DEV] %s %s (%s)", c.status, c.path, c.kind))
+            end
+        end
+        self:Print(string.format("[DEV] APIs sondeadas: %d, no disponibles: %d", #caps, missing))
+    else
+        self:Print("|cFFff9922[DEV] Uso: /emp dev tracker|caps|r")
+    end
 end
 
 function MitzuMPlus:PrintHelp()
