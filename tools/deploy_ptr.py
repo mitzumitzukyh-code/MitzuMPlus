@@ -143,7 +143,7 @@ def main() -> None:
     changed, extra, same = compare(target)
     print(f"repo {ADDON} {version} -> {target}")
     print(f"installed: {installed or 'none'}; runtime files: {len(changed) + len(same)}; "
-          f"changed/new: {len(changed)}; extra in PTR: {len(extra)}")
+          f"changed/new: {len(changed)}; extra in target: {len(extra)}")
     for rel in changed:
         print(f"  + {rel}")
     for rel in extra:
@@ -151,7 +151,7 @@ def main() -> None:
 
     if args.verify:
         problems = validate(target) if target.is_dir() else [f"missing {target}"]
-        print("PTR copy: OK" if not problems else f"PTR copy: {len(problems)} problems")
+        print(f"{channel} copy: OK" if not problems else f"{channel} copy: {len(problems)} problems")
         for problem in problems:
             print("  " + problem)
         sys.exit(1 if problems else 0)
@@ -159,7 +159,7 @@ def main() -> None:
         print("dry run: nothing changed")
         return
     if not changed and not extra:
-        print("PTR copy already matches the repo; nothing to do")
+        print(f"{channel} copy already matches the repo; nothing to do")
         return
 
     if args.retail and process_running("Wow.exe"):
@@ -185,8 +185,21 @@ def main() -> None:
         backup.parent.mkdir(parents=True, exist_ok=False)
         shutil.copytree(target, backup)
         print(f"backup: {backup}")
-        shutil.rmtree(target)
-    staging.rename(target)
+        try:
+            shutil.rmtree(target)
+        except PermissionError:
+            # Windows keeps a directory handle open when some process uses the
+            # folder as its working directory: the files are gone but the empty
+            # folder cannot be removed. Fill it in place from the staging copy.
+            leftovers = [p for p in target.rglob("*") if p.is_file()]
+            if leftovers:
+                raise SystemExit(f"refused: {len(leftovers)} files still locked in {target}; "
+                                 f"backup at {backup}, staging kept at {staging}")
+    if target.exists():
+        shutil.copytree(staging, target, dirs_exist_ok=True)
+        shutil.rmtree(staging)
+    else:
+        staging.rename(target)
 
     problems = validate(target)
     if problems:
