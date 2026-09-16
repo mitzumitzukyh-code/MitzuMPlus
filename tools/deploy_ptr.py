@@ -1,11 +1,14 @@
-"""Sync the MitzuMPlus runtime files into the WoW PTR AddOns folder.
+"""Sync the MitzuMPlus runtime files into a WoW development AddOns folder.
 
     python tools/deploy_ptr.py --dry-run     -> show what would change, touch nothing
     python tools/deploy_ptr.py               -> back up the PTR copy, then replace it
     python tools/deploy_ptr.py --verify      -> only compare the PTR copy with the repo
+    python tools/deploy_ptr.py --retail ...  -> same, against the Retail development install
 
 Rules:
-  * Only the PTR (`_xptr_`) is a valid target. A path under `_retail_` is refused.
+  * Default target is the PTR (`_xptr_`). Since 1.1.0-dev.5 Retail is the primary
+    validation client (docs/tracker/ROADMAP.md), so `_retail_` is accepted only
+    with an explicit `--retail`, and never while Wow.exe is running.
   * The existing PTR copy is backed up before it is replaced.
   * Only runtime files (same allowlist as the CurseForge packager) are copied:
     no .git, tests, docs, tools, zips or temporary files.
@@ -31,6 +34,7 @@ ROOT = pkg.ROOT
 SOURCE = pkg.SOURCE
 ADDON = pkg.ADDON
 DEFAULT_TARGET = Path(r"D:\World of Warcraft\_xptr_\Interface\AddOns") / ADDON
+RETAIL_TARGET = Path(r"D:\World of Warcraft\_retail_\Interface\AddOns") / ADDON
 DEFAULT_BACKUPS = Path(r"D:\Mitzu_Backups")
 
 
@@ -49,19 +53,28 @@ def toc_version(toc: Path) -> str:
     return "unknown"
 
 
-def wow_ptr_running() -> bool:
+def process_running(image: str) -> bool:
     try:
-        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq WowT.exe"], capture_output=True, text=True).stdout
+        out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {image}"], capture_output=True, text=True).stdout
     except OSError:
         return False
-    return "WowT.exe" in out
+    return image.lower() in out.lower()
 
 
-def guard_target(target: Path) -> None:
+def wow_ptr_running() -> bool:
+    return process_running("WowT.exe")
+
+
+def guard_target(target: Path, retail: bool = False) -> None:
     parts = [p.lower() for p in target.resolve().parts]
-    if "_retail_" in parts or "_classic_" in parts or "_beta_" in parts:
-        raise SystemExit(f"refused: {target} is not a PTR install")
-    if "_xptr_" not in parts and "_ptr_" not in parts:
+    if "_classic_" in parts or "_beta_" in parts:
+        raise SystemExit(f"refused: {target} is not a development install")
+    if retail:
+        if "_retail_" not in parts:
+            raise SystemExit(f"refused: --retail target is not under _retail_: {target}")
+    elif "_retail_" in parts:
+        raise SystemExit(f"refused: {target} is Retail; pass --retail explicitly")
+    elif "_xptr_" not in parts and "_ptr_" not in parts:
         raise SystemExit(f"refused: {target} is not under a PTR folder (_xptr_ / _ptr_)")
     if target.name != ADDON or target.parent.name.lower() != "addons":
         raise SystemExit(f"refused: target must be .../Interface/AddOns/{ADDON}, got {target}")
@@ -114,14 +127,17 @@ def validate(target: Path) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--target", type=Path, default=DEFAULT_TARGET)
+    parser.add_argument("--target", type=Path, default=None)
+    parser.add_argument("--retail", action="store_true",
+                        help="deploy to the Retail development install (refused while Wow.exe runs)")
     parser.add_argument("--backups", type=Path, default=DEFAULT_BACKUPS)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
 
-    target = args.target
-    guard_target(target)
+    target = args.target or (RETAIL_TARGET if args.retail else DEFAULT_TARGET)
+    guard_target(target, retail=args.retail)
+    channel = "retail" if args.retail else "ptr"
     version = toc_version(SOURCE / f"{ADDON}.toc")
     installed = toc_version(target / f"{ADDON}.toc") if (target / f"{ADDON}.toc").is_file() else None
     changed, extra, same = compare(target)
@@ -146,7 +162,9 @@ def main() -> None:
         print("PTR copy already matches the repo; nothing to do")
         return
 
-    if wow_ptr_running():
+    if args.retail and process_running("Wow.exe"):
+        raise SystemExit("refused: Wow.exe is running; close the Retail client before deploying")
+    if not args.retail and wow_ptr_running():
         print("note: WowT.exe is running. Files are replaced on disk; the client only "
               "reads them on /reload, and TOC changes need a full client restart.")
 
@@ -163,7 +181,7 @@ def main() -> None:
 
     if target.exists():
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup = args.backups / f"{stamp}_ptr_{ADDON}_{installed or 'unknown'}" / ADDON
+        backup = args.backups / f"{stamp}_{channel}_{ADDON}_{installed or 'unknown'}" / ADDON
         backup.parent.mkdir(parents=True, exist_ok=False)
         shutil.copytree(target, backup)
         print(f"backup: {backup}")
@@ -176,7 +194,7 @@ def main() -> None:
         for problem in problems:
             print("  " + problem)
         sys.exit(1)
-    print(f"deployed {ADDON} {version} to PTR: OK ({len(runtime_files())} runtime files, "
+    print(f"deployed {ADDON} {version} to {channel}: OK ({len(runtime_files())} runtime files, "
           f"TOC at {target / (ADDON + '.toc')})")
 
 
