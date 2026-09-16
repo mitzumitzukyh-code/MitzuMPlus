@@ -1,0 +1,10 @@
+## Interface: 11509
+## Title: MitzuForeverClassicUI
+## Notes: Experimental Classic-style UI and accessibility layer for World of Warcraft: Forever.
+## Author: Mutzuki Mizt
+## Version: 0.1.0-dev
+## SavedVariables: MitzuForeverClassicUIDB
+## X-Status: EXPERIMENTAL_PRE_BETA
+
+Core.lua
+Layout.lua
