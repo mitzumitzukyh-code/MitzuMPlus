@@ -13,6 +13,25 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.5 — desarrollo interno (Retail dev, sin publicar)
+
+- TrackerState: convergencia del final de llave. Tras
+  `CHALLENGE_MODE_COMPLETED` el tiempo final se congela en el acto, pero los
+  criterios se releen hasta 3 s (estado interno `COMPLETING`) para no congelar
+  un boss que Blizzard publica después del evento (Retail dev.4 dejó `2/3` en
+  una llave completada). Nunca se inventa un boss ni se sustituye un valor real
+  por nil o 0; si Blizzard no expone el final, `completionCriteriaIncomplete=true`.
+- Diagnóstico: `completionConverged`, `completionAttempts`,
+  `completionConvergenceMs`, `completionCriteriaIncomplete`,
+  `completionRegressionsIgnored`, `duplicateCompletions` en `/emp dev state` y
+  en `[TRACKER STATE]` del Bug Report; FlightRecorder `STATE_COMPLETION_*`.
+- Eventos de relectura añadidos: `SCENARIO_UPDATE`, `SCENARIO_COMPLETED`.
+- Validación: Retail pasa a ser el cliente principal; PTR queda opcional
+  (`docs/tracker/ROADMAP.md`). `tools/deploy_ptr.py --retail` despliega en la
+  instalación de desarrollo de Retail (con backup y solo con WoW cerrado).
+- Tests: la ejecución en Lua 5.1 emula el `xpcall` de WoW (pasa argumentos);
+  antes AceAddon no llegaba a ejecutar `OnInitialize` en esa pasada.
+
 ### 1.1.0-dev.4 — desarrollo interno (solo PTR, sin publicar)
 
 - Capacidades: `requiredMissing`, `optionalMissing` y `legacyFallbacksAbsent`

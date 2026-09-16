@@ -49,7 +49,7 @@ test("full TOC loads with the adapter and no load/runtime errors", function()
         equal(#env.errors, 0, errorsText(env))
         local MP = _G.MitzuMPlus
         truthy(MP.TrackerAdapter, "TrackerAdapter registered")
-        equal(MP.VERSION, "1.1.0-dev.4")
+        equal(MP.VERSION, "1.1.0-dev.5")
         equal((MP.TrackerAdapter:IsAvailable()), true)
         local loaded = table.concat(env.coreFiles, "\n")
         local a = loaded:find("RuntimeCapabilities.lua", 1, true)
@@ -233,9 +233,10 @@ test("TrackerState follows a real key through the full addon", function()
         equal(TS:GetStatus(), "COMPLETED")
         s = TS:GetSnapshot()
         equal(s.forcesPercent, 100); equal(s.bossesCompleted, 3); truthy(s.finalElapsed and s.finalElapsed >= 200)
-        -- The mock stops exposing criteria once inactive: the final snapshot keeps
-        -- the last reading and says it is not fresh instead of inventing values.
-        equal(s.forcesStale, true)
+        -- The mock stops exposing criteria once inactive. 100 % and 3/3 were read
+        -- before the event and are terminal, so the final snapshot is converged.
+        equal(s.completionConverged, true); equal(s.completionCriteriaIncomplete, false)
+        equal(s.forcesStale, false); equal(s.bossesStale, false)
         local recorded = lines(MP.FlightRecorder:Lines(200))
         truthy(recorded:find("STATE_RUN_STARTED", 1, true) and recorded:find("STATE_RUN_COMPLETED", 1, true), recorded)
     end)
@@ -264,6 +265,67 @@ test("TrackerState recovers a key after /reload", function()
         equal(TS:GetSnapshot().recovered, true)
         truthy(TS:GetElapsed() >= 640, "server time, not time since reload: " .. tostring(TS:GetElapsed()))
         equal(#env.errors, 0, errorsText(env))
+    end)
+end)
+
+-- Real Retail dev.4 shape: the completion event arrives while the last boss is
+-- not visible yet. The 1.0 history must still be written exactly once while
+-- TrackerState waits for the criteria, even with repeated completion events.
+test("completion convergence through the full addon keeps history finalization single", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local TS = MP.TrackerState
+        _G.GetInventoryItemLink = _G.GetInventoryItemLink or function() return nil end
+        S.enterRubyAndStartKey(env, { level = 12 })
+        MP:OnChallengeStart()
+        truthy(_G.MitzuMPlusCurrentRun, "1.0 run created")
+        local function historyCount()
+            local n = 0
+            for _ in pairs(MP.db.global.runs or {}) do n = n + 1 end
+            return n
+        end
+        local before = historyCount()
+
+        env.WoW.advance(1500)
+        crit.count, crit.bosses = 686, { true, true, false }
+        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+        env.WoW.advance(1)
+        equal(TS:GetStatus(), "RUNNING"); equal(TS:GetSnapshot().bossesCompleted, 2)
+
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        equal(TS:GetStatus(), "COMPLETING")
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        env.WoW.advance(0.4)
+        crit.bosses[3] = true                         -- last boss published late
+        env.WoW.advance(0.3)
+        equal(TS:GetStatus(), "COMPLETED")
+        local s = TS:GetSnapshot()
+        equal(s.bossesCompleted, 3); equal(s.bossesTotal, 3); equal(s.forcesPercent, 100)
+        equal(s.completionConverged, true); equal(s.completionCriteriaIncomplete, false)
+        truthy(s.completionAttempts >= 2, "re-read inside the window: " .. tostring(s.completionAttempts))
+        truthy(s.finalElapsed >= 1500 and s.finalElapsed <= 1510, "final time at the event: " .. tostring(s.finalElapsed))
+
+        env.WoW.state.challengeActive = false
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        env.WoW.advance(10)
+        equal(historyCount(), before + 1, "history finalized exactly once")
+        equal(TS._stats.duplicateCompletions, 2)
+        equal(TS:GetSnapshot().bossesCompleted, 3, "frozen after the window")
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env) .. table.concat(env.WoW.errors, "\n"))
+
+        local recorded = lines(MP.FlightRecorder:Lines(400))
+        local _, completedRecords = recorded:gsub("STATE_RUN_COMPLETED", "")
+        equal(completedRecords, 1, recorded)
+        truthy(recorded:find("STATE_COMPLETION_BEGIN", 1, true), recorded)
+
+        local report = MP.BugReport:Build()
+        truthy(report:find("completionConverged=true", 1, true), report)
+        truthy(report:find("completionCriteriaIncomplete=false", 1, true), report)
+        truthy(report:find("status=COMPLETED", 1, true), report)
+        MP:HandleSlashCommand("dev state")
+        equal(#env.WoW.errors, 0, table.concat(env.WoW.errors, "\n"))
     end)
 end)
 
