@@ -132,9 +132,9 @@ test("starts IDLE with an empty snapshot, no ticker, events registered", functio
 end)
 
 test("invalid or throwing event names are rejected without breaking registration", function()
-    install({ invalidEvent = "CHALLENGE_MODE_DEATH_COUNT_UPDATED", throwingEvent = "WORLD_STATE_TIMER_STOP" })
+    local TS = install({ invalidEvent = "CHALLENGE_MODE_DEATH_COUNT_UPDATED", throwingEvent = "WORLD_STATE_TIMER_STOP" })
     local f = frames[1]
-    equal(#f.events, 6)
+    equal(#f.events, #TS.EVENTS - 2)
     local rejected
     for _, r in ipairs(records) do if r.e == "STATE_EVENTS_REJECTED" then rejected = r.d.events end end
     equal(rejected, "CHALLENGE_MODE_DEATH_COUNT_UPDATED,WORLD_STATE_TIMER_STOP")
@@ -182,7 +182,9 @@ test("real Retail sample is stored with normalized fields only", function()
         "mapID", "mapName", "keystoneLevel", "timeLimit", "deaths", "deathTimeLost", "forcesCurrent", "forcesTotal",
         "forcesPercent", "forcesRemaining", "forcesRemainingPercent", "forcesSource", "bossesCompleted", "bossesTotal",
         "elapsedBase", "elapsedAt", "timerSource", "timerStale", "forcesStale", "bossesStale", "timestamp", "reason",
-        "revision", "recovered", "firstSeenAt", "completedAt", "finalElapsed", "adapterAvailable", "runWarnings", "transient" }) do allowed[k] = true end
+        "revision", "recovered", "firstSeenAt", "completedAt", "finalElapsed", "adapterAvailable", "runWarnings", "transient",
+        "completionConverged", "completionAttempts", "completionConvergenceMs", "completionCriteriaIncomplete",
+        "completionRegressionsIgnored" }) do allowed[k] = true end
     for k in pairs(s) do truthy(allowed[k], "unexpected snapshot field " .. tostring(k)) end
 end)
 
@@ -365,19 +367,25 @@ test("completion after the client already went inactive", function()
     advance(5)
     raw = retailSample(nil); raw.active = false
     TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    equal(TS:GetStatus(), "COMPLETING", "1/4 bosses and 23 % are not a final state")
+    near(TS:GetElapsed(), 905, 1e-9, "time is frozen at the event while criteria converge")
+    advance(TS.COMPLETION_WINDOW + 0.1)
     equal(TS:GetStatus(), "COMPLETED"); near(TS:GetSnapshot().finalElapsed, 905)
     equal(TS:GetSnapshot().active, false); equal(TS:GetSnapshot().forcesCurrent, 144)
+    equal(TS:GetSnapshot().completionCriteriaIncomplete, true)
 end)
 
 test("a new key after completion starts a new run", function()
     local TS = install()
     raw = retailSample(900); TS:Refresh("t")
     TS:OnEvent("CHALLENGE_MODE_COMPLETED")
-    equal(TS:GetStatus(), "COMPLETED")
+    equal(TS:GetStatus(), "COMPLETING")
     raw = retailSample(2); raw.keystoneLevel = 7
     TS:OnEvent("CHALLENGE_MODE_START"); advance(0.3)
     equal(TS:GetStatus(), "RUNNING"); equal(TS:GetSnapshot().keystoneLevel, 7)
     equal(TS:GetSnapshot().completedAt, nil); equal(count(records, "STATE_RUN_STARTED"), 2)
+    equal(count(records, "STATE_RUN_COMPLETED"), 1, "the open window was closed once by the new key")
+    equal((activeTickers()), 1, "only the running resync ticker")
 end)
 
 test("a stray completion event with no run does not complete the next key", function()
@@ -446,6 +454,244 @@ test("diagnostics and report render in every lifecycle state", function()
     local f = check()
     equal(f.forcesPercent, "23.68"); equal(f.forcesRemaining, 464); equal(f.bossesTotal, 4); equal(f.timeRemaining, 1380)
     TS:OnEvent("CHALLENGE_MODE_COMPLETED"); check()
+end)
+
+-- ---------------------------------------------------------------------------
+-- COMPLETION CONVERGENCE (1.1.0-dev.5)
+-- Retail 12.1.0.69814 dev.4 run: Altar de Colmillos (map 588) +12, limit 30:00,
+-- final 29:43, 9 deaths / 135 s, forces 817/817 before the end, final boss not
+-- yet visible when CHALLENGE_MODE_COMPLETED arrived (frozen as 2/3).
+-- ---------------------------------------------------------------------------
+
+local function altar(elapsed, bossesDone)
+    bossesDone = bossesDone or 2
+    local bosses = {}
+    for i = 1, 3 do bosses[i] = { index = i, name = "B" .. i, completed = i <= bossesDone } end
+    return {
+        active = true, available = true, mapID = 588, mapName = "Altar", keystoneLevel = 12, timeLimit = 1800,
+        elapsed = elapsed, timerSource = "WORLD_ELAPSED_TIMER", deaths = 9, deathTimeLost = 135,
+        forcesCurrent = 817, forcesTotal = 817, forcesPercent = 100, forcesRemaining = 0,
+        forcesRemainingPercent = 0, forcesSource = "COUNT_TOTAL",
+        bossesCompleted = bossesDone, bossesTotal = 3, bosses = bosses, warnings = {}, criteriaCount = 4,
+    }
+end
+local function altarRunning(elapsedNow, bossesDone)
+    local s = altar(elapsedNow, bossesDone)
+    s.serverStartAt = clock.now - elapsedNow
+    return s
+end
+-- What the Retail client returned: no criteria at all after the event.
+local function noCriteria(active)
+    return { active = active, available = true, mapID = 588, keystoneLevel = 12, timeLimit = 1800,
+             warnings = {}, criteriaCount = nil }
+end
+local function recordData(name)
+    local out = {}
+    for _, r in ipairs(records) do if r.e == name then out[#out + 1] = r.d end end
+    return out
+end
+
+test("completion 1: criteria already converged freeze immediately", function()
+    local TS = install()
+    raw = altarRunning(1780, 3); TS:Refresh("t")
+    advance(3)
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    equal(TS:GetStatus(), "COMPLETED")
+    local s = TS:GetSnapshot()
+    equal(s.bossesCompleted, 3); equal(s.bossesTotal, 3); equal(s.forcesPercent, 100); equal(s.forcesCurrent, 817)
+    equal(s.completionConverged, true); equal(s.completionCriteriaIncomplete, false)
+    equal(s.completionAttempts, 1); equal(s.completionConvergenceMs, 0)
+    equal(s.timerStale, false); equal(s.forcesStale, false); equal(s.bossesStale, false)
+    near(s.finalElapsed, 1783); equal(s.deaths, 9); equal(s.deathTimeLost, 135)
+    equal(s.mapID, 588); equal(s.keystoneLevel, 12)
+    equal((activeTickers()), 0, "no window ticker when nothing is missing")
+    equal(count(emitted, "MITZU_TRACKER_RUN_COMPLETED"), 1)
+end)
+
+test("completion 2: event before the final boss update converges to 3/3", function()
+    local TS = install()
+    raw = altarRunning(1780, 2); TS:Refresh("t")
+    advance(3)
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    equal(TS:GetStatus(), "COMPLETING")
+    equal(TS:IsActive(), false); equal(TS:IsCompleting(), true)
+    local n, period = activeTickers()
+    equal(n, 1, "only the bounded completion ticker"); equal(period, TS.COMPLETION_INTERVAL)
+    equal(count(emitted, "MITZU_TRACKER_RUN_COMPLETED"), 0, "not final yet")
+    equal(TS:GetSnapshot().bossesCompleted, 2)
+    advance(0.3)
+    raw = altar(nil, 3)                       -- Blizzard publishes the last boss
+    advance(0.25)
+    equal(TS:GetStatus(), "COMPLETED")
+    local s = TS:GetSnapshot()
+    equal(s.bossesCompleted, 3); equal(s.bosses[3].completed, true); equal(s.bossesStale, false)
+    equal(s.completionConverged, true); equal(s.completionCriteriaIncomplete, false)
+    equal(s.completionAttempts, 3); equal(s.completionConvergenceMs, 500)
+    near(s.finalElapsed, 1783, 1e-9, "server time at the event, not at convergence")
+    near(TS:GetElapsed(), 1783, 1e-9)
+    equal((activeTickers()), 0)
+    equal(count(records, "STATE_RUN_COMPLETED"), 1); equal(count(emitted, "MITZU_TRACKER_RUN_COMPLETED"), 1)
+    local done = recordData("STATE_RUN_COMPLETED")[1]
+    equal(done.bosses, "3/3"); equal(done.converged, true); equal(done.elapsed, 1783)
+end)
+
+test("completion 2b: a SCENARIO_CRITERIA_UPDATE inside the window also converges", function()
+    local TS = install()
+    raw = altarRunning(1000, 2); TS:Refresh("t")
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    raw = altar(nil, 3)
+    TS:OnEvent("SCENARIO_CRITERIA_UPDATE"); advance(0.2)
+    equal(TS:GetStatus(), "COMPLETED"); equal(TS:GetSnapshot().bossesCompleted, 3)
+    equal((activeTickers()), 0)
+end)
+
+test("completion 3: temporary nil and zero reads never overwrite good data", function()
+    local TS = install()
+    raw = altarRunning(1780, 2); TS:Refresh("t")
+    advance(3)
+    raw = noCriteria(false)
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    local s = TS:GetSnapshot()
+    equal(TS:GetStatus(), "COMPLETING")
+    equal(s.forcesCurrent, 817); equal(s.forcesPercent, 100); equal(s.bossesCompleted, 2); equal(s.bossesTotal, 3)
+    equal(s.deaths, 9); equal(s.deathTimeLost, 135); equal(s.mapID, 588)
+    -- A broken read: zeros and a shrunken criteria list.
+    raw = altar(nil, 0); raw.forcesCurrent, raw.forcesPercent, raw.forcesRemaining = 0, 0, 817
+    raw.bossesTotal, raw.bosses, raw.deaths, raw.deathTimeLost = 0, {}, nil, nil
+    advance(0.25)
+    s = TS:GetSnapshot()
+    equal(s.forcesCurrent, 817); equal(s.forcesPercent, 100); equal(s.bossesCompleted, 2); equal(s.bossesTotal, 3)
+    equal(s.deaths, 9); equal(#s.bosses, 3)
+    raw = noCriteria(nil)
+    advance(0.25)
+    equal(TS:GetSnapshot().bossesCompleted, 2)
+    raw = altar(nil, 3); raw.active = false
+    advance(0.25)
+    s = TS:GetSnapshot()
+    equal(TS:GetStatus(), "COMPLETED")
+    equal(s.bossesCompleted, 3); equal(s.forcesCurrent, 817); equal(s.deaths, 9)
+    equal(s.completionRegressionsIgnored, 2, "zero forces and zero bosses were ignored")
+    equal(s.active, false, "last known client state")
+end)
+
+test("completion 4: Blizzard never exposes 3/3, the real value is kept and flagged", function()
+    local TS = install()
+    raw = altarRunning(1780, 2); TS:Refresh("t")
+    advance(3)
+    raw = noCriteria(false)
+    local calls0 = adapterCalls
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    advance(TS.COMPLETION_WINDOW - 0.3)
+    equal(TS:GetStatus(), "COMPLETING", "still inside the window")
+    advance(0.5)
+    equal(TS:GetStatus(), "COMPLETED")
+    local s = TS:GetSnapshot()
+    equal(s.bossesCompleted, 2, "never invented"); equal(s.bossesTotal, 3); equal(s.bosses[3].completed, false)
+    equal(s.bossesStale, true, "2/3 was not confirmed after the event")
+    equal(s.forcesPercent, 100); equal(s.forcesStale, false, "100 % is terminal")
+    equal(s.completionConverged, false); equal(s.completionCriteriaIncomplete, true)
+    equal(s.completionConvergenceMs, TS.COMPLETION_WINDOW * 1000)
+    equal(s.completionAttempts, TS.COMPLETION_WINDOW / TS.COMPLETION_INTERVAL + 1)
+    truthy(s.completionAttempts <= TS.COMPLETION_MAX_ATTEMPTS, "bounded")
+    near(s.finalElapsed, 1783)
+    equal(#s.warnings, 0, "an API timing limitation is not a warning")
+    equal((activeTickers()), 0)
+    local calls = adapterCalls
+    advance(30)
+    equal(adapterCalls, calls, "nothing keeps reading after the window")
+    truthy(calls - calls0 <= TS.COMPLETION_MAX_ATTEMPTS)
+    local report = table.concat(TS:ReportLines(), "\n")
+    truthy(report:find("completionConverged=false", 1, true), report)
+    truthy(report:find("completionCriteriaIncomplete=true", 1, true), report)
+    local f = {}
+    for _, p in ipairs(TS:DiagnosticFields()) do f[p[1]] = p[2] end
+    equal(f.status, "COMPLETED"); equal(f.completionConverged, false); equal(f.completionCriteriaIncomplete, true)
+    equal(f.completionWindowOpen, false); equal(f.bossesCompleted, 2)
+    local reads = recordData("STATE_COMPLETION_READ")
+    equal(#reads, 1, "identical reads are recorded once")
+    equal(reads[1].read, "active=false forces=nil bosses=nil criteria=nil")
+end)
+
+test("completion 5: forces at 100 % before the end are preserved", function()
+    local TS = install()
+    raw = altarRunning(1500, 2); TS:Refresh("t")
+    raw = noCriteria(false)
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    advance(TS.COMPLETION_WINDOW + 1)
+    local s = TS:GetSnapshot()
+    equal(s.forcesCurrent, 817); equal(s.forcesTotal, 817); equal(s.forcesPercent, 100)
+    equal(s.forcesRemaining, 0); equal(s.forcesStale, false)
+end)
+
+test("completion 7: repeated completion events finalize once", function()
+    local TS = install()
+    raw = altarRunning(1780, 2); TS:Refresh("t")
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    local calls = adapterCalls
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    equal(adapterCalls, calls, "a duplicate inside the window does not read or restart it")
+    raw = altar(nil, 3); advance(0.25)
+    equal(TS:GetStatus(), "COMPLETED")
+    local final = TS:GetSnapshot().finalElapsed
+    advance(10)
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED"); advance(1)
+    equal(TS:GetStatus(), "COMPLETED")
+    near(TS:GetSnapshot().finalElapsed, final, 1e-9)
+    equal(TS._stats.duplicateCompletions, 2)
+    equal(count(records, "STATE_RUN_COMPLETED"), 1); equal(count(emitted, "MITZU_TRACKER_RUN_COMPLETED"), 1)
+    equal(count(records, "STATE_COMPLETION_BEGIN"), 1)
+    equal(count(records, "STATE_COMPLETION_DUPLICATE"), 2)
+    equal(count(records, "STATE_RUN_STARTED"), 1)
+end)
+
+test("completion 8/9: adapter errors inside the window still end it and clean up", function()
+    local TS = install()
+    raw = altarRunning(1780, 2); TS:Refresh("t")
+    raw = "THROW"
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    equal(TS:GetStatus(), "COMPLETING", "a failed read at the event still closes the run")
+    advance(TS.COMPLETION_WINDOW + 0.5)
+    equal(TS:GetStatus(), "COMPLETED")
+    local s = TS:GetSnapshot()
+    equal(s.bossesCompleted, 2); equal(s.completionCriteriaIncomplete, true)
+    equal((activeTickers()), 0); equal(TS._completionTicker, nil); equal(TS._completion, nil)
+    truthy(TS._stats.adapterErrors >= 2)
+end)
+
+test("completion: RESET inside the window freezes, then the run ends", function()
+    local TS = install()
+    raw = altarRunning(900, 1); TS:Refresh("t")
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    raw = { active = false, warnings = {} }
+    TS:OnEvent("CHALLENGE_MODE_RESET")
+    equal(TS:GetStatus(), "COMPLETED"); equal(TS._completion, nil)
+    equal(TS:GetSnapshot().bossesCompleted, 1); equal(TS:GetSnapshot().completionCriteriaIncomplete, true)
+    advance(1)
+    equal((activeTickers()), 0); equal(count(records, "STATE_RUN_COMPLETED"), 1)
+end)
+
+test("completion: a key on another map inside the window starts a new run", function()
+    local TS = install()
+    raw = altarRunning(900, 1); TS:Refresh("t")
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    raw = retailSample(3)
+    TS:Refresh("other map")
+    equal(TS:GetStatus(), "RUNNING"); equal(TS:GetSnapshot().mapID, 249)
+    equal(count(records, "STATE_RUN_COMPLETED"), 1); equal(count(records, "STATE_RUN_STARTED"), 2)
+    local n, period = activeTickers()
+    equal(n, 1); equal(period, 5)
+end)
+
+test("completion 10: startup transients still behave after the dev.5 changes", function()
+    local TS = install()
+    raw = altar(nil, 0); raw.warnings = { "ACTIVE_WITHOUT_TIMER" }
+    raw.forcesCurrent, raw.forcesPercent = 0, 0
+    TS:OnEvent("CHALLENGE_MODE_START"); advance(0.3)
+    equal(TS:GetStatus(), "PENDING"); has(TS:GetSnapshot().transient, "ADAPTER_ACTIVE_WITHOUT_TIMER")
+    raw = altarRunning(9, 0); raw.forcesCurrent, raw.forcesPercent = 0, 0
+    advance(1)
+    equal(TS:GetStatus(), "RUNNING"); equal(#TS:GetSnapshot().runWarnings, 0)
+    equal(count(records, "STATE_SYNC"), 1)
 end)
 
 if #failures > 0 then error(string.format("TrackerState: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end

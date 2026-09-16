@@ -24,8 +24,22 @@
 --   IDLE       sin llave activa
 --   PENDING    llave activa pero sin temporizador del servidor todavia
 --   RUNNING    llave activa con temporizador
---   COMPLETED  CHALLENGE_MODE_COMPLETED visto; snapshot final congelado hasta
---              que empiece otra llave (START / RESET / inactiva -> activa)
+--   COMPLETING CHALLENGE_MODE_COMPLETED visto; tiempo final ya congelado, pero
+--              los criterios se releen durante una ventana corta (max. 3 s)
+--              porque Blizzard puede publicar el ultimo boss despues del evento
+--   COMPLETED  snapshot final congelado hasta que empiece otra llave
+--              (START / RESET / inactiva -> activa / otro mapa)
+--
+-- CONVERGENCIA DEL FINAL (1.1.0-dev.5)
+--   Retail dev.4 congelo bosses=2/3 en una llave completada: la lectura del
+--   evento ya no traia criterios y el ultimo boss nunca se leyo. Ahora:
+--     * el evento fija completedAt y finalElapsed y hace una lectura inmediata;
+--     * mientras no haya fuerzas al 100 % y todos los bosses, se relee cada
+--       COMPLETION_INTERVAL hasta COMPLETION_WINDOW (ticker propio, se cancela);
+--     * cada lectura solo puede mejorar lo sabido: nil, 0 o un retroceso nunca
+--       sustituyen un valor real;
+--     * si Blizzard no llega a exponer el final, se congela lo ultimo real con
+--       completionCriteriaIncomplete=true. Nunca se inventa un boss.
 -- ===========================================================================
 
 local MitzuMPlus = _G.MitzuMPlus
@@ -36,8 +50,8 @@ MitzuMPlus.TrackerState = TS
 
 TS.VERSION = 1
 
-local IDLE, PENDING, RUNNING, COMPLETED = "IDLE", "PENDING", "RUNNING", "COMPLETED"
-TS.STATUS = { IDLE = IDLE, PENDING = PENDING, RUNNING = RUNNING, COMPLETED = COMPLETED }
+local IDLE, PENDING, RUNNING, COMPLETING, COMPLETED = "IDLE", "PENDING", "RUNNING", "COMPLETING", "COMPLETED"
+TS.STATUS = { IDLE = IDLE, PENDING = PENDING, RUNNING = RUNNING, COMPLETING = COMPLETING, COMPLETED = COMPLETED }
 
 TS.REFRESH_DELAY       = 0.2   -- segundos para fundir eventos en rafaga
 TS.RESYNC_PENDING      = 1     -- esperando el temporizador
@@ -45,6 +59,11 @@ TS.RESYNC_RUNNING      = 5     -- recalibrar reloj y recoger lo que no avise
 TS.RECOVERED_THRESHOLD = 15    -- primera lectura con mas tiempo => llave recuperada
 TS.TIMER_REGRESSION    = 2     -- segundos hacia atras tolerados antes de avisar
 TS.MAX_WARNINGS        = 24
+
+TS.COMPLETION_WINDOW       = 3     -- segundos maximos de relectura tras completar
+TS.COMPLETION_INTERVAL     = 0.25  -- periodo del ticker de convergencia
+TS.COMPLETION_MAX_ATTEMPTS = 16    -- tope duro de lecturas en la ventana
+TS.COMPLETION_MAX_RECORDS  = 8     -- lecturas distintas anotadas en la caja negra
 
 -- Carreras normales de sincronizacion: al arrancar la llave (o tras /reload)
 -- Blizzard tarda unos segundos en exponer temporizador y criterios. Mientras
@@ -68,6 +87,9 @@ TS.EVENTS = {
     "SCENARIO_CRITERIA_UPDATE",
     "WORLD_STATE_TIMER_START",
     "WORLD_STATE_TIMER_STOP",
+    -- Cambios de paso / cierre del escenario: pueden traer el ultimo criterio.
+    "SCENARIO_UPDATE",
+    "SCENARIO_COMPLETED",
 }
 
 -- Campos normalizados que se copian del adaptador. Nada fuera de esta lista.
@@ -117,9 +139,13 @@ function TS:Reset()
     self._lastSignature = nil
     self._refreshPending = false
     self._completedEvent = nil
+    self._completedElapsed = nil
+    self._completion = nil
+    self:_StopCompletionTicker()
     self._awaitingNewRun = false
     self._sawInactive = false
-    self._stats = { refreshes = 0, coalesced = 0, adapterErrors = 0, events = {}, lastReason = nil }
+    self._stats = { refreshes = 0, coalesced = 0, adapterErrors = 0, events = {}, lastReason = nil,
+                    duplicateCompletions = 0 }
     self:_SyncTicker()
 end
 
@@ -268,6 +294,8 @@ local function signature(s)
         tostring(s.bossesCompleted), tostring(s.bossesTotal), tostring(s.timerStale),
         tostring(s.forcesStale), tostring(s.bossesStale), tostring(s.recovered),
         tostring(s.elapsedBase ~= nil), table.concat(s.warnings or {}, ","),
+        tostring(s.completionAttempts), tostring(s.completionConverged),
+        tostring(s.completionCriteriaIncomplete),
     }, "|")
 end
 
@@ -320,6 +348,7 @@ function TS:Refresh(reason)
         stats.adapterErrors = stats.adapterErrors + 1
         local snap = self._snapshot
         snap.adapterAvailable = false
+        if self._status == COMPLETING then self:_ApplyCompleting(nil, reason) end
         return false
     end
     local ok, raw = pcall(adapter.GetSnapshot, adapter)
@@ -328,6 +357,8 @@ function TS:Refresh(reason)
         stats.adapterErrors = stats.adapterErrors + 1
         stats.lastAdapterError = tostring(raw)
         record("ADAPTER_ERROR", { reason = reason })
+        -- Una lectura fallida tambien cuenta: la ventana de cierre siempre termina.
+        if self._status == COMPLETING then self:_ApplyCompleting(nil, reason) end
         return false
     end
     self:_Apply(raw, reason)
@@ -335,16 +366,26 @@ function TS:Refresh(reason)
 end
 
 function TS:_Apply(raw, reason)
-    local prev = self._snapshot or emptySnapshot()
     local status = self._status
+    local otherMap = (self._run and raw.mapID and self._run.mapID and raw.mapID ~= self._run.mapID) and true or false
+
+    if status == COMPLETING then
+        if not (raw.active == true and otherMap) then
+            return self:_ApplyCompleting(raw, reason)
+        end
+        -- Otra llave en otro mapa: se cierra la anterior con lo que haya.
+        self:_FinishCompletion("NEW_RUN")
+        status = self._status
+    end
+    local prev = self._snapshot or emptySnapshot()
 
     if raw.active == true then
         local newRun = false
         if status == IDLE then
             newRun = true
         elseif status == COMPLETED then
-            newRun = (not self._awaitingNewRun) or self._sawInactive
-        elseif self._run and raw.mapID and self._run.mapID and raw.mapID ~= self._run.mapID then
+            newRun = (not self._awaitingNewRun) or self._sawInactive or otherMap
+        elseif otherMap then
             newRun = true
         end
         if newRun then
@@ -367,7 +408,9 @@ function TS:_Apply(raw, reason)
         if run and not run.mapID and raw.mapID then run.mapID = raw.mapID end
 
         if self._completedEvent then
-            return self:_Complete(snap, reason)
+            -- En una llave ya seguida se parte de lo ultimo bueno: la lectura del
+            -- evento se mezcla sin poder retroceder nada.
+            return self:_EnterCompleting(newRun and snap or prev, raw, reason)
         end
         self:_SetStatus(snap.elapsedBase and RUNNING or PENDING, reason)
         return self:_Commit(snap, reason)
@@ -376,10 +419,8 @@ function TS:_Apply(raw, reason)
     if raw.active == false then
         if status == RUNNING or status == PENDING then
             if self._completedEvent then
-                -- Tras completar, los criterios aun se leen: foto final.
-                local snap = self:_BuildActive(raw, prev)
-                snap.active = false
-                return self:_Complete(snap, reason)
+                -- Tras completar, los criterios pueden seguir leyendose.
+                return self:_EnterCompleting(prev, raw, reason)
             end
             record("RUN_ENDED", { reason = reason, map = self._run and self._run.mapID })
             emit("MITZU_TRACKER_RUN_ENDED", self)
@@ -404,23 +445,160 @@ function TS:_Apply(raw, reason)
     return self:_Commit(snap, reason)
 end
 
-function TS:_Complete(snap, reason)
-    snap.completedAt = epoch()
-    snap.finalElapsed = self._completedElapsed or self:_LiveElapsed(snap)
-    snap.timerStale = false
-    self._completedEvent = nil
-    self._completedElapsed = nil
+-- ---------------------------------------------------------------------------
+-- CONVERGENCIA DEL FINAL
+-- ---------------------------------------------------------------------------
+
+local EPS = 1e-6
+local function forcesDone(s) return s.forcesPercent ~= nil and s.forcesPercent >= 100 - EPS end
+local function bossesDone(s)
+    return s.bossesTotal ~= nil and s.bossesTotal > 0 and s.bossesCompleted ~= nil
+       and s.bossesCompleted >= s.bossesTotal
+end
+
+-- Final convergido: fuerzas al 100 % y todos los bosses, leidos de Blizzard.
+function TS.IsFinalCriteriaConverged(s) return forcesDone(s) and bossesDone(s) end
+
+local FORCES_KEYS = { "forcesCurrent", "forcesTotal", "forcesPercent", "forcesRemaining",
+                      "forcesRemainingPercent", "forcesSource" }
+
+local function frac(v, total)
+    if v == nil and total == nil then return "nil" end
+    return tostring(v) .. "/" .. tostring(total)
+end
+
+-- `base` es lo ultimo bueno de la llave; `raw`, la lectura que coincidio con el evento.
+function TS:_EnterCompleting(base, raw, reason)
+    local now = mono()
+    local best = {}
+    for k, v in pairs(base) do best[k] = v end
+    best.warnings, best.transient, best.bosses = {}, {}, copyBosses(base.bosses)
+    local c = {
+        startedAt = now, deadline = now + TS.COMPLETION_WINDOW, officialAt = epoch(),
+        finalElapsed = self._completedElapsed or self:_LiveElapsed(base)
+            or (type(raw) == "table" and raw.elapsed or nil),
+        attempts = 0, regressions = 0, records = 0, best = best,
+        forcesFresh = false, bossesFresh = false, sawInactive = false,
+    }
+    self._completedEvent, self._completedElapsed = nil, nil
+    self._completion = c
+    best.completedAt, best.finalElapsed, best.timerStale = c.officialAt, c.finalElapsed, false
+    self:_SetStatus(COMPLETING, reason)
+    record("COMPLETION_BEGIN", {
+        elapsed = c.finalElapsed and math.floor(c.finalElapsed) or nil,
+        forces = best.forcesPercent and string.format("%.2f", best.forcesPercent) or nil,
+        bosses = frac(best.bossesCompleted, best.bossesTotal),
+    })
+    return self:_ApplyCompleting(raw, reason)
+end
+
+-- Mezcla una lectura dentro de la ventana. Solo mejora; nunca borra ni retrocede.
+function TS:_MergeCompletion(raw)
+    local c = self._completion
+    local best = c.best
+    if raw.active == false then c.sawInactive = true end
+    if raw.active ~= nil then best.active = raw.active end
+
+    for _, k in ipairs({ "mapID", "mapName", "keystoneLevel", "timeLimit" }) do
+        if best[k] == nil and raw[k] ~= nil then best[k] = raw[k] end
+    end
+    if raw.deaths ~= nil and (best.deaths == nil or raw.deaths >= best.deaths) then
+        best.deaths, best.deathTimeLost = raw.deaths, raw.deathTimeLost
+    end
+
+    if raw.forcesPercent ~= nil then
+        if best.forcesPercent == nil or raw.forcesPercent >= best.forcesPercent - EPS then
+            for _, k in ipairs(FORCES_KEYS) do best[k] = raw[k] end
+            c.forcesFresh = true
+        else
+            c.regressions = c.regressions + 1
+        end
+    end
+
+    if raw.bossesTotal ~= nil then
+        local sameShape = best.bossesTotal == nil or raw.bossesTotal == best.bossesTotal
+        local notBack = best.bossesCompleted == nil or (raw.bossesCompleted or 0) >= best.bossesCompleted
+        if raw.bossesTotal > 0 and sameShape and notBack then
+            best.bossesCompleted, best.bossesTotal = raw.bossesCompleted, raw.bossesTotal
+            best.bosses = copyBosses(raw.bosses)
+            c.bossesFresh = true
+        elseif best.bossesTotal ~= nil then
+            c.regressions = c.regressions + 1
+        end
+    end
+end
+
+function TS:_ApplyCompleting(raw, reason)
+    local c = self._completion
+    if not c then return end
+    c.attempts = c.attempts + 1
+    if type(raw) == "table" then
+        self:_MergeCompletion(raw)
+        -- Evidencia para la siguiente prueba real: que expone Blizzard tras el evento.
+        local summary = string.format("active=%s forces=%s bosses=%s criteria=%s", tostring(raw.active),
+            frac(raw.forcesCurrent, raw.forcesTotal), frac(raw.bossesCompleted, raw.bossesTotal),
+            tostring(raw.criteriaCount))
+        if summary ~= c.lastSummary and c.records < TS.COMPLETION_MAX_RECORDS then
+            c.lastSummary, c.records = summary, c.records + 1
+            record("COMPLETION_READ", { attempt = c.attempts, read = summary,
+                ms = math.floor((mono() - c.startedAt) * 1000 + 0.5) })
+        end
+    end
+
+    if TS.IsFinalCriteriaConverged(c.best) or mono() >= c.deadline
+       or c.attempts >= TS.COMPLETION_MAX_ATTEMPTS or not self:_StartCompletionTicker() then
+        return self:_FinishCompletion(reason)
+    end
+    c.best.completionAttempts = c.attempts
+    return self:_Commit(c.best, reason)
+end
+
+-- Congela el snapshot final. Idempotente: sin ventana abierta no hace nada.
+function TS:_FinishCompletion(reason)
+    local c = self._completion
+    if not c then return end
+    self._completion = nil
+    self:_StopCompletionTicker()
+
+    local snap = c.best
+    local converged = TS.IsFinalCriteriaConverged(snap)
+    snap.completedAt, snap.finalElapsed, snap.timerStale = c.officialAt, c.finalElapsed, false
+    -- Un valor terminal (100 %, todos los bosses) ya no puede cambiar: es final
+    -- aunque no se haya releido. Lo demas es fresco solo si llego en la ventana.
+    if snap.forcesPercent ~= nil then snap.forcesStale = not (c.forcesFresh or forcesDone(snap)) end
+    if snap.bossesTotal ~= nil then snap.bossesStale = not (c.bossesFresh or bossesDone(snap)) end
+    snap.completionConverged = converged
+    snap.completionCriteriaIncomplete = not converged
+    snap.completionAttempts = c.attempts
+    snap.completionConvergenceMs = math.floor((mono() - c.startedAt) * 1000 + 0.5)
+    snap.completionRegressionsIgnored = c.regressions
+
     self._awaitingNewRun = true
-    self._sawInactive = snap.active == false
+    self._sawInactive = c.sawInactive
     self:_SetStatus(COMPLETED, reason)
     record("RUN_COMPLETED", {
         map = snap.mapID, level = snap.keystoneLevel,
         elapsed = snap.finalElapsed and math.floor(snap.finalElapsed) or nil,
         forces = snap.forcesPercent and string.format("%.2f", snap.forcesPercent) or nil,
         bosses = snap.bossesTotal and (tostring(snap.bossesCompleted) .. "/" .. tostring(snap.bossesTotal)) or nil,
+        converged = converged, attempts = c.attempts, ms = snap.completionConvergenceMs,
     })
     self:_Commit(snap, reason)
     emit("MITZU_TRACKER_RUN_COMPLETED", self)
+end
+
+function TS:_StartCompletionTicker()
+    if self._completionTicker then return true end
+    local timer = rawget(_G, "C_Timer")
+    if type(timer) ~= "table" or type(timer.NewTicker) ~= "function" then return false end
+    self._completionTicker = timer.NewTicker(TS.COMPLETION_INTERVAL, function() TS:Refresh("COMPLETION_SYNC") end)
+    return self._completionTicker ~= nil
+end
+
+function TS:_StopCompletionTicker()
+    local t = self._completionTicker
+    self._completionTicker = nil
+    if t and t.Cancel then t:Cancel() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -447,14 +625,28 @@ function TS:OnEvent(event)
     local counts = self._stats.events
     counts[event] = (counts[event] or 0) + 1
     if event == "CHALLENGE_MODE_COMPLETED" then
+        if self._status == COMPLETING or self._status == COMPLETED then
+            -- El cliente puede repetir el evento: una sola finalizacion por llave.
+            self._stats.duplicateCompletions = self._stats.duplicateCompletions + 1
+            record("COMPLETION_DUPLICATE", { status = self._status })
+            return false
+        end
+        local wasRunning = self._status == RUNNING or self._status == PENDING
         self._completedEvent = true
         self._completedElapsed = self:GetElapsed()
         -- Lectura inmediata: la foto final no debe esperar a la coalescencia.
         -- El aviso se consume en esta misma lectura; si no habia llave que
         -- cerrar, no puede quedarse armado para la siguiente.
         local ok = self:Refresh(event)
+        if self._completedEvent and wasRunning then
+            -- Lectura fallida o estado desconocido: la llave termino igual.
+            self:_EnterCompleting(self._snapshot, nil, event)
+        end
         self._completedEvent, self._completedElapsed = nil, nil
         return ok
+    end
+    if (event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_RESET") and self._status == COMPLETING then
+        self:_FinishCompletion(event)
     end
     if event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_RESET" then
         if self._status == COMPLETED then self._sawInactive = true end
@@ -486,6 +678,7 @@ end
 function TS:GetStatus() return self._status end
 function TS:GetRevision() return self._revision end
 function TS:IsActive() return self._status == RUNNING or self._status == PENDING end
+function TS:IsCompleting() return self._status == COMPLETING end
 
 -- Snapshot actual. Es de solo lectura por contrato: nadie debe modificarlo.
 function TS:GetSnapshot() return self._snapshot end
@@ -498,7 +691,7 @@ end
 -- Segundos de llave. Interpolado mientras corre; congelado al completar.
 function TS:GetElapsed()
     local snap = self._snapshot
-    if self._status == COMPLETED then return snap.finalElapsed end
+    if self._status == COMPLETED or self._status == COMPLETING then return snap.finalElapsed end
     if self._status == RUNNING or self._status == PENDING then return self:_LiveElapsed(snap) end
     return nil
 end
@@ -564,6 +757,14 @@ function TS:DiagnosticFields()
         { "coalesced", st.coalesced },
         { "adapterErrors", st.adapterErrors },
         { "resyncPeriod", self._tickerPeriod },
+        { "finalElapsed", s.finalElapsed and math.floor(s.finalElapsed) or nil },
+        { "completionConverged", s.completionConverged },
+        { "completionAttempts", s.completionAttempts },
+        { "completionConvergenceMs", s.completionConvergenceMs },
+        { "completionCriteriaIncomplete", s.completionCriteriaIncomplete },
+        { "completionRegressionsIgnored", s.completionRegressionsIgnored },
+        { "completionWindowOpen", self._completion ~= nil },
+        { "duplicateCompletions", st.duplicateCompletions },
     }
 end
 
@@ -588,6 +789,14 @@ function TS:ReportLines()
     end
     if s.completedAt then
         L[#L + 1] = string.format("completedAt=%s finalElapsed=%s", text(s.completedAt), fmtTime(s.finalElapsed))
+        L[#L + 1] = string.format("completionConverged=%s completionAttempts=%s completionConvergenceMs=%s "
+            .. "completionCriteriaIncomplete=%s regressionsIgnored=%s windowOpen=%s",
+            text(s.completionConverged), text(s.completionAttempts), text(s.completionConvergenceMs),
+            text(s.completionCriteriaIncomplete), text(s.completionRegressionsIgnored), text(self._completion ~= nil))
+        if s.completionCriteriaIncomplete then
+            L[#L + 1] = "  (Blizzard no expuso el final de los criterios en " .. TS.COMPLETION_WINDOW
+                .. " s: se conserva el ultimo valor real; limitacion del cliente, no error del addon)"
+        end
     end
     L[#L + 1] = "warnings=" .. ((#s.warnings > 0) and table.concat(s.warnings, ",") or "none")
     L[#L + 1] = "runWarnings=" .. ((s.runWarnings and #s.runWarnings > 0) and table.concat(s.runWarnings, ",") or "none")
@@ -597,8 +806,9 @@ function TS:ReportLines()
     local ev = {}
     for name, n in pairs(st.events) do ev[#ev + 1] = name .. "=" .. n end
     table.sort(ev)
-    L[#L + 1] = string.format("refreshes=%d coalesced=%d adapterErrors=%d resync=%s lastReason=%s",
-        st.refreshes, st.coalesced, st.adapterErrors, text(self._tickerPeriod), text(st.lastReason))
+    L[#L + 1] = string.format("refreshes=%d coalesced=%d adapterErrors=%d resync=%s lastReason=%s duplicateCompletions=%d",
+        st.refreshes, st.coalesced, st.adapterErrors, text(self._tickerPeriod), text(st.lastReason),
+        st.duplicateCompletions)
     L[#L + 1] = "events " .. ((#ev > 0) and table.concat(ev, " ") or "none")
     L[#L + 1] = "registeredEvents=" .. text(self._registered and table.concat(self._registered, ",") or nil)
     L[#L + 1] = "=== END ==="
