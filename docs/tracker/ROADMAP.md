@@ -2,28 +2,63 @@
 
 Objetivo: **Blizzard Tracker Enhancer + Enemy Forces**. Enhance, don't replace.
 
+## Política de validación (desde 2026-09-16, 1.1.0-dev.5)
+
+| Prioridad | Cliente | Papel |
+|---|---|---|
+| **PRINCIPAL** | Retail 12.1.0.69814 (cliente live) | Validación en runtime de cada build `dev.N`. Una fase avanza con evidencia de Retail. |
+| OPCIONAL / FUTURO | PTR 12.1.5.69594 | Validación adicional cuando sea práctica. **No bloquea** ninguna fase. |
+
+Motivo: en el PTR casi no hay grupos de Mítica+, así que una llave completa y
+repetible allí no es viable. Retail ofrece llaves reales cada día y el
+`Blizzard_ObjectiveTracker` es idéntico byte a byte en ambos builds
+(`BLIZZARD_TRACKER_ENHANCER.md` §1), por lo que Retail representa bien el
+código que se va a decorar.
+
+Reglas:
+- La evidencia existente del PTR no se borra. Cada fila distingue **Retail
+  validado**, **PTR validado** y **no probado en PTR**.
+- Un dato validado en Retail **no** se marca como validado en PTR.
+- Si más adelante aparece una diferencia en PTR (12.1.5), se registra como bug
+  de compatibilidad, no como bloqueo retroactivo de fases cerradas.
+- Despliegue de desarrollo en Retail: `python tools/deploy_ptr.py --retail`
+  (backup previo, solo con `Wow.exe` cerrado). El público de CurseForge sigue en
+  `1.0.0-beta.1`; los artefactos de release no se tocan.
+
 ## Matriz de validación en cliente real
 
 | Qué | Retail 12.1.0.69814 | PTR 12.1.5.69594 |
 |---|---|---|
-| Carga del addon, APIs y capacidades | OK | Pendiente |
-| Llave activa: mapa 249, nivel 6, límite 1980 | OK | Pendiente |
-| Fuerzas no nulas: `quantity=23` (% entero), `quantityString="144%"` (recuento), `totalQuantity=608` → 144/608 = 23.684 % | OK | **Pendiente** |
-| Bosses 1/4 (primero completado) | OK | Pendiente |
-| Paridad adaptador vs 1.0 | OK, sin DIFF | Pendiente |
-| Final de llave: RUNNING → COMPLETED, historial una vez, 0 duplicados, 0 errores, invariantes 9/0/0 | OK | Pendiente |
-| `/reload` con llave activa (dev.3, Reposo de los Reyes +13): `recovered=true`, elapsed 4:08 y 5:08 un minuto después (continuidad del servidor), fuerzas 166/608 = 27.30 %, sin stale, adapterErrors=0 | OK | Pendiente |
-| TrackerState RUNNING (dev.3): 66/608 = 10.86 %, bosses 0/4, paridad sin DIFF, coincide con el tracker de Blizzard (27.30 % tras reload) | OK | Pendiente |
-| TrackerState RUNNING → COMPLETED + Bug Report final (dev.3) | **Pendiente** | Pendiente |
-| Taint baseline tras `/reload` (`/emp dev blizzard` → `tainted=none`) | Pendiente | Pendiente |
+| Carga del addon, APIs y capacidades | Retail validado | No probado en PTR |
+| Llave activa: mapa 249, nivel 6, límite 1980 | Retail validado | No probado en PTR |
+| Fuerzas no nulas: `quantity=23` (% entero), `quantityString="144%"` (recuento), `totalQuantity=608` → 144/608 = 23.684 % | Retail validado | No probado en PTR |
+| Bosses 1/4 (primero completado) | Retail validado | No probado en PTR |
+| Paridad adaptador vs 1.0 | Retail validado, sin DIFF (dev.2 y dev.4) | No probado en PTR |
+| Final de llave (1.0): RUNNING → COMPLETED, historial una vez, 0 duplicados, 0 errores, invariantes 9/0/0 | Retail validado (dev.2 y dev.4) | No probado en PTR |
+| `/reload` con llave activa (dev.3, Reposo de los Reyes +13): `recovered=true`, elapsed 4:08 y 5:08 un minuto después, fuerzas 166/608 = 27.30 %, sin stale, adapterErrors=0 | Retail validado | No probado en PTR |
+| TrackerState RUNNING (dev.3): 66/608 = 10.86 %, bosses 0/4, paridad sin DIFF, coincide con el tracker de Blizzard | Retail validado | No probado en PTR |
+| Capacidades explícitas (dev.4): `requiredMissing=none optionalMissing=none legacyFallbacksAbsent=1` | Retail validado | No probado en PTR |
+| Arranque transitorio (dev.4): `ACTIVE_WITHOUT_FORCES` resuelto en ~1.0 s, `ACTIVE_WITHOUT_TIMER` en ~8.6 s, sin avisos persistentes | Retail validado | No probado en PTR |
+| TrackerState RUNNING → COMPLETED (dev.4, Altar de Colmillos 588 +12, 29:43/30:00, 9 muertes, 135 s): llega a COMPLETED, pero congela `bosses=2/3` con `forces stale=true bosses stale=true` | **Fallo encontrado** → corregido en dev.5 | No probado en PTR |
+| Convergencia del final (dev.5): `completionConverged=true` y `bosses=N/N`, o `completionCriteriaIncomplete=true` sin inventar valores; historial una vez | **Pendiente (Retail)** | No probado en PTR |
+| Sonda del tracker de Blizzard: `enhanceable=true tainted=none` | Retail validado (dev.4, sesión normal) | No probado en PTR |
+| Taint baseline tras `/reload` con llave activa (`/emp dev blizzard`) | Pendiente (Retail) | No probado en PTR |
 
-Un dato validado en Retail **no** cuenta como validado en PTR.
+## Compuertas de BlizzardTrackerEnhancer
 
-## Compuertas de BlizzardTrackerEnhancer (fase 7)
-No se implementa ningún hook hasta cumplir **las tres**:
-1. Prueba de recuperación con `/reload` en llave activa. (Retail: OK)
-2. Fuerzas no nulas confirmadas en PTR 12.1.5.69594.
-3. Línea base de taint en runtime tras `/reload`.
+Revisadas el 2026-09-16 con la política Retail-first. Antes de escribir hooks:
+1. Recuperación con `/reload` en llave activa. **Retail: OK (dev.3).**
+2. ~~Fuerzas no nulas confirmadas en PTR 12.1.5.69594.~~ Sustituida por:
+   fuerzas no nulas confirmadas en Retail. **Retail: OK.** PTR queda como
+   validación opcional.
+3. TrackerState estable de punta a punta, incluido el final de llave:
+   **dev.5 en Retail pendiente** (convergencia del final).
+4. Línea base de taint en runtime tras `/reload` (`tainted=none`). Pendiente en
+   Retail; se puede recoger en la misma prueba que la compuerta 3.
+
+La falta de pruebas en PTR ya no bloquea la fase 3 (enhancer). Solo la bloquean
+las compuertas 3 y 4 en Retail. El diseño está listo para revisión en
+`docs/tracker/PHASE3_ENHANCER_DESIGN.md`; no hay código de hooks.
 
 ## Fuera de alcance
 - Rutas, pulls, MDT, navegación, placas, tácticas (→ MitzuRouteArrows).
@@ -32,20 +67,32 @@ No se implementa ningún hook hasta cumplir **las tres**:
   Objective Tracker, timer duplicado, ventana M+ separada.
 
 ## Fases
-| Fase | Contenido | Estado |
+
+Numeración del sprint (2026-09-16): **Fase 2** = TrackerState, **Fase 2.1** =
+convergencia del final, **Fase 3** = BlizzardTrackerEnhancer (agrupa las filas
+3-7 de la tabla original, que se conserva debajo como referencia).
+
+| Fase sprint | Contenido | Estado |
 |---|---|---|
 | 0 | Auditoría, rama, baseline | Hecho |
-| 1 | TrackerAdapter + capacidades | Hecho; validado en llave real de **Retail** 12.1.0 |
-| 1b | Auditoría del Objective Tracker (fuente 12.1.5) + `BlizzardTrackerProbe` solo lectura | Hecho; pendiente confirmación en PTR |
-| 2 | TrackerState (snapshot normalizado, eventos, throttling) — `docs/tracker/TRACKER_STATE.md` | RUNNING y `/reload` validados en Retail (dev.3); falta COMPLETED |
-| 3 | Enemy Forces en TrackerState | |
-| 4 | Boss state | |
-| 5 | PaceEngine | |
-| 6 | PredictionEngine sobre TrackerState (+3/+2/+1/OVERTIME, ETA, margen, confianza) | |
-| 7 | **BlizzardTrackerEnhancer** (interfaz principal): fuerzas precisas en la barra nativa, umbrales +3/+2 en el bloque M+, predicción/ETA/pace; capability check con fallback al HUD legacy | |
-| 8 | Configuración mínima (activar mejoras, qué mostrar, opción LEGACY/fallback) + migración versionada de SavedVariables | |
+| 1 | TrackerAdapter + capacidades | Hecho; Retail validado |
+| 1b | Auditoría del Objective Tracker + `BlizzardTrackerProbe` solo lectura | Hecho; Retail validado (`enhanceable=true`) |
+| 2 | TrackerState (snapshot normalizado, eventos, throttling) — `TRACKER_STATE.md` | Hecho; RUNNING, `/reload` y arranque Retail validados |
+| 2.1 | Convergencia del final de llave (dev.5) | Implementado y testeado; **pendiente llave real en Retail** |
+| 3 | BlizzardTrackerEnhancer + pace/predicción sobre TrackerState — `PHASE3_ENHANCER_DESIGN.md` | Diseño listo para revisión; sin implementar |
+
+Tabla original (referencia):
+
+| Fase | Contenido | Estado |
+|---|---|---|
+| 3 | Enemy Forces en TrackerState | Cubierto por la fase 2 |
+| 4 | Boss state | Cubierto por la fase 2 / 2.1 |
+| 5 | PaceEngine | → fase 3 del sprint |
+| 6 | PredictionEngine sobre TrackerState (+3/+2/+1/OVERTIME, ETA, margen, confianza) | → fase 3 del sprint |
+| 7 | **BlizzardTrackerEnhancer** (interfaz principal) | → fase 3 del sprint |
+| 8 | Configuración mínima + migración versionada de SavedVariables | |
 | 9 | Bug Report 1.1 | |
-| 10 | Llave completa en PTR | |
+| 10 | Llave completa de validación final (Retail; PTR opcional) | |
 | 11 | Hardening / regresión / taint | |
 | 12 | 1.1.0-beta.1 candidata | |
 
