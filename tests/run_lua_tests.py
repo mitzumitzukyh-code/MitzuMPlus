@@ -13,7 +13,22 @@ from lupa import lua51
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIMES = [("5.4", LuaRuntime, ""), ("5.1", lua51.LuaRuntime, "table.unpack = table.unpack or unpack")]
+# WoW's Lua 5.1 xpcall forwards extra arguments to the called function (Ace3's
+# safecall relies on it); stock 5.1 drops them, which silently skipped
+# AceAddon OnInitialize (no MitzuMPlus.db) on the 5.1 run until 1.1.0-dev.5.
+LUA51_PRELUDE = """
+table.unpack = table.unpack or unpack
+do
+    local base = xpcall
+    xpcall = function(f, handler, ...)
+        local n = select('#', ...)
+        if n == 0 then return base(f, handler) end
+        local args = { ... }
+        return base(function() return f(unpack(args, 1, n)) end, handler)
+    end
+end
+"""
+RUNTIMES = [("5.4", LuaRuntime, ""), ("5.1", lua51.LuaRuntime, LUA51_PRELUDE)]
 
 
 def main() -> None:
