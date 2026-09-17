@@ -53,8 +53,9 @@ MitzuMPlusDB_Defaults = {
             textScale        = 1.15,
             debugMode        = false,
 
-            -- ── v7.14.0: Key Prediction HUD (modules/KeyPredictionHUD.lua) ─
-            -- El único HUD en vivo: solo predice +3/+2/+1/OVERTIME.
+            -- ── Tracker en vivo (modules/Tracker/MitzuTracker.lua) ───────
+            -- Nacio en v7.14.0 como Key Prediction HUD; desde 1.1.0-dev.6 lo
+            -- usa Mitzu Tracker con las mismas claves (sin migracion).
             -- Los ajustes históricos retirados no se leen ni se borran.
             hud = {
                 enabled        = true,

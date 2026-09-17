@@ -25,6 +25,12 @@ MitzuMPlus.Constants = {
     MAX_RUNS_STORED = 1000,
     DEFAULT_PAGE_SIZE = 20,
 
+    -- -- Mejora de piedra -------------------------------------------------------
+    -- Fraccion del limite de tiempo que da +2 / +3. Unica definicion: la usan
+    -- KeystoneTracker (umbrales del motor de prediccion) y TrackerPresenter.
+    KEY_UPGRADE_PLUS2_RATIO = 0.8,
+    KEY_UPGRADE_PLUS3_RATIO = 0.6,
+
     -- -- Tiempos del sistema ---------------------------------------------------
     -- FIX BUG-3: En Lua, date("%w") devuelve 0=Dom,1=Lun,2=Mar,3=Mié,4=JUE.
     -- El valor anterior era 4 (Jueves). Corregido a 3 (Miércoles).

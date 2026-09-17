@@ -12,7 +12,7 @@ BINDING_HEADER_MITZUMPLUS = "MitzuMPlus"
 BINDING_NAME_MITZUMPLUS_TOGGLE     = "Toggle MitzuMPlus Window"
 BINDING_NAME_MITZUMPLUS_HISTORIAL  = "Open History Tab"
 BINDING_NAME_MITZUMPLUS_STATS      = "Open Statistics Tab"
-BINDING_NAME_MITZUMPLUS_OVERLAY    = "Toggle Key Prediction HUD"
+BINDING_NAME_MITZUMPLUS_OVERLAY    = "Toggle Mitzu Tracker"
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- BINDING ACTIONS (called from Bindings.xml)
@@ -42,7 +42,7 @@ end
 
 function MitzuMPlus_OverlayBinding()
     local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
-    local HUD = MitzuMPlus and MitzuMPlus.KeyPredictionHUD
+    local HUD = MitzuMPlus and MitzuMPlus.MitzuTracker
     if HUD then
         HUD:SetEnabled(not HUD:IsEnabled())
     end

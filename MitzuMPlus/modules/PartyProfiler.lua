@@ -123,10 +123,15 @@ local function specInfo(specIndexOrID, esIndice)
         if not ok then return nil end
         return id, name, role
     end
-    local fn = CSI and CSI.GetSpecializationInfoByID
-    if type(fn) == "function" then
-        local ok, id, name, _, _, role = pcall(fn, specIndexOrID)
-        if ok then return id, name, role end
+    -- La version por ID vive como global en Retail; C_SpecializationInfo puede
+    -- no traerla. Se prueban las dos.
+    local candidates = { CSI and CSI.GetSpecializationInfoByID or false, rawget(_G, "GetSpecializationInfoByID") or false }
+    for i = 1, 2 do
+        local fn = candidates[i]
+        if type(fn) == "function" then
+            local ok, id, name, _, _, role = pcall(fn, specIndexOrID)
+            if ok and id then return id, name, role end
+        end
     end
     return nil
 end
@@ -169,11 +174,19 @@ end
 -- El rol asignado y el rol que implica la spec son cosas distintas y se
 -- guardan las dos. Un tanque sin rol asignado en el buscador sigue siendo un
 -- tanque, y mezclarlos haría imposible saber cuál falló.
-local function rolesDe(unit, esJugador)
+--
+-- 1.1.0-dev.6: el rol que implica la spec tambien se saca para el resto del
+-- grupo en cuanto su specID es conocido (GetSpecializationInfoByID no necesita
+-- inspeccion). Antes solo el jugador lo tenia, y un grupo premade sin roles
+-- asignados quedaba con effectiveRole=NONE aunque las specs fueran KNOWN.
+local function rolesDe(unit, esJugador, specID)
     local asignado = leer(UnitGroupRolesAssigned, unit) or "NONE"
     local specRole
     if esJugador then
         local _, _, role = PartyProfiler:GetPlayerSpec()
+        specRole = role
+    elseif specID then
+        local _, _, role = specInfo(specID, false)
         specRole = role
     end
     local efectivo = asignado
@@ -198,10 +211,19 @@ function PartyProfiler:Refresh(motivo)
                 local classFile, classID = nil, nil
                 if type(UnitClassBase) == "function" then
                     local ok, cf, cid = pcall(UnitClassBase, unit)
-                    if ok then classFile, classID = cf, cid end
+                    if ok and type(cf) == "string" then
+                        classFile, classID = cf, cid
+                    end
                 end
-
-                local asignado, specRole, efectivo = rolesDe(unit, esJugador)
+                -- Red de seguridad: UnitClass devuelve el classFile en segundo lugar.
+                if not classFile and type(UnitClass) == "function" then
+                    local ok, _, cf, cid = pcall(UnitClass, unit)
+                    if ok and type(cf) == "string" then classFile, classID = cf, classID or cid end
+                end
+                if classFile and _issecretvalue then
+                    local okS, s = pcall(_issecretvalue, classFile)
+                    if okS and s then classFile, classID = nil, nil end
+                end
 
                 local specID, specName, specState
                 if esJugador then
@@ -215,6 +237,7 @@ function PartyProfiler:Refresh(motivo)
                         specState = PENDING
                     end
                 end
+                local asignado, specRole, efectivo = rolesDe(unit, esJugador, specID)
 
                 local anterior = PartyContext.members[guid]
                 nuevos[guid] = {
@@ -409,9 +432,13 @@ function PartyProfiler:OnInspectReady(guid)
             local m = PartyContext.members[guid]
             if m then
                 m.specID = specID
-                local _, nombre = specInfo(specID, false)
+                local _, nombre, role = specInfo(specID, false)
                 m.specName  = nombre
                 m.specState = KNOWN
+                m.specRole  = role
+                if (m.assignedRole == nil or m.assignedRole == "NONE") and role then
+                    m.effectiveRole = role
+                end
             end
             local bus = MitzuMPlus.EventBus
             if bus then bus:Emit("MITZU_MEMBER_SPEC_UPDATED", guid, specID) end

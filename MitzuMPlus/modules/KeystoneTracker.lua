@@ -150,8 +150,9 @@ function KeystoneTracker:Start(run)
     self._bosses        = {}
     self._enemyForces   = { current = 0, total = 0, pct = 0, quantityString = "" }
     self._timeLimit     = (run.timeLimit or 0)
-    self._plus2Time     = math.floor(self._timeLimit * 0.8)
-    self._plus3Time     = math.floor(self._timeLimit * 0.6)
+    local C = MitzuMPlus.Constants or {}
+    self._plus2Time     = math.floor(self._timeLimit * (C.KEY_UPGRADE_PLUS2_RATIO or 0.8))
+    self._plus3Time     = math.floor(self._timeLimit * (C.KEY_UPGRADE_PLUS3_RATIO or 0.6))
     self._deathCount    = 0
     self._deathTimeLost = 0
     self._startTime     = run.startTime or 0

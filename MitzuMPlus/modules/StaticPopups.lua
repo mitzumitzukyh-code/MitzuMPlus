@@ -81,8 +81,8 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
             if fontTheme and fontTheme.RefreshFonts then
                 fontTheme:RefreshFonts()
             end
-            if MitzuMPlus.KeyPredictionHUD and MitzuMPlus.KeyPredictionHUD.ApplySettings then
-                MitzuMPlus.KeyPredictionHUD:ApplySettings()
+            if MitzuMPlus.MitzuTracker and MitzuMPlus.MitzuTracker.ApplySettings then
+                MitzuMPlus.MitzuTracker:ApplySettings()
             end
 
             local lib = LibStub and LibStub("LibDBIcon-1.0", true)

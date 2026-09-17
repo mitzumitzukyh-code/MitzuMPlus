@@ -489,7 +489,7 @@ function MitzuMPlus:HandleSlashCommand(input)
     end
 
     if cmd == "tracker" or cmd == "hud" then
-        local HUD = self.KeyPredictionHUD
+        local HUD = self.MitzuTracker
         if not HUD then
             self:Print("|cFFff5555Tracker de predicción no disponible.|r")
             return

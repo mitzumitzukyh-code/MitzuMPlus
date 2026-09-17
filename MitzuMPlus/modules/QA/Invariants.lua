@@ -17,7 +17,7 @@ local function result(name, status, detail)
 end
 
 function Inv:Gather()
-    local DC, HUD = MitzuMPlus.DungeonContext, MitzuMPlus.KeyPredictionHUD
+    local DC, HUD = MitzuMPlus.DungeonContext, MitzuMPlus.MitzuTracker
     local state = call(DC, "GetState")
     local challenge = call(DC, "IsChallengeActive")
     local displayed = call(HUD, "GetDisplayed") or {}
@@ -71,10 +71,11 @@ function Inv:Evaluate(st)
         runningConsistent and "PASS" or "FAIL",
         st.lifecycle == "RUNNING" and st.challengeActive ~= true and "challenge=false" or nil)
 
+    -- COMPLETING mantiene visible el ultimo estado mientras converge el final.
     local validTrackerContext = st.trackerPreview == true
         or st.trackerVisible ~= true
         or st.lifecycle == "RUNNING"
-        or (st.lifecycle == "COMPLETED" and st.trackerMode == "SUMMARY")
+        or (st.lifecycle == "COMPLETED" and (st.trackerMode == "SUMMARY" or st.trackerMode == "COMPLETING"))
     out[#out + 1] = result("TRACKER_ONLY_DURING_VALID_CONTEXT",
         validTrackerContext and "PASS" or "FAIL",
         validTrackerContext and nil or ("lifecycle=" .. tostring(st.lifecycle)))

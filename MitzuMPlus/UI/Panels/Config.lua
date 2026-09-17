@@ -300,11 +300,11 @@ function PanelConfig:Create(parent)
         end)
     place(secGeneral)
 
-    local function HUD() return MitzuMPlus.KeyPredictionHUD end
+    local function HUD() return MitzuMPlus.MitzuTracker end
     local function HS() local h = HUD(); return h and h:Settings() or {} end
     local secTracker = MakeSection(content, "TRACKER M+", 430)
     MakeToggleRow(secTracker, "Activado",
-        "Muestra únicamente la proyección +3, +2, +1 u OVERTIME durante la llave",
+        "Tracker de la llave: tiempo, umbrales +3/+2/+1, ritmo, fuerzas, jefes y muertes",
         function() return HS().enabled ~= false end,
         function(v) if HUD() then HUD():SetEnabled(v) end end)
     MakeToggleRow(secTracker, "Bloquear posición",

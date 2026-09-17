@@ -82,11 +82,15 @@ SECTIONS[#SECTIONS + 1] = { "PARTY", function(add)
                             "rosterRefreshCount", "lastRefreshReason", "inspectPending", "inspectActive" }) do
         add(key, diag[key])
     end
+    -- PartyProfiler guarda classFile / effectiveRole / assignedRole. Hasta
+    -- 1.1.0-dev.5 aqui se leian `class` y `role`, que no existen: el informe
+    -- decia class=nil role=nil con los datos presentes.
     for _, member in ipairs(list) do
         local token = tostring(member.unitToken or "unit?"):match("^%a+%d*$") or "unit?"
-        add(token, string.format("class=%s role=%s spec=%s state=%s",
-            safe().Text(member.class), safe().Text(member.role),
-            safe().Text(member.specID), safe().Text(member.specState)))
+        add(token, string.format("class=%s role=%s spec=%s state=%s assigned=%s specRole=%s",
+            safe().Text(member.classFile), safe().Text(member.effectiveRole),
+            safe().Text(member.specID), safe().Text(member.specState),
+            safe().Text(member.assignedRole), safe().Text(member.specRole)))
     end
 end }
 
@@ -134,10 +138,12 @@ SECTIONS[#SECTIONS + 1] = { "HISTORY", function(add)
     add("nextRunID", MitzuMPlus.db and MitzuMPlus.db.global and MitzuMPlus.db.global.nextRunID)
 end }
 
-SECTIONS[#SECTIONS + 1] = { "TRACKER", function(add)
-    local HUD = MitzuMPlus.KeyPredictionHUD
-    local fields = call(HUD, "DiagnosticFields")
-    if type(fields) ~= "table" then add("module", HUD and "AVAILABLE" or "UNAVAILABLE") return end
+-- 1.1.0-dev.6: el tracker visual (Mitzu Tracker). Lo que se PINTO, para
+-- contrastarlo con [TRACKER STATE] y [PREDICTION] sin pedir mas comandos.
+SECTIONS[#SECTIONS + 1] = { "TRACKER VISUAL", function(add)
+    local MT = MitzuMPlus.MitzuTracker
+    local fields = call(MT, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", MT and "ERROR" or "UNAVAILABLE") return end
     for _, pair in ipairs(fields) do
         if type(pair) == "table" then add(pair[1], pair[2]) end
     end
@@ -263,7 +269,7 @@ function BR:SummaryLines()
     return {
         string.format("v%s · lifecycle=%s · tracker=%s", safe().Text(MitzuMPlus.VERSION),
             safe().Text(call(MitzuMPlus.DungeonContext, "GetState")),
-            safe().Text(call(MitzuMPlus.KeyPredictionHUD, "GetMode"))),
+            safe().Text(call(MitzuMPlus.MitzuTracker, "GetMode"))),
         string.format("invariants PASS=%s WARN=%s FAIL=%s · errors=%s · events=%s",
             safe().Text(totals.PASS or 0), safe().Text(totals.WARN or 0), safe().Text(totals.FAIL or 0),
             safe().Text(call(MitzuMPlus.ErrorLogger, "Count")),

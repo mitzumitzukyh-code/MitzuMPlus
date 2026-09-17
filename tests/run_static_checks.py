@@ -63,13 +63,16 @@ def check_product_boundary(c):
     toc = read(TOC)
     for word in ["MythicDungeonTools", "MitzuRouteArrows", "AdaptiveRoute", "MDTImporter", "RouteProgress"]:
         c.check(word not in toc, f"{word} remains in the runtime manifest")
-    hud = read(ADDON / "modules" / "KeyPredictionHUD.lua")
-    code = re.sub(r"--[^\n]*", "", hud)
-    for access in ["MitzuMPlus.RouteProgress", "MitzuMPlus.RouteManager", "MitzuMPlus.RouteAdvisor",
-                   "MitzuMPlus.CoachAdvice", "C_NamePlate", "CombatLogGetCurrentEventInfo"]:
-        c.check(access not in code, f"tracker reads retired/unreliable source: {access}")
-    for result in ['["+3"]', '["+2"]', '["+1"]', '["FUERA"] = "OVERTIME"']:
-        c.check(result in hud, f"tracker result contract missing {result}")
+    for name in TRACKER_VISUAL_FILES:
+        code = re.sub(r"--[^\n]*", "", read(ADDON / "modules" / "Tracker" / name))
+        for access in ["MitzuMPlus.RouteProgress", "MitzuMPlus.RouteManager", "MitzuMPlus.RouteAdvisor",
+                       "MitzuMPlus.CoachAdvice", "C_NamePlate", "CombatLogGetCurrentEventInfo", "MDT"]:
+            c.check(access not in code, f"tracker {name} reads retired/unreliable source: {access}")
+    presenter = read(ADDON / "modules" / "Tracker" / "TrackerPresenter.lua")
+    for result in ['["+3"] = "+3"', '["+2"] = "+2"', '["+1"] = "+1"', '["FUERA"] = "OVERTIME"']:
+        c.check(result in presenter, f"tracker result contract missing {result}")
+    c.check(not (ADDON / "modules" / "KeyPredictionHUD.lua").exists(),
+            "retired KeyPredictionHUD.lua is back: Mitzu Tracker replaced it in 1.1.0-dev.6")
 
 def check_ui_and_commands(c):
     tabs = read(ADDON / "UI" / "Tabs.lua")
@@ -195,18 +198,10 @@ def check_version_consistency(c):
     for asset in ["README.md", "CURSEFORGE_PAGE.md", "assets/MitzuMPlus_Logo_512.png"]:
         c.check((ROOT / "release" / asset).is_file(), f"release material missing: release/{asset}")
 
-# KeyPredictionHUD is the 1.0 floating HUD. In 1.1 it is kept only as a
-# legacy/rollback fallback: "keep for rollback, do not develop further". All new
-# visual work goes to BlizzardTrackerEnhancer. The file must stay byte-identical
-# (line endings normalized) to v1.0.0-beta.1; changing this hash requires an
-# explicit decision recorded in docs/tracker/ROADMAP.md.
-LEGACY_HUD_SHA256 = "b1bf375c1dcb2f2bfb66e2f6bc024aca4c3f7e88b1c61eb5818a2530a509f6d9"
-
-def check_legacy_hud_frozen(c):
-    import hashlib
-    data = (ADDON / "modules" / "KeyPredictionHUD.lua").read_bytes().replace(b"\r\n", b"\n")
-    c.check(hashlib.sha256(data).hexdigest() == LEGACY_HUD_SHA256,
-            "KeyPredictionHUD.lua changed: the legacy HUD is frozen at v1.0.0-beta.1 (see docs/tracker/ROADMAP.md)")
+# KeyPredictionHUD (the 1.0 floating HUD, frozen at v1.0.0-beta.1) was retired
+# in 1.1.0-dev.6 by user decision: Mitzu Tracker replaces it and reuses its
+# settings. Rollback lives in git (tag v1.0.0-beta.1). See docs/tracker/ROADMAP.md.
+TRACKER_VISUAL_FILES = ["TrackerPresenter.lua", "TrackerView.lua", "MitzuTracker.lua"]
 
 # Architecture: only TrackerAdapter talks to Blizzard's Mythic+ APIs. The layers
 # above it (state, pace, prediction, enhancer) consume normalized data only.
@@ -214,7 +209,7 @@ BLIZZARD_API_TOKENS = ["C_ChallengeMode", "C_ScenarioInfo", "C_Scenario", "GetWo
                        "GetWorldElapsedTimers", "quantityString"]
 
 def check_tracker_layers(c):
-    for name in ["TrackerState.lua"]:
+    for name in ["TrackerState.lua"] + TRACKER_VISUAL_FILES:
         path = ADDON / "modules" / "Tracker" / name
         code = re.sub(r"--[^\n]*", "", read(path))
         for token in BLIZZARD_API_TOKENS:
@@ -225,7 +220,6 @@ def main():
     check_tracker_layers(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
     check_savedvariables_and_media(c); check_icon_textures(c); check_no_emoji(c); check_version_consistency(c)
-    check_legacy_hud_frozen(c)
     if c.failures:
         print(f"Static: {c.count} checks, {len(c.failures)} failures ({len(lua_files)} product Lua files parsed)")
         for failure in c.failures: print(failure)
