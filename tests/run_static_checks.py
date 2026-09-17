@@ -201,7 +201,60 @@ def check_version_consistency(c):
 # KeyPredictionHUD (the 1.0 floating HUD, frozen at v1.0.0-beta.1) was retired
 # in 1.1.0-dev.6 by user decision: Mitzu Tracker replaces it and reuses its
 # settings. Rollback lives in git (tag v1.0.0-beta.1). See docs/tracker/ROADMAP.md.
-TRACKER_VISUAL_FILES = ["TrackerPresenter.lua", "TrackerView.lua", "MitzuTracker.lua"]
+TRACKER_VISUAL_FILES = ["TrackerPresenter.lua", "TrackerView.lua", "BlizzardTrackerEnhancer.lua", "MitzuTracker.lua"]
+
+# 1.1.0-dev.7: during a real key Mitzu lives inside Blizzard's Mythic+ block.
+# The enhancer may only READ Blizzard frames (references named blizz*), install
+# the two documented post-hooks and move/show its own elements.
+ENHANCER_ALLOWED_HOOKS = {"Activate", "EndLayout"}
+ENHANCER_OWN_PARENTED = {"el.root", "el.forcesRoot"}
+ENHANCER_FORBIDDEN = ["HookScript", "SetScript", "OnUpdate", "EnableMouse", "RegisterForDrag", "StartMoving",
+                      "ObjectiveTrackerFrame", "SetHeightModifier", "MarkDirty", "hooksecurefunc(\"",
+                      "RouteArrows", "MDT", "C_AddOns"]
+RUN_MODES = ["PENDING", "RUNNING", "COMPLETING"]
+
+
+def check_enhancer_safety(c):
+    path = ADDON / "modules" / "Tracker" / "BlizzardTrackerEnhancer.lua"
+    name = relative(path)
+    code = re.sub(r"--[^\n]*", "", read(path))
+    for token in ENHANCER_FORBIDDEN:
+        c.check(token not in code, f"{name}: forbidden in the enhancer: {token}")
+    # Blizzard references are only read: Get*/Is* methods.
+    for method in re.findall(r"\bblizz\w*\s*:\s*(\w+)\s*\(", code):
+        c.check(method.startswith(("Get", "Is")), f"{name}: mutating call on a Blizzard frame: :{method}()")
+    # No writes into Blizzard tables.
+    c.check(re.search(r"\bblizz\w*(\.\w+|\[[^\]]*\])+\s*=(?!=)", code) is None,
+            f"{name}: assignment into a Blizzard frame field")
+    # Hooks: only hooksecurefunc(table, "Activate"|"EndLayout", fn).
+    hooks = re.findall(r"\bhook\s*\(\s*blizz\w+\s*,\s*\"(\w+)\"", code)
+    c.check(len(hooks) == 2 and set(hooks) == ENHANCER_ALLOWED_HOOKS,
+            f"{name}: unexpected post-hooks {hooks}")
+    c.check(code.count("hook(") == len(hooks), f"{name}: hook call without a documented target")
+    # Only Mitzu's own frames are re-parented.
+    for receiver in re.findall(r"([\w\.]+)\s*:\s*SetParent\s*\(", code):
+        c.check(receiver in ENHANCER_OWN_PARENTED, f"{name}: SetParent on a frame Mitzu does not own: {receiver}")
+    for global_name in re.findall(r"rawget\(\s*_G\s*,\s*\"(\w+)\"", code):
+        c.check(global_name in {"ScenarioObjectiveTracker", "hooksecurefunc", "CreateFrame"},
+                f"{name}: unexpected global read: {global_name}")
+
+    # The floating view never knows about Blizzard's tracker; the presenter has no frames.
+    view = re.sub(r"--[^\n]*", "", read(ADDON / "modules" / "Tracker" / "TrackerView.lua"))
+    for token in ["ScenarioObjectiveTracker", "hooksecurefunc", "ChallengeModeBlock"]:
+        c.check(token not in view, f"TrackerView.lua must stay independent of Blizzard's tracker: {token}")
+    presenter = re.sub(r"--[^\n]*", "", read(ADDON / "modules" / "Tracker" / "TrackerPresenter.lua"))
+    for token in ["CreateFrame", "UIParent", "hooksecurefunc", "ScenarioObjectiveTracker", ":SetText("]:
+        c.check(token not in presenter, f"TrackerPresenter.lua must stay pure: {token}")
+
+    # No second run HUD: live key modes are routed to the embedded enhancer only.
+    tracker = read(ADDON / "modules" / "Tracker" / "MitzuTracker.lua")
+    block = re.search(r"MT\.RENDER_ROUTE\s*=\s*\{(.*?)\}", tracker, re.DOTALL)
+    c.check(block is not None, "MitzuTracker.lua: RENDER_ROUTE table missing")
+    routes = dict(re.findall(r"(\w+)\s*=\s*\"(\w+)\"", block.group(1))) if block else {}
+    for mode in RUN_MODES:
+        c.check(routes.get(mode) == "EMBEDDED", f"MitzuTracker.lua: {mode} must render EMBEDDED, not {routes.get(mode)}")
+    c.check(set(k for k, v in routes.items() if v == "FLOATING") <= {"PREVIEW", "SUMMARY"},
+            f"MitzuTracker.lua: floating view allowed only for PREVIEW/SUMMARY: {routes}")
 
 # Architecture: only TrackerAdapter talks to Blizzard's Mythic+ APIs. The layers
 # above it (state, pace, prediction, enhancer) consume normalized data only.
@@ -217,7 +270,7 @@ def check_tracker_layers(c):
 
 def main():
     c = Checks(); lua_files = compile_lua(c)
-    check_tracker_layers(c)
+    check_tracker_layers(c); check_enhancer_safety(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
     check_savedvariables_and_media(c); check_icon_textures(c); check_no_emoji(c); check_version_consistency(c)
     if c.failures:

@@ -49,7 +49,7 @@ test("full TOC loads with the adapter and no load/runtime errors", function()
         equal(#env.errors, 0, errorsText(env))
         local MP = _G.MitzuMPlus
         truthy(MP.TrackerAdapter, "TrackerAdapter registered")
-        equal(MP.VERSION, "1.1.0-dev.6")
+        equal(MP.VERSION, "1.1.0-dev.7")
         equal((MP.TrackerAdapter:IsAvailable()), true)
         local loaded = table.concat(env.coreFiles, "\n")
         local a = loaded:find("RuntimeCapabilities.lua", 1, true)

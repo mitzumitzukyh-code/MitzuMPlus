@@ -42,6 +42,7 @@ function Inv:Gather()
         trackerVisible = call(HUD, "IsVisible"),
         trackerPreview = call(HUD, "IsPreview"),
         trackerMode = call(HUD, "GetMode"),
+        trackerFloatingVisible = call(HUD, "IsFloatingVisible"),
         trackerPrediction = displayed.prediction or "NONE",
         enginePrediction = snapshot and snapshot.result or nil,
         duplicateSessions = duplicateSessions,
@@ -79,6 +80,15 @@ function Inv:Evaluate(st)
     out[#out + 1] = result("TRACKER_ONLY_DURING_VALID_CONTEXT",
         validTrackerContext and "PASS" or "FAIL",
         validTrackerContext and nil or ("lifecycle=" .. tostring(st.lifecycle)))
+
+    -- dev.7: durante una llave real no existe ventana flotante de Mitzu; los
+    -- datos van dentro del tracker de Blizzard. Solo vista previa o resumen.
+    local floatingDuringKey = st.trackerFloatingVisible == true and st.trackerPreview ~= true
+        and (st.lifecycle == "RUNNING" or st.trackerMode == "RUNNING" or st.trackerMode == "PENDING"
+             or st.trackerMode == "COMPLETING")
+    out[#out + 1] = result("NO_FLOATING_HUD_DURING_KEY",
+        floatingDuringKey and "FAIL" or "PASS",
+        floatingDuringKey and ("mode=" .. tostring(st.trackerMode)) or nil)
 
     out[#out + 1] = result("PREDICTION_VALID_ENUM",
         VALID[tostring(st.trackerPrediction)] and "PASS" or "FAIL",

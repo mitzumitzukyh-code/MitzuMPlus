@@ -500,7 +500,11 @@ function MitzuMPlus:HandleSlashCommand(input)
         elseif sub == "off" then
             HUD:SetEnabled(false)
         elseif sub == "preview" or sub == "test" then
-            HUD:SetPreview(value ~= "off")
+            local _, why = HUD:SetPreview(value ~= "off")
+            if why == "KEY_IN_PROGRESS" then
+                self:Print("|cFFff9922Vista previa no disponible durante una llave:|r el tracker de Blizzard ya muestra los datos de Mitzu.")
+                return
+            end
         elseif sub == "lock" or sub == "unlock" then
             HUD:SetOption("locked", sub == "lock")
         elseif sub == "scale" or sub == "alpha" then

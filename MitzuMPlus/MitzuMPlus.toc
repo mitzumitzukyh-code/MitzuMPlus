@@ -3,7 +3,7 @@
 ## Notes: Mythic+ history, statistics, player analysis and live key prediction.
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzuki Mizt
-## Version: 1.1.0-dev.6
+## Version: 1.1.0-dev.7
 ## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO
@@ -99,11 +99,13 @@ UI\Panels\Historial.lua
 UI\Panels\Stats.lua
 UI\Panels\Players.lua
 UI\Panels\Config.lua
-# Mitzu Tracker (1.1.0-dev.6): el tracker en vivo durante la llave.
-# TrackerState + PredictionEngine -> Presenter (modelo puro) -> View (frames).
-# Sustituye a la ventana provisional de 1.0 (KeyPredictionHUD) con sus ajustes.
+# Mitzu Tracker: TrackerState + PredictionEngine -> Presenter (modelo puro).
+# Llave real -> BlizzardTrackerEnhancer (integrado en el tracker de Blizzard).
+# Vista previa / resumen -> TrackerView (ventana flotante).
 modules\Tracker\TrackerPresenter.lua
 modules\Tracker\TrackerView.lua
+# BlizzardTrackerEnhancer (1.1.0-dev.7): datos de Mitzu dentro del bloque M+ de Blizzard.
+modules\Tracker\BlizzardTrackerEnhancer.lua
 modules\Tracker\MitzuTracker.lua
 # Bug Report V2: invariantes e informe de QA.
 modules\QA\Invariants.lua

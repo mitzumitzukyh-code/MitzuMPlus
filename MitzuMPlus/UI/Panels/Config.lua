@@ -304,11 +304,31 @@ function PanelConfig:Create(parent)
     local function HS() local h = HUD(); return h and h:Settings() or {} end
     local secTracker = MakeSection(content, "TRACKER M+", 430)
     MakeToggleRow(secTracker, "Activado",
-        "Tracker de la llave: tiempo, umbrales +3/+2/+1, ritmo, fuerzas, jefes y muertes",
+        "Añade los datos de Mitzu al tracker de Mítica+ de Blizzard durante la llave",
         function() return HS().enabled ~= false end,
         function(v) if HUD() then HUD():SetEnabled(v) end end)
-    MakeToggleRow(secTracker, "Bloquear posición",
-        "Bloqueado no se arrastra ni intercepta clics",
+    MakeToggleRow(secTracker, "Mostrar ritmo",
+        "RITMO +3/+2/+1 del motor de predicción, junto al temporizador de Blizzard",
+        function() return HS().showPrediction ~= false end,
+        function(v) if HUD() then HUD():SetOption("showPrediction", v) end end)
+    MakeToggleRow(secTracker, "Mostrar tiempos de mejora",
+        "Tiempo restante para +3, +2 y +1 (los que quepan)",
+        function() return HS().showUpgradeTimes ~= false end,
+        function(v) if HUD() then HUD():SetOption("showUpgradeTimes", v) end end)
+    MakeToggleRow(secTracker, "Mostrar recuento de fuerzas",
+        "449 / 608 bajo la barra de fuerzas enemigas",
+        function() return HS().showForcesCount ~= false end,
+        function(v) if HUD() then HUD():SetOption("showForcesCount", v) end end)
+    MakeToggleRow(secTracker, "Mostrar fuerzas restantes",
+        "Cuánto falta para el 100 %",
+        function() return HS().showForcesRemaining ~= false end,
+        function(v) if HUD() then HUD():SetOption("showForcesRemaining", v) end end)
+    MakeToggleRow(secTracker, "Mostrar tiempo perdido por muertes",
+        "Penalización publicada por Blizzard junto a su contador de muertes",
+        function() return HS().showDeaths ~= false end,
+        function(v) if HUD() then HUD():SetOption("showDeaths", v) end end)
+    MakeToggleRow(secTracker, "Bloquear posición (vista previa)",
+        "La posición en la llave es la del tracker de Blizzard (Modo Edición)",
         function() return HS().locked == true end,
         function(v) if HUD() then HUD():SetOption("locked", v) end end)
     MakeToggleRow(secTracker, "Mostrar confianza",
@@ -316,10 +336,10 @@ function PanelConfig:Create(parent)
         function() return HS().showConfidence ~= false end,
         function(v) if HUD() then HUD():SetOption("showConfidence", v) end end)
     MakeToggleRow(secTracker, "Mostrar ETA",
-        "Muestra la hora estimada de finalización cuando es fiable",
+        "Hora estimada de finalización (vista previa y resumen)",
         function() return HS().showETA ~= false end,
         function(v) if HUD() then HUD():SetOption("showETA", v) end end)
-    MakeSliderRow(secTracker, "Escala  (%)", 60, 200,
+    MakeSliderRow(secTracker, "Escala  (%)  - integrado: 80-125", 60, 200,
         function() return math.floor(((tonumber(HS().scale) or 1) * 100) + 0.5) end,
         function(v) if HUD() then HUD():SetOption("scale", v / 100) end end)
     MakeSliderRow(secTracker, "Opacidad  (%)", 20, 100,

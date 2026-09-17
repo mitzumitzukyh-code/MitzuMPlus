@@ -12,7 +12,7 @@ _G.MitzuMPlus={VERSION="1.0.0-beta.1",db={global={runs={},nextRunID=1}},
     DungeonContext={GetState=function()return "OUTSIDE"end,IsChallengeActive=function()return false end},
     ChallengeClock={GetState=function()return "UNAVAILABLE"end},
     PartyProfiler={GetMembers=function()return{}end,GetRosterDiagnostics=function()return{expectedGroupSize=1,cachedSize=1,lastRosterAge=0}end},
-    MitzuTracker={GetMode=function()return "HIDDEN"end,IsVisible=function()return false end,IsPreview=function()return false end,GetDisplayed=function()return{prediction="NONE"}end,
+    MitzuTracker={GetMode=function()return "HIDDEN"end,IsVisible=function()return false end,IsPreview=function()return false end,IsFloatingVisible=function()return false end,GetDisplayed=function()return{prediction="NONE"}end,
         DiagnosticFields=function()return{{"mode","HIDDEN"},{"prediction","NONE"}}end},
     RuntimeCapabilities={Matrix=function()return{"challengeMode=AVAILABLE"}end},
     FlightRecorder={Count=function()return 0 end,Capacity=function()return 200 end,Lines=function()return{}end,Clear=function()end},
@@ -29,7 +29,7 @@ test("report has only final product sections",function()
 end)
 test("healthy outside state passes every invariant",function()
     local I=_G.MitzuMPlus.QAInvariants;local results=I:Evaluate(I:Gather());local totals=I:Summary(results)
-    equal(totals.FAIL,0);equal(totals.WARN,0);equal(totals.PASS,9)
+    equal(totals.FAIL,0);equal(totals.WARN,0);equal(totals.PASS,10)
 end)
 test("duplicate session IDs are diagnosed but not removed",function()
     _G.MitzuMPlus.db.global.runs={{sessionID="same"},{sessionID="same"}}

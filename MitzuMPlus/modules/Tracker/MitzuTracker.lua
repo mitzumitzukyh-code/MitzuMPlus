@@ -1,13 +1,19 @@
 -- ===========================================================================
--- MitzuMPlus - Tracker/MitzuTracker  (1.1.0-dev.6, Mitzu Tracker V1)
+-- MitzuMPlus - Tracker/MitzuTracker  (1.1.0-dev.7)
 --
---     TrackerState ---------\
---     PredictionEngine ------> MitzuTracker -> TrackerPresenter -> TrackerView
---     RUN_COMPLETED (Core) --/
+--     TrackerState ---------\                       /-> BlizzardTrackerEnhancer (llave real)
+--     PredictionEngine ------> MitzuTracker -> Presenter
+--     RUN_COMPLETED (Core) --/                       \-> TrackerView (vista previa / resumen)
 --
--- El tracker de Mitica+ en vivo. Sustituye a la ventana provisional de 1.0
--- (KeyPredictionHUD) conservando sus ajustes (settings.hud), su movimiento,
--- escala, alfa, vista previa y comandos.
+-- dev.6 fue un prototipo visual independiente. Desde dev.7, DURANTE UNA LLAVE
+-- REAL NO HAY VENTANA PROPIA: los datos de Mitzu se integran en el bloque M+
+-- nativo de Blizzard (BlizzardTrackerEnhancer). La ventana flotante
+-- (TrackerView) queda solo para:
+--   * PREVIEW  herramienta de configuracion/QA fuera de llave;
+--   * SUMMARY  resumen de ~20 s al terminar: Blizzard retira el bloque M+ en
+--              cuanto para el timer, asi que no hay donde integrarlo.
+-- Si el bloque de Blizzard no aparece, no se muestra nada propio (nunca la
+-- ventana flotante): la llave sigue jugable con el tracker nativo.
 --
 -- ESTE FICHERO ES EL UNICO QUE JUNTA FUENTES. No lee APIs de Mitica+ de
 -- Blizzard (lo vigila run_static_checks.py): las fuerzas, bosses, muertes y el
@@ -19,8 +25,9 @@
 -- escribe TrackerState, PredictionEngine, RunSession, historial ni sesiones:
 -- el modelo sale de TrackerPresenter.PreviewInput().
 --
--- TRACKER DE BLIZZARD: coexiste. No se oculta ni se engancha el bloque M+
--- nativo en esta version (ocultarlo sin taint no esta validado todavia).
+-- TRACKER DE BLIZZARD: se mejora, no se oculta ni se mueve. La posicion es la
+-- del Objective Tracker (Edit Mode); settings.hud.point/x/y solo afectan a la
+-- ventana de vista previa/resumen.
 -- ===========================================================================
 
 local MitzuMPlus = _G.MitzuMPlus
@@ -29,11 +36,19 @@ if not MitzuMPlus then return end
 local MT = {}
 MitzuMPlus.MitzuTracker = MT
 
-MT.IMPLEMENTATION  = "MITZU_TRACKER"
-MT.VERSION         = 1
+MT.IMPLEMENTATION  = "BLIZZARD_TRACKER_ENHANCER"
+MT.VERSION         = 2
 MT.SUMMARY_SECONDS = 20
 MT.TICK            = 1
-MT.BLIZZARD_TRACKER_POLICY = "COEXIST"
+MT.BLIZZARD_TRACKER_POLICY = "ENHANCE"
+
+-- Enrutado por modo. La ventana flotante NUNCA pinta una llave en curso.
+MT.RENDER_ROUTE = {
+    HIDDEN = "NONE",
+    PREVIEW = "FLOATING", SUMMARY = "FLOATING",
+    PENDING = "EMBEDDED", RUNNING = "EMBEDDED", COMPLETING = "EMBEDDED",
+}
+MT.RENDER_MODE = { FLOATING = "PREVIEW_FLOATING", EMBEDDED = "EMBEDDED", NONE = "NONE" }
 MT.FRAME_NAME      = "MitzuMPlusTracker"
 
 -- Memoria de la VISTA. Nada de esto es estado del juego.
@@ -52,6 +67,8 @@ MT._lastStatus     = nil
 MT._ticker         = nil
 MT._tick           = 0
 MT._pendingApply   = false
+MT._route          = "NONE"
+MT._warnedNoBlock  = false
 
 local function now()
     local fn = rawget(_G, "GetTime")
@@ -91,6 +108,9 @@ end
 MT.DEFAULTS = {
     enabled = true, locked = false, scale = 1.0, alpha = 1.0,
     showConfidence = true, showETA = true,
+    -- dev.7: lineas integradas en el bloque M+ de Blizzard.
+    showPrediction = true, showUpgradeTimes = true, showForcesCount = true,
+    showForcesRemaining = true, showDeaths = true,
     point = nil, relPoint = nil, x = nil, y = nil,
 }
 MT.SCALE_MIN, MT.SCALE_MAX = 0.6, 2.0
@@ -116,6 +136,20 @@ function MT:Settings()
 end
 
 function MT:IsEnabled() return self:Settings().enabled ~= false end
+
+-- Opciones del modelo integrado. Sin Angry Keystones (que ya pinta el % con
+-- decimales en la barra) Mitzu anade el porcentaje preciso a su linea.
+function MT:EmbeddedOptions()
+    local s = self:Settings()
+    local isLoaded = rawget(_G, "C_AddOns") and C_AddOns.IsAddOnLoaded
+    local ok, ak = pcall(function() return isLoaded and isLoaded("AngryKeystones") end)
+    return {
+        showPrediction = s.showPrediction ~= false, showConfidence = s.showConfidence ~= false,
+        showUpgradeTimes = s.showUpgradeTimes ~= false, showForcesCount = s.showForcesCount ~= false,
+        showForcesRemaining = s.showForcesRemaining ~= false, showDeaths = s.showDeaths ~= false,
+        preciseForcesPercent = not (ok and ak == true),
+    }
+end
 
 -- -------------------------------------------------------------------------
 -- ENTRADAS DEL PRESENTER
@@ -201,9 +235,15 @@ function MT:_Build()
     return f
 end
 
--- Escala, alfa, posicion y raton. Fuera de combate; en combate se aplaza.
--- Nunca se llama desde el refresco: una actualizacion no mueve el tracker.
+-- Escala, alfa, posicion y raton de la ventana flotante (vista previa y
+-- resumen); escala y alfa acotadas de las lineas integradas. Fuera de combate;
+-- en combate se aplaza. Nunca se llama desde el refresco.
 function MT:ApplySettings()
+    local EN = MitzuMPlus.BlizzardTrackerEnhancer
+    if EN and EN.ApplySettings then
+        local s = self:Settings()
+        EN:ApplySettings(s.scale, clamp(s.alpha, MT.ALPHA_MIN, MT.ALPHA_MAX, 1.0))
+    end
     local f = MitzuMPlus.TrackerView and MitzuMPlus.TrackerView.frame
     if not f then return false end
     if inCombat() then
@@ -232,22 +272,45 @@ end
 function MT:Refresh(reason, readPrediction)
     self._lastReason = reason or "UNKNOWN"
     local ok, err = pcall(function()
-        local TP, TV = MitzuMPlus.TrackerPresenter, MitzuMPlus.TrackerView
+        local TP, TV, EN = MitzuMPlus.TrackerPresenter, MitzuMPlus.TrackerView, MitzuMPlus.BlizzardTrackerEnhancer
         local before, beforePred = self._mode, self._displayed.prediction
         local model = TP.Build(self:GatherInput(readPrediction))
-        if model.mode ~= "HIDDEN" then self:_Build() end
-        local shown = TV:Render(model) or { mode = model.mode }
+        local route = MT.RENDER_ROUTE[model.mode] or "NONE"
+        local shown
+        if route == "FLOATING" then
+            self:_Build()
+            EN:Render({ mode = "HIDDEN" }, nil, self._lastReason)
+            shown = TV:Render(model) or {}
+        else
+            if TV.frame then TV:Render({ mode = "HIDDEN" }) end
+            local opts = self:EmbeddedOptions()
+            local emb = EN:Render(model, opts, self._lastReason) or {}
+            if route == "EMBEDDED" and not EN:IsAttached() and not self._warnedNoBlock then
+                self._warnedNoBlock = true
+                record("EMBED_UNAVAILABLE", { reason = EN._attachReason })
+            end
+            local p = model.prediction or {}
+            shown = {
+                prediction = (route == "EMBEDDED" and emb.paceText) and (p.code or "NONE") or "NONE",
+                confidence = (route == "EMBEDDED" and emb.paceText and opts.showConfidence) and p.confidence or nil,
+                timer = route == "EMBEDDED" and "BLIZZARD" or nil,
+                upgrade = emb.upgrade, forces = emb.forces, deaths = emb.penalty,
+                bosses = route == "EMBEDDED" and "BLIZZARD" or nil,
+            }
+        end
+        self._route = route
         self._mode = model.mode
         self._displayed = {
-            mode = model.mode, preview = model.preview,
+            mode = model.mode, preview = model.preview, route = route,
             prediction = shown.prediction or "NONE", confidence = shown.confidence,
             timer = shown.timer, forces = shown.forces, bosses = shown.bosses, deaths = shown.deaths,
+            upgrade = shown.upgrade,
         }
         if model.mode == "RUNNING" or model.mode == "PENDING" then
             self._displayedPace = (shown.prediction ~= "NONE") and shown.prediction or self._displayedPace
         end
         local sig = table.concat({ tostring(model.mode), tostring(shown.prediction), tostring(shown.timer),
-            tostring(shown.forces), tostring(shown.bosses), tostring(shown.deaths) }, "|")
+            tostring(shown.forces), tostring(shown.bosses), tostring(shown.deaths), tostring(shown.upgrade) }, "|")
         if sig ~= self._renderSig then
             self._renderSig = sig
             self._renderRevision = self._renderRevision + 1
@@ -304,8 +367,20 @@ function MT:SetEnabled(on)
     return self:IsEnabled()
 end
 
+-- La vista previa flotante no se abre con una llave en curso: durante una
+-- llave real solo existe el tracker de Blizzard mejorado.
+function MT:IsKeyInProgress()
+    local TS = MitzuMPlus.TrackerState
+    local st = TS and TS.GetStatus and TS:GetStatus()
+    return st == "PENDING" or st == "RUNNING" or st == "COMPLETING"
+end
+
 function MT:SetPreview(on)
     on = on and true or false
+    if on and self:IsKeyInProgress() then
+        record("PREVIEW_REFUSED", { reason = "KEY_IN_PROGRESS" })
+        return false, "KEY_IN_PROGRESS"
+    end
     if self._preview == on then return on end
     self._preview = on
     local TV = MitzuMPlus.TrackerView
@@ -316,10 +391,16 @@ function MT:SetPreview(on)
 end
 
 function MT:IsPreview() return self._preview == true end
-function MT:IsVisible()
+function MT:IsFloatingVisible()
     local f = MitzuMPlus.TrackerView and MitzuMPlus.TrackerView.frame
     return f ~= nil and f:IsShown() == true
 end
+function MT:IsEmbeddedVisible()
+    local EN = MitzuMPlus.BlizzardTrackerEnhancer
+    return EN ~= nil and EN:IsVisible() == true
+end
+function MT:IsVisible() return self:IsFloatingVisible() or self:IsEmbeddedVisible() end
+function MT:GetRenderMode() return MT.RENDER_MODE[self._route] or "NONE" end
 function MT:GetMode() return self._mode end
 function MT:GetDisplayed() return self._displayed end
 function MT:GetDisplayedPrediction() return self._displayed and self._displayed.prediction or "NONE" end
@@ -333,7 +414,9 @@ function MT:SetOption(key, value)
         s.scale = clamp(value, MT.SCALE_MIN, MT.SCALE_MAX, s.scale)
     elseif key == "alpha" then
         s.alpha = clamp(value, MT.ALPHA_MIN, MT.ALPHA_MAX, s.alpha)
-    elseif key == "locked" or key == "enabled" or key == "showConfidence" or key == "showETA" then
+    elseif key == "locked" or key == "enabled" or key == "showConfidence" or key == "showETA"
+        or key == "showPrediction" or key == "showUpgradeTimes" or key == "showForcesCount"
+        or key == "showForcesRemaining" or key == "showDeaths" then
         s[key] = value and true or false
     else
         return false, "opcion desconocida"
@@ -356,11 +439,14 @@ function MT:DiagnosticFields()
     local s = self:Settings()
     local d = self._displayed or {}
     local S = MitzuMPlus.QASafe
-    return {
+    local out = {
         { "implementation", MT.IMPLEMENTATION },
         { "version", MT.VERSION },
+        { "renderMode", self:GetRenderMode() },
         { "enabled", s.enabled ~= false },
-        { "visible", self:IsVisible() },
+        { "trackerVisible", self:IsVisible() },
+        { "floatingVisible", self:IsFloatingVisible() },
+        { "embeddedVisible", self:IsEmbeddedVisible() },
         { "mode", self._mode },
         { "preview", self._preview == true },
         { "stateRevision", self._stateRevision },
@@ -368,7 +454,10 @@ function MT:DiagnosticFields()
         { "predictionDisplayed", d.prediction or "NONE" },
         { "confidenceDisplayed", d.confidence },
         { "timerDisplayed", d.timer },
+        { "upgradeTimesDisplayed", d.upgrade ~= nil },
         { "forcesDisplayed", d.forces },
+        { "forcesCountDisplayed", d.forces ~= nil and s.showForcesCount ~= false },
+        { "forcesRemainingDisplayed", d.forces ~= nil and d.forces:find((MitzuMPlus.TrackerPresenter.TEXT.REMAINING:gsub(" ?%%s", "")), 1, true) ~= nil },
         { "bossesDisplayed", d.bosses },
         { "deathsDisplayed", d.deaths },
         { "lastRenderReason", self._lastReason },
@@ -377,10 +466,21 @@ function MT:DiagnosticFields()
         { "locked", s.locked == true },
         { "scale", s.scale },
         { "alpha", s.alpha },
+        { "showPrediction", s.showPrediction ~= false },
         { "showConfidence", s.showConfidence ~= false },
+        { "showUpgradeTimes", s.showUpgradeTimes ~= false },
+        { "showForcesCount", s.showForcesCount ~= false },
+        { "showForcesRemaining", s.showForcesRemaining ~= false },
+        { "showDeaths", s.showDeaths ~= false },
         { "showETA", s.showETA ~= false },
         { "blizzardTracker", MT.BLIZZARD_TRACKER_POLICY },
     }
+    local EN = MitzuMPlus.BlizzardTrackerEnhancer
+    if EN and EN.DiagnosticFields then
+        local ok, fields = pcall(EN.DiagnosticFields, EN)
+        if ok then for _, kv in ipairs(fields) do out[#out + 1] = kv end end
+    end
+    return out
 end
 
 function MT:StatusLines()
@@ -395,6 +495,7 @@ end
 
 local function clearRun()
     MT._summaryUntil, MT._final, MT._lastPrediction, MT._displayedPace = nil, nil, nil, nil
+    MT._warnedNoBlock = false
     local TV = MitzuMPlus.TrackerView
     if TV and TV.ResetCache then TV:ResetCache() end
 end

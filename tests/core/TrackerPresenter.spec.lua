@@ -221,5 +221,79 @@ test("preview input is realistic and fully synthetic", function()
     equal(TP.Build(TP.PreviewInput({ showConfidence = false })).prediction.confidenceText, nil)
 end)
 
+-- ---------------------------------------------------------------------------
+-- EMBEDDED MODEL (dev.7): what Mitzu adds to Blizzard's Mythic+ block.
+-- ---------------------------------------------------------------------------
+
+local function glyphs(text) return #(text:gsub("[\128-\191]", "")) * 6 end
+
+test("FitText is deterministic: first candidate that fits, shortest without a width, empty if nothing fits", function()
+    local c = { "+3 6:25  +2 13:01  +1 19:37", "+3 6:25  +2 13:01", "+3 6:25" }
+    equal(TP.FitText(c, 200, glyphs), c[1]); equal(select(2, TP.FitText(c, 200, glyphs)), 1)
+    equal(TP.FitText(c, 102, glyphs), c[2]); equal(TP.FitText(c, 101, glyphs), c[3])
+    equal(TP.FitText(c, 42, glyphs), c[3]); equal(TP.FitText(c, 41, glyphs), "")
+    equal(TP.FitText(c, nil, glyphs), c[3], "unknown width: the most compact")
+    equal(TP.FitText({}, 500, glyphs), ""); equal(TP.FitText(nil, 500, glyphs), "")
+    for _ = 1, 3 do equal(TP.FitText(c, 150, glyphs), c[2], "same input, same output") end
+end)
+
+test("upgrade candidates: nearest live threshold first, lost ones dropped", function()
+    local m = build("RUNNING", reposo(803, 449, 2), 803, engine("+2", 50, false))
+    local up = TP.UpgradeCandidates(m.timer)
+    equal(#up, 3); equal(up[1], "+3 6:25  +2 13:01  +1 19:37"); equal(up[2], "+3 6:25  +2 13:01"); equal(up[3], "+3 6:25")
+    m = build("RUNNING", reposo(1300, 500, 3), 1300, nil)
+    up = TP.UpgradeCandidates(m.timer)
+    equal(#up, 2); equal(up[1], "+2 4:44  +1 11:20"); equal(up[2], "+2 4:44", "+3 is gone: +2 is the next relevant one")
+    m = build("RUNNING", reposo(1700, 600, 3), 1700, nil)
+    up = TP.UpgradeCandidates(m.timer)
+    equal(#up, 1); equal(up[1], "+1 4:40")
+    m = build("RUNNING", reposo(2000, 608, 4), 2000, nil)
+    equal(#TP.UpgradeCandidates(m.timer), 0, "overtime: no upgrade left")
+end)
+
+test("embedded model: timer and pace separate, forces enrich Blizzard's bar, penalty only when published", function()
+    local m = build("RUNNING", reposo(804, 449, 2, 3), 804, engine("+2", 50, false))
+    local e = TP.BuildEmbedded(m, { preciseForcesPercent = true, showConfidence = true })
+    equal(e.active, true); equal(e.bracket, "+3", "clock still allows +3"); equal(e.paceCode, "+2", "pace projects +2")
+    equal(e.pace[1], "RITMO +2  50%"); equal(e.pace[2], "RITMO +2"); equal(e.pace[3], "+2")
+    equal(e.forces[1], "449 / 608 · 73.85% · faltan 159"); equal(e.forces[2], "449 / 608 · faltan 159")
+    equal(e.forces[3], "449 / 608"); equal(e.forces[4], "faltan 159")
+    equal(e.penaltyText, "-0:15"); equal(e.provisional, true)
+    -- Angry Keystones already paints a precise % on the bar: not repeated.
+    e = TP.BuildEmbedded(m, { preciseForcesPercent = false })
+    equal(e.forces[1], "449 / 608 · faltan 159")
+    -- Toggles.
+    e = TP.BuildEmbedded(m, { showUpgradeTimes = false, showPrediction = false, showForcesCount = false, showDeaths = false })
+    equal(#e.upgrade, 0); equal(#e.pace, 0); equal(e.forces[1], "faltan 159"); equal(#e.forces, 1); equal(e.penaltyText, nil)
+    e = TP.BuildEmbedded(m, { showForcesCount = false, showForcesRemaining = false })
+    equal(#e.forces, 0)
+end)
+
+test("embedded model: missing optional data and non-run modes", function()
+    for _, mode in ipairs({ "HIDDEN", "PREVIEW", "SUMMARY" }) do
+        equal(TP.BuildEmbedded({ mode = mode }).active, false, mode)
+    end
+    -- Pending: nothing invented (no times, no pace), known criteria still enrich the bar.
+    local s = reposo(nil, 136, 0); s.status = "PENDING"
+    local e = TP.BuildEmbedded(build("PENDING", s, nil, engine("+1", 10, false)))
+    equal(e.active, true); equal(#e.upgrade, 0); equal(#e.pace, 0); equal(e.forces[1], "136 / 608 · faltan 472")
+    -- Running without engine basis: "RITMO --" only, no bare "--", no confidence.
+    e = TP.BuildEmbedded(build("RUNNING", reposo(60, 10, 0), 60, nil))
+    equal(#e.pace, 1); equal(e.pace[1], "RITMO --")
+    -- Forces complete (Blizzard removes the bar) or unknown: no line.
+    equal(#TP.BuildEmbedded(build("RUNNING", reposo(900, 608, 2), 900, nil)).forces, 0)
+    equal(#TP.BuildEmbedded(build("RUNNING", { timeLimit = 1980 }, 900, nil)).forces, 0)
+    -- Deaths without published time lost: no penalty.
+    local d = reposo(900, 300, 2, 2); d.deathTimeLost = nil
+    equal(TP.BuildEmbedded(build("RUNNING", d, 900, nil)).penaltyText, nil)
+    -- Completing: frozen clock, last pace kept.
+    local c = reposo(1677, 600, 3, 14); c.finalElapsed = 1677
+    e = TP.BuildEmbedded(build("COMPLETING", c, 1677, engine("+1", 70, true)))
+    equal(e.active, true); equal(e.paceCode, "+1"); equal(e.upgrade[1], "+1 5:03")
+    -- Overtime flag moves the lines past Blizzard's loot icon.
+    e = TP.BuildEmbedded(build("RUNNING", reposo(2045, 608, 3), 2045, engine("FUERA", 99, true)))
+    equal(e.overtime, true); equal(e.pace[1], "RITMO OVERTIME  99%")
+end)
+
 if #failures > 0 then error(string.format("TrackerPresenter: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end
 return { tests = tests, assertions = assertions }

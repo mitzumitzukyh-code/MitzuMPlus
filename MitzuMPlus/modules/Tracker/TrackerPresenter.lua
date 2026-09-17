@@ -356,6 +356,104 @@ function TP.Build(input)
     return m
 end
 
+-- ---------------------------------------------------------------------------
+-- MODELO INTEGRADO (1.1.0-dev.7)
+--
+-- Lo que el BlizzardTrackerEnhancer anade al bloque M+ nativo. Blizzard ya
+-- pinta nombre, nivel, temporizador, jefes, barra de fuerzas y contador de
+-- muertes: aqui solo va lo que Blizzard NO ensena. Cada linea llega como una
+-- lista de candidatos de mas completo a mas corto; el enhancer elige con
+-- TP.FitText el primero que cabe en el espacio real del bloque.
+-- ---------------------------------------------------------------------------
+
+TP.EMBEDDED_MODES = { PENDING = true, RUNNING = true, COMPLETING = true }
+TP.SEPARATOR = " · "
+
+-- Primer candidato cuyo ancho medido cabe. Determinista. Sin ancho conocido
+-- se elige el mas corto. Si ni el mas corto cabe, nada ("").
+function TP.FitText(candidates, maxWidth, measure)
+    local list = type(candidates) == "table" and candidates or {}
+    if #list == 0 then return "", 0 end
+    if type(maxWidth) ~= "number" or type(measure) ~= "function" then return list[#list], #list end
+    for i, text in ipairs(list) do
+        if measure(text) <= maxWidth then return text, i end
+    end
+    return "", 0
+end
+
+-- Umbrales vigentes, del mas cercano al mas lejano, recortando por el final:
+-- { "+3 6:25  +2 13:01  +1 19:37", "+3 6:25  +2 13:01", "+3 6:25" }
+function TP.UpgradeCandidates(timer)
+    local live = {}
+    for _, seg in ipairs(type(timer) == "table" and timer.segments or {}) do
+        if seg.left and not seg.lost then live[#live + 1] = seg.code .. " " .. TP.FormatClock(seg.left) end
+    end
+    local out = {}
+    for n = #live, 1, -1 do out[#out + 1] = table.concat(live, "  ", 1, n) end
+    return out
+end
+
+local function addUnique(list, text)
+    if text and text ~= "" then
+        for _, v in ipairs(list) do if v == text then return end end
+        list[#list + 1] = text
+    end
+end
+
+function TP.BuildEmbedded(model, opts)
+    local m = type(model) == "table" and model or {}
+    local o = type(opts) == "table" and opts or {}
+    local e = { mode = m.mode, active = TP.EMBEDDED_MODES[m.mode] == true,
+                upgrade = {}, pace = {}, forces = {} }
+    if not e.active then return e end
+
+    local t = m.timer or {}
+    e.overtime = t.overtime == true
+    e.bracket = t.bracket
+    if o.showUpgradeTimes ~= false and m.mode ~= "PENDING" then
+        e.upgrade = TP.UpgradeCandidates(t)
+    end
+
+    local p = m.prediction or {}
+    e.paceCode, e.provisional = p.code or TP.NONE, p.provisional == true
+    if o.showPrediction ~= false and m.mode ~= "PENDING" then
+        local code = (p.code and p.code ~= TP.NONE) and p.code or TP.TEXT.NO_VALUE
+        local base = TP.TEXT.PACE .. " " .. code
+        if p.confidenceText then addUnique(e.pace, base .. "  " .. p.confidenceText) end
+        addUnique(e.pace, base)
+        if code ~= TP.TEXT.NO_VALUE then addUnique(e.pace, code) end
+    end
+
+    -- Fuerzas: la barra y el porcentaje entero son de Blizzard. Se anade el
+    -- recuento, lo que falta y, solo si nadie mas lo pinta, el % con decimales.
+    local f = m.forces or {}
+    if f.available and not f.complete then
+        local count = o.showForcesCount ~= false and f.countText or nil
+        local pct = o.preciseForcesPercent == true and f.percentText or nil
+        local rem = o.showForcesRemaining ~= false and f.remainingText or nil
+        local function join(...)
+            local parts = {}
+            for i = 1, select("#", ...) do
+                local v = select(i, ...)
+                if v then parts[#parts + 1] = v end
+            end
+            return table.concat(parts, TP.SEPARATOR)
+        end
+        addUnique(e.forces, join(count, pct, rem))
+        addUnique(e.forces, join(count, rem))
+        addUnique(e.forces, join(count))
+        addUnique(e.forces, join(rem))
+    end
+
+    -- Muertes: Blizzard ya ensena el numero; Mitzu anade el tiempo perdido
+    -- publicado (el reloj de Blizzard es tiempo restante: se muestra con "-").
+    local d = m.deaths or {}
+    if o.showDeaths ~= false and d.count and d.count > 0 and d.timeLost and d.timeLost > 0 then
+        e.penaltyText = "-" .. TP.FormatClock(d.timeLost)
+    end
+    return e
+end
+
 -- Datos de VISTA PREVIA: realistas (Reposo de los Reyes +12 al 74 %), solo
 -- visuales. No salen de ninguna autoridad ni se escriben en ninguna.
 function TP.PreviewInput(settings)

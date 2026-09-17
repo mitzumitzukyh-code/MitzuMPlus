@@ -64,6 +64,12 @@ MitzuMPlusDB_Defaults = {
                 alpha          = 1.0,
                 showConfidence = true,
                 showETA        = true,
+                -- dev.7: lineas integradas en el tracker M+ de Blizzard.
+                showPrediction      = true,
+                showUpgradeTimes    = true,
+                showForcesCount     = true,
+                showForcesRemaining = true,
+                showDeaths          = true,
             },
 
         },

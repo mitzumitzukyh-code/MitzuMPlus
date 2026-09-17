@@ -349,7 +349,11 @@ function metodos:GetHeight() return self.__h end
 function metodos:GetSize() return self.__w, self.__h end
 function metodos:SetText(t) self.__text = t end
 function metodos:GetText() return self.__text end
-function metodos:GetStringWidth() return #(tostring(self.__text or "")) * 6 end
+-- 6 px por caracter (no por byte: "·" o "ñ" ocupan un glifo).
+function metodos:GetStringWidth()
+    local glyphs = tostring(self.__text or ""):gsub("[\128-\191]", "")
+    return #glyphs * 6
+end
 function metodos:GetParent() return self.__parent end
 function metodos:SetParent(p) self.__parent = p end
 function metodos:GetName() return self.__name end

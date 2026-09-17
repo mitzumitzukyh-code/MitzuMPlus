@@ -1,6 +1,8 @@
--- Mitzu Tracker inside the full addon (real TOC, simulated client):
--- preview isolation, a running key, completion with the criteria API gone,
--- /reload recovery, settings and the [TRACKER VISUAL] bug report section.
+-- Mitzu Tracker dev.7 inside the full addon (real TOC, simulated client and a
+-- simulated Blizzard Objective Tracker with its real 12.1.0 structure):
+-- run mode is embedded in Blizzard's Mythic+ block (never a floating HUD),
+-- preview/summary use the floating view, attach/detach/reattach lifecycle,
+-- /reload, completion and no mutation of Blizzard frames.
 local tests, assertions, failures = 0, 0, {}
 local function equal(a, b, l)
     assertions = assertions + 1
@@ -47,35 +49,99 @@ local function historyCount(MP)
 end
 local function startRun(env, level)
     S.enterRubyAndStartKey(env, { level = level })
-    local MP = _G.MitzuMPlus
-    if not _G.MitzuMPlusCurrentRun then MP:OnChallengeStart() end
+    if not _G.MitzuMPlusCurrentRun then _G.MitzuMPlus:OnChallengeStart() end
     truthy(_G.MitzuMPlusCurrentRun, "1.0 run created")
 end
-local function invariantsFail(MP)
+local function invariants(MP)
     local I = MP.QAInvariants
-    local totals = I:Summary(I:Evaluate(I:Gather()))
-    return totals.FAIL, totals
+    local results = I:Evaluate(I:Gather())
+    local fails = {}
+    for _, r in ipairs(results) do if r.status == "FAIL" then fails[#fails + 1] = r.name .. " " .. tostring(r.detail) end end
+    return #fails, table.concat(fails, "; "), I:Summary(results)
+end
+local function fields(MP)
+    local f = {}
+    for _, kv in ipairs(MP.MitzuTracker:DiagnosticFields()) do f[kv[1]] = kv[2] end
+    return f
+end
+local function floatingShown(MP)
+    local frame = MP.TrackerView.frame
+    return frame ~= nil and frame:IsShown() == true
+end
+local function freshMock() return dofile("tests/harness/blizzard_tracker_mock.lua") end
+
+-- A key with the Blizzard block active, forces bar present, 300 s in.
+local function runningKey(env, BT, level)
+    startRun(env, level or 12)
+    BT.activate(0, 1800)
+    BT.setForces(true)
+    env.WoW.advance(300)
+    crit.count, crit.bosses[1] = 343, true
+    env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+    BT.tick(300)
+    env.WoW.advance(2)
 end
 
-test("tracker modules load from the TOC and the legacy HUD is gone", function()
+test("tracker layers load in order and the enhancer is registered", function()
     S.isolated(function()
         local env = S.boot({})
         local MP = _G.MitzuMPlus
         equal(#env.errors, 0, errorsText(env))
-        truthy(MP.MitzuTracker and MP.TrackerPresenter and MP.TrackerView, "tracker layers registered")
-        equal(MP.KeyPredictionHUD, nil, "no second visual engine")
+        truthy(MP.MitzuTracker and MP.TrackerPresenter and MP.TrackerView and MP.BlizzardTrackerEnhancer)
         local loaded = table.concat(env.coreFiles, "\n")
-        local a = loaded:find("Tracker/TrackerState.lua", 1, true)
-        local b = loaded:find("PredictionEngine.lua", 1, true)
         local c = loaded:find("Tracker/TrackerPresenter.lua", 1, true)
         local d = loaded:find("Tracker/TrackerView.lua", 1, true)
-        local e = loaded:find("Tracker/MitzuTracker.lua", 1, true)
-        truthy(a and b and c and d and e and a < c and b < c and c < d and d < e, "load order state < presenter < view < controller")
+        local e = loaded:find("Tracker/BlizzardTrackerEnhancer.lua", 1, true)
+        local f = loaded:find("Tracker/MitzuTracker.lua", 1, true)
+        truthy(c and d and e and f and c < d and d < e and e < f, "presenter < view < enhancer < controller")
         equal(MP.MitzuTracker:GetMode(), "HIDDEN"); equal(MP.MitzuTracker:IsVisible(), false)
     end)
 end)
 
-test("preview renders a realistic tracker without touching real state", function()
+test("A: running key renders inside the Blizzard block and never as a floating HUD", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local BT = freshMock(); BT.install()
+        local MP = _G.MitzuMPlus
+        local MT, EN = MP.MitzuTracker, MP.BlizzardTrackerEnhancer
+        runningKey(env, BT)
+        equal(MT:GetMode(), "RUNNING"); equal(MT:GetRenderMode(), "EMBEDDED")
+        equal(floatingShown(MP), false, "no floating run HUD"); equal(MP.TrackerView.frame, nil, "floating frame never built")
+        equal(EN:IsAttached(), true); equal(MT:IsEmbeddedVisible(), true); equal(MT:IsVisible(), true)
+        equal(EN.elements.root:GetParent(), BT.block, "our root is a child of the Blizzard block")
+        equal(EN.elements.forcesRoot:GetParent(), BT.block)
+
+        local shown = EN._displayed
+        equal(shown.forces, "343 / 686 · 50.00% · faltan 343", "count, precise % (no Angry Keystones) and remaining")
+        truthy(shown.upgrade and shown.upgrade:find("^%+3 "), "nearest upgrade first: " .. tostring(shown.upgrade))
+        truthy(shown.paceText and shown.paceText:find("RITMO", 1, true), tostring(shown.paceText))
+        equal(shown.forcesBar, true)
+        local d = MT:GetDisplayed()
+        equal(d.timer, "BLIZZARD"); equal(d.bosses, "BLIZZARD", "Blizzard keeps timer and bosses")
+
+        -- The upgrade line tracks the clock through the 1 s ticker.
+        local before = shown.upgrade
+        env.WoW.advance(3)
+        truthy(EN._displayed.upgrade ~= before, "upgrade times move with the clock")
+
+        local report = MP.BugReport:Build()
+        for _, field in ipairs({ "implementation=BLIZZARD_TRACKER_ENHANCER", "renderMode=EMBEDDED",
+            "blizzardTrackerLoaded=true", "challengeBlockFound=true", "challengeBlockShown=true", "attached=true",
+            "attachGeneration=1", "attachReason=ATTACHED", "attachmentHealthy=true", "trackerVisible=true",
+            "floatingVisible=false", "upgradeTimesDisplayed=true", "forcesCountDisplayed=true",
+            "forcesRemainingDisplayed=true", "hooksInstalled=true", "lastRenderError=nil" }) do
+            truthy(report:find(field, 1, true), field .. "\n" .. report)
+        end
+        truthy(report:find("sectionsFailed=none", 1, true), report)
+        truthy(not report:find("table: ", 1, true), "no frame references serialized")
+        local fails, detail = invariants(MP); equal(fails, 0, detail)
+        equal(#BT.foreign, 0, "Blizzard frames untouched: " .. table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("B: preview uses the floating view, stays isolated and is refused during a key", function()
     S.isolated(function()
         local env = S.boot({})
         installScenario()
@@ -84,234 +150,314 @@ test("preview renders a realistic tracker without touching real state", function
         local engineCalls = 0
         local original = MP.PredictionEngine.GetSnapshot
         MP.PredictionEngine.GetSnapshot = function(...) engineCalls = engineCalls + 1; return original(...) end
-        env.WoW.advance(2)                       -- let the boot-time refreshes settle
-        local before = {
-            revision = TS:GetRevision(), status = TS:GetStatus(), refreshes = TS._stats.refreshes,
-            runs = historyCount(MP), session = S.serialize(MP.db.global.activeRunSession),
-            sessionState = MP.RunSession:GetState(), run = rawget(_G, "MitzuMPlusCurrentRun"),
-            nextRunID = MP.db.global.nextRunID,
-        }
-        MT:SetPreview(true)
-        equal(MT:IsVisible(), true); equal(MT:GetMode(), "PREVIEW")
+        env.WoW.advance(2)
+        local before = { revision = TS:GetRevision(), refreshes = TS._stats.refreshes, runs = historyCount(MP),
+                         session = S.serialize(MP.db.global.activeRunSession), state = MP.RunSession:GetState() }
+        equal(MT:SetPreview(true), true)
+        equal(MT:GetMode(), "PREVIEW"); equal(MT:GetRenderMode(), "PREVIEW_FLOATING")
+        equal(floatingShown(MP), true); equal(MP.BlizzardTrackerEnhancer:IsVisible(), false)
         local d = MT:GetDisplayed()
         equal(d.timer, "19:37"); equal(d.prediction, "+2"); equal(d.forces, "449 / 608 73.85%")
-        equal(d.bosses, "2/4"); equal(d.deaths, "3"); equal(d.confidence, 50)
         env.WoW.advance(5)
-        equal(MT:IsTickerActive(), false, "no ticker in preview")
-        equal(engineCalls, 0, "preview never asks PredictionEngine")
-        equal(TS:GetRevision(), before.revision); equal(TS:GetStatus(), before.status)
-        equal(TS._stats.refreshes, before.refreshes, "preview never reads TrackerState/adapter")
-        equal(historyCount(MP), before.runs); equal(MP.db.global.nextRunID, before.nextRunID)
-        equal(S.serialize(MP.db.global.activeRunSession), before.session)
-        equal(MP.RunSession:GetState(), before.sessionState); equal(rawget(_G, "MitzuMPlusCurrentRun"), before.run)
-        local fails = invariantsFail(MP); equal(fails, 0)
+        equal(engineCalls, 0); equal(TS:GetRevision(), before.revision); equal(TS._stats.refreshes, before.refreshes)
+        equal(historyCount(MP), before.runs); equal(S.serialize(MP.db.global.activeRunSession), before.session)
+        equal(MP.RunSession:GetState(), before.state)
+        equal((fields(MP)).renderMode, "PREVIEW_FLOATING")
         MT:SetPreview(false)
-        equal(MT:IsVisible(), false); equal(MT:GetMode(), "HIDDEN")
+        equal(MT:IsVisible(), false)
+
+        -- During a real key the floating preview cannot be opened.
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local ok, why = MT:SetPreview(true)
+        equal(ok, false); equal(why, "KEY_IN_PROGRESS"); equal(floatingShown(MP), false)
+        MP:HandleSlashCommand("tracker preview")
+        equal(floatingShown(MP), false); equal(MT:GetRenderMode(), "EMBEDDED")
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
     end)
 end)
 
-test("running key: tracker shows state-derived data, prediction from the engine, bug report section", function()
+test("C/28: block missing -> nothing floating; attaches as soon as Blizzard's block appears", function()
     S.isolated(function()
         local env = S.boot({})
         installScenario()
         local MP = _G.MitzuMPlus
-        local MT = MP.MitzuTracker
-        MT:SetPreview(true)
+        local MT, EN = MP.MitzuTracker, MP.BlizzardTrackerEnhancer
         startRun(env, 12)
-        equal(MT:IsPreview(), false, "a real key turns the preview off")
-        env.WoW.advance(300)
-        crit.count, crit.bosses[1] = 343, true
-        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
-        env.WoW.advance(2)
-        equal(MT:GetMode(), "RUNNING"); equal(MT:IsVisible(), true); equal(MT:IsTickerActive(), true)
-        local d = MT:GetDisplayed()
-        equal(d.forces, "343 / 686 50.00%"); equal(d.bosses, "1/3"); equal(d.deaths, "0")
-        MT:Refresh("TEST")
-        d = MT:GetDisplayed()
-        equal(d.timer, MP.TrackerPresenter.FormatClock(1800 - MP.TrackerState:GetElapsed()))
-        local engine = MP.PredictionEngine:GetSnapshot(_G.MitzuMPlusCurrentRun)
-        local expected = engine and MP.TrackerPresenter.RESULT_CODE[engine.result] or "NONE"
-        equal(d.prediction, expected, "tracker shows the engine bracket, never its own")
-        equal(MT._stateRevision, MP.TrackerState:GetRevision())
+        env.WoW.advance(5)
+        equal(MT:GetMode(), "RUNNING")
+        equal(EN:IsAttached(), false); equal(floatingShown(MP), false, "no floating fallback during a run")
+        local f = fields(MP)
+        equal(f.attached, false); equal(f.attachReason, "BLIZZARD_TRACKER_NOT_LOADED"); equal(f.trackerVisible, false)
 
-        -- Timer ticks without a new state revision; the rendered revision follows.
-        local rev = MT._renderRevision
-        env.WoW.advance(3)
-        truthy(MT._renderRevision > rev, "timer text refreshed by the ticker")
+        local BT = freshMock(); BT.install()
+        env.WoW.advance(1.1)
+        equal(EN:IsAttached(), true, "attached on the next tick")
+        equal(EN:IsVisible(), false, "block not active yet: nothing of ours shown")
+        equal((fields(MP)).attachReason, "CHALLENGE_BLOCK_INACTIVE")
+        BT.activate(305, 1800)                             -- Blizzard starts its timer late
+        equal(EN:IsVisible(), true, "the Activate post-hook shows us immediately")
+        equal(EN._generation, 1)
+        truthy(EN._lastLayoutReason == "BLIZZARD_ACTIVATE" or EN._lastLayoutReason == "BLIZZARD_LAYOUT", tostring(EN._lastLayoutReason))
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+        local recorded = table.concat(MP.FlightRecorder:Lines(300), "\n")
+        truthy(recorded:find("EMBED_UNAVAILABLE", 1, true), recorded)
+    end)
+end)
 
-        local report = MP.BugReport:Build()
-        truthy(report:find("[TRACKER VISUAL]", 1, true), report)
-        for _, field in ipairs({ "implementation=MITZU_TRACKER", "visible=true", "mode=RUNNING", "stateRevision=",
-            "renderRevision=", "predictionDisplayed=", "timerDisplayed=", "forcesDisplayed=343 / 686 50.00%",
-            "bossesDisplayed=1/3", "deathsDisplayed=0", "lastRenderReason=", "blizzardTracker=COEXIST" }) do
-            truthy(report:find(field, 1, true), field)
-        end
-        truthy(report:find("sectionsFailed=none", 1, true), report)
-        equal((invariantsFail(MP)), 0)
-        MP:HandleSlashCommand("tracker status")
+test("D/E/G: detach when the block goes away, reattach to a rebuilt block, no duplicate hooks", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local root = EN.elements.root
+        equal(EN._generation, 1)
+
+        -- Many Blizzard layouts: one attachment, hook body runs once per layout.
+        local calls = 0
+        local render = EN.Render
+        EN.Render = function(...) calls = calls + 1; return render(...) end
+        for _ = 1, 5 do BT.layout() end
+        equal(calls, 5, "one render per Blizzard layout (no duplicate hooks)")
+        -- Repeated Activate (Blizzard re-checks timers): its hook body runs once each time.
+        for _ = 1, 4 do BT.activate(310, 1800) end
+        calls = 0
+        BT.activate(311, 1800)
+        equal(calls, 2, "one render for the inner layout + one for Activate, never accumulated")
+        EN.Render = render
+        equal(EN._generation, 1)
+
+        -- Block hidden by Blizzard (timer stopped): our elements hide with it.
+        BT.stopTimer()
+        equal(BT.block:IsShown(), false); equal(EN:IsVisible(), false)
+        BT.activate(320, 1800)
+        equal(EN:IsVisible(), true); equal(EN._generation, 1, "same block: no reattach")
+
+        -- Blizzard rebuilds the block while we are still attached: reattach at once.
+        local BTr = freshMock(); BTr.install(); BTr.activate(325, 1800); BTr.setForces(true)
+        env.WoW.advance(1.1)
+        equal(EN._generation, 2, "rebuilt block without a detach in between")
+        equal(root:GetParent(), BTr.block); equal(EN._hookedBlock, BTr.block); equal(EN:IsVisible(), true)
+        equal((fields(MP)).attachmentHealthy, true)
+        BT = BTr
+
+        -- Tracker unloaded: detach and clean.
+        BT.uninstall()
+        env.WoW.advance(1.1)
+        equal(EN:IsAttached(), false); equal(root:IsShown(), false); equal(root:GetParent(), nil)
+        equal((fields(MP)).attachReason, "BLIZZARD_TRACKER_NOT_LOADED")
+
+        -- Rebuilt tracker (new objects): reattach, reuse our elements, hook the new instances.
+        local BT2 = freshMock(); BT2.install()
+        BT2.activate(330, 1800); BT2.setForces(true)
+        env.WoW.advance(1.1)
+        equal(EN:IsAttached(), true); equal(EN._generation, 3)
+        equal(EN.elements.root, root, "elements reused"); equal(root:GetParent(), BT2.block)
+        equal(EN._hookedBlock, BT2.block); equal(EN._hookedTracker, BT2.tracker)
+        equal(EN:IsVisible(), true); equal((fields(MP)).attachmentHealthy, true)
+        equal((fields(MP)).attachReason, "ATTACHED")
+        equal(#BT2.foreign, 0, table.concat(BT2.foreign, ","))
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
     end)
 end)
 
-test("completion with criteria gone: terminal state, summary 3/3 inferred, history +1 once", function()
+test("forces line follows Blizzard's pooled bar and disappears at 100 %", function()
     S.isolated(function()
         local env = S.boot({})
         installScenario()
         local MP = _G.MitzuMPlus
-        local MT, TS = MP.MitzuTracker, MP.TrackerState
-        startRun(env, 12)
-        local before = historyCount(MP)
-        env.WoW.advance(1500)
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local bar = BT.tracker.usedProgressBars[BT.tracker.ObjectivesBlock.forcesLine]
+        truthy(EN.elements.forcesRoot:IsShown())
+        local anchor = EN.elements.forcesRoot.__points[1]
+        equal(anchor[2], bar.Bar, "anchored under the Blizzard bar")
         crit.count, crit.bosses = 686, { true, true, false }
         env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
-        env.WoW.advance(1)
-        equal(MT:GetDisplayed().bosses, "2/3")
+        BT.setForces(false)                               -- Blizzard frees the bar when forces complete
+        env.WoW.advance(2)
+        equal(EN.elements.forcesRoot:IsShown(), false); equal(EN._displayed.forces, nil)
+        equal((fields(MP)).forcesBarFound, false)
+        -- Two weighted bars: ambiguous, nothing guessed.
+        BT.setForces(true)
+        BT.tracker.usedProgressBars.other = BT.tracker.usedProgressBars[BT.tracker.ObjectivesBlock.forcesLine]
+        crit.count = 600; env.WoW.fire("SCENARIO_CRITERIA_UPDATE"); env.WoW.advance(1.1)
+        equal((fields(MP)).forcesBarReason, "FORCES_BAR_AMBIGUOUS"); equal(EN._displayed.forces, nil)
+        equal(EN.elements.forcesRoot:IsShown(), false)
+        BT.tracker.usedProgressBars.other = nil
+        env.WoW.advance(1.1)
+        equal(EN._displayed.forces, "600 / 686 · 87.46% · faltan 86", "back to the single real bar")
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+    end)
+end)
 
-        -- Blizzard retires the criteria before the final boss is ever visible.
+test("L: adaptive upgrade line uses the real space left by Blizzard's regions", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        -- Mock font: 6 px per character. Block 251, TimeLeft "25:00" = 30 px:
+        -- available = 251 - 47 - 4 - (28 + 30 + 8) = 134 -> two thresholds fit (17 chars = 102 px), three do not.
+        equal(EN._displayed.available, 134)
+        local _, count = select(2, EN._displayed.upgrade:gsub("%+", ""))
+        equal(select(2, EN._displayed.upgrade:gsub("%+%d", "")), 2, EN._displayed.upgrade)
+        -- Deaths with published penalty: shown next to Blizzard's counter and the line narrows.
+        BT.setDeaths(2)
+        _G.C_ChallengeMode.GetDeathCount = function() return 2, 10 end
+        env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+        env.WoW.advance(2)
+        equal(EN._displayed.penalty, "-0:10")
+        equal(EN._displayed.available, 134 - (5 * 6 + 4))
+        equal(select(2, EN._displayed.upgrade:gsub("%+%d", "")), 1, "narrower: nearest threshold only")
+        equal(EN.elements.penalty.__points[1][2], BT.block.DeathCount)
+        -- Turning options off removes lines.
+        MP.MitzuTracker:SetOption("showUpgradeTimes", false)
+        MP.MitzuTracker:SetOption("showDeaths", false)
+        MP.MitzuTracker:SetOption("showForcesRemaining", false)
+        equal(EN._displayed.upgrade, nil); equal(EN._displayed.penalty, nil)
+        equal(EN._displayed.forces, "343 / 686 · 50.00%")
+        MP.MitzuTracker:SetOption("showPrediction", false)
+        equal(EN._displayed.paceText, nil); equal(MP.MitzuTracker:GetDisplayed().prediction, "NONE")
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("N/O: completion keeps the embedded state, then a floating summary, criteria gone, history +1 once", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local MT, TS, EN = MP.MitzuTracker, MP.TrackerState, MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local before = historyCount(MP)
+        env.WoW.advance(1200)
+        crit.count, crit.bosses = 686, { true, true, false }
+        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+        BT.setForces(false)
+        env.WoW.advance(1)
+
         env.WoW.state.challengeActive = false
         env.WoW.fire("CHALLENGE_MODE_COMPLETED")
-        equal(TS:GetStatus(), "COMPLETING")
-        equal(MT:GetMode(), "COMPLETING"); equal(MT:IsVisible(), true, "no hide while the end converges")
-        equal(MT:GetDisplayed().forces, "686 / 686 100.00%")
+        equal(TS:GetStatus(), "COMPLETING"); equal(MT:GetRenderMode(), "EMBEDDED")
+        equal(EN:IsVisible(), true, "no flash while the end converges"); equal(floatingShown(MP), false)
         env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        BT.stopTimer()                                    -- Blizzard retires its block
         env.WoW.advance(4)
 
         equal(TS:GetStatus(), "COMPLETED")
         local s = TS:GetSnapshot()
-        equal(s.terminalStateConfirmed, true); equal(s.completionConverged, false)
-        equal(s.completionCriteriaIncomplete, false); equal(s.criteriaUnavailableAfterCompletion, true)
-        equal(s.bossesCompleted, 2); equal(s.bossesCompletedFinal, 3)
-        equal(s.bossCountSource, "INFERRED_FROM_COMPLETION_EVENT")
-        equal(MT:GetMode(), "SUMMARY"); equal(MT:IsVisible(), true)
+        equal(s.terminalStateConfirmed, true); equal(s.completionSource, "CHALLENGE_MODE_COMPLETED")
+        equal(s.criteriaUnavailableAfterCompletion, true); equal(s.completionCriteriaIncomplete, false)
+        equal(s.bossesCompleted, 2); equal(s.bossesCompletedFinal, 3); equal(s.bossCountSource, "INFERRED_FROM_COMPLETION_EVENT")
+        equal(MT:GetMode(), "SUMMARY"); equal(MT:GetRenderMode(), "PREVIEW_FLOATING")
+        equal(floatingShown(MP), true, "summary fallback outside the retired block")
+        equal(EN:IsVisible(), false)
         equal(MT:GetDisplayed().bosses, "3/3 (inferred)")
-        equal(MT:IsTickerActive(), false, "no ticker in the summary")
-
-        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
-        env.WoW.advance(10)
-        equal(historyCount(MP), before + 1, "history finalized exactly once")
-        local fails, totals = invariantsFail(MP)
-        equal(fails, 0); equal(totals.WARN, 0)
-
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED"); env.WoW.advance(10)
+        equal(historyCount(MP), before + 1)
+        local fails, detail = invariants(MP); equal(fails, 0, detail)
         env.WoW.advance(MT.SUMMARY_SECONDS)
         equal(MT:GetMode(), "HIDDEN"); equal(MT:IsVisible(), false)
-        local report = MP.BugReport:Build()
-        for _, field in ipairs({ "completionSource=CHALLENGE_MODE_COMPLETED", "terminalStateConfirmed=true",
-            "criteriaUnavailableAfterCompletion=true", "bossCountSource=INFERRED_FROM_COMPLETION_EVENT",
-            "duplicateSessionIDs=0" }) do
-            truthy(report:find(field, 1, true), field .. "\n" .. report)
-        end
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
     end)
 end)
 
-test("reload mid-key: same session, no new history, tracker visible with recovered data", function()
+test("F: /reload mid-key reattaches to the new Blizzard block with the same session", function()
     local saved, sessionID, runs = S.isolated(function()
         local env = S.boot({})
         installScenario()
-        startRun(env, 12)
-        env.WoW.advance(1199)
-        crit.count, crit.bosses = 686, { true, true, false }
-        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
-        env.WoW.advance(1)
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        env.WoW.advance(900)
         local MP = _G.MitzuMPlus
-        equal(MP.MitzuTracker:GetMode(), "RUNNING")
+        equal(MP.BlizzardTrackerEnhancer:IsVisible(), true)
         return S.captureForReload(env), _G.MitzuMPlusCurrentRun.sessionID, historyCount(MP)
     end)
-    truthy(sessionID, "session before reload")
     S.isolated(function()
         _G.GetInventoryItemLink = function() return nil end
         local env = S.bootAfterReload(saved, { timerDelay = 4 })
         installScenario()
-        crit.count, crit.bosses = 686, { true, true, false }
+        crit.count, crit.bosses = 343, { true, false, false }
+        local BT = freshMock(); BT.install()
         env.WoW.fire("PLAYER_ENTERING_WORLD", false, true)
-        env.WoW.advance(6)
+        env.WoW.advance(5)
+        BT.activate(1210, 1800); BT.setForces(true)       -- ScenarioTimerFrame after the reload
+        env.WoW.advance(2)
         local MP = _G.MitzuMPlus
         if not _G.MitzuMPlusCurrentRun then MP:OnChallengeStart() end
-        local run = _G.MitzuMPlusCurrentRun
-        truthy(run, "run recovered")
-        equal(run.sessionID, sessionID, "same sessionID after /reload")
-        equal(run.sessionRecovered, true)
-        equal(historyCount(MP), runs, "history does not grow on reload")
-        local TS, MT = MP.TrackerState, MP.MitzuTracker
-        equal(TS:GetStatus(), "RUNNING"); equal(TS:GetSnapshot().recovered, true)
-        truthy(TS:GetElapsed() >= 1199, "elapsed recovered from the server: " .. tostring(TS:GetElapsed()))
-        equal(TS:GetSnapshot().keystoneLevel, 12); equal(TS:GetSnapshot().mapID, 399)
-        equal(MT:GetMode(), "RUNNING"); equal(MT:IsVisible(), true)
-        local d = MT:GetDisplayed()
-        equal(d.forces, "686 / 686 100.00%"); equal(d.bosses, "2/3")
-        local recorded = table.concat(MP.FlightRecorder:Lines(300), "\n")
-        truthy(recorded:find("STATE_RUN_RECOVERED", 1, true), recorded)
-        equal((invariantsFail(MP)), 0)
+        equal(_G.MitzuMPlusCurrentRun.sessionID, sessionID); equal(historyCount(MP), runs)
+        equal(MP.TrackerState:GetStatus(), "RUNNING"); equal(MP.TrackerState:GetSnapshot().recovered, true)
+        local EN = MP.BlizzardTrackerEnhancer
+        equal(EN:IsAttached(), true); equal(EN:IsVisible(), true); equal(floatingShown(MP), false)
+        equal(EN._displayed.forces, "343 / 686 · 50.00% · faltan 343")
+        local fails, detail = invariants(MP); equal(fails, 0, detail)
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
     end)
 end)
 
-test("settings: scale, alpha, lock and position persist and a refresh never moves the tracker", function()
+test("kill switch: repeated enhancer failures disable it and leave Blizzard intact", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local build = MP.TrackerPresenter.BuildEmbedded
+        MP.TrackerPresenter.BuildEmbedded = function() error("boom") end
+        for _ = 1, 4 do BT.layout() end
+        MP.TrackerPresenter.BuildEmbedded = build
+        equal(EN._disabled, true); equal(EN:IsVisible(), false); equal(BT.block:IsShown(), true)
+        env.WoW.advance(3)
+        equal(EN:IsVisible(), false, "stays off")
+        local f = fields(MP)
+        equal(f.enhancerDisabled, true); truthy(tostring(f.lastEnhancerError):find("boom", 1, true))
+        equal(floatingShown(MP), false)
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+    end)
+end)
+
+test("floating settings: scale, alpha, lock and position only move the preview window", function()
     S.isolated(function()
         S.boot({})
-        installScenario()
         local MP = _G.MitzuMPlus
         local MT = MP.MitzuTracker
         MT:SetPreview(true)
         local f = MP.TrackerView.frame
-        truthy(f, "frame built once")
-        local calls = { scale = {}, alpha = {}, mouse = {}, clear = 0 }
+        local calls = { scale = {}, mouse = {}, clear = 0 }
         f.SetScale = function(_, v) calls.scale[#calls.scale + 1] = v end
-        f.SetAlpha = function(_, v) calls.alpha[#calls.alpha + 1] = v end
         f.EnableMouse = function(_, v) calls.mouse[#calls.mouse + 1] = v end
         local clear = f.ClearAllPoints
         f.ClearAllPoints = function(self) calls.clear = calls.clear + 1; return clear(self) end
-
-        for _, v in ipairs({ 1.2, 0.8, 1.0, 5, 0.1 }) do MT:SetOption("scale", v) end
-        equal(calls.scale[1], 1.2); equal(calls.scale[2], 0.8); equal(calls.scale[4], 2.0); equal(calls.scale[5], 0.6)
-        MT:SetOption("alpha", 0.5); equal(calls.alpha[#calls.alpha], 0.5)
-        MT:SetOption("locked", true); equal(calls.mouse[#calls.mouse], false, "locked does not capture clicks")
-        MT:SetOption("locked", false); equal(calls.mouse[#calls.mouse], true)
-
-        -- Drag: the anchor is saved in settings.hud.
+        MT:SetOption("scale", 1.2); MT:SetOption("scale", 5)
+        equal(calls.scale[1], 1.2); equal(calls.scale[2], 2.0)
+        MT:SetOption("locked", true); equal(calls.mouse[#calls.mouse], false)
+        MT:SetOption("locked", false)
         f.__points = { { "CENTER", UIParent, "CENTER", 120, -40 } }
         f:GetScript("OnDragStart")(f); f:GetScript("OnDragStop")(f)
-        local s = MP.db.profile.settings.hud
-        equal(s.point, "CENTER"); equal(s.x, 120); equal(s.y, -40)
-        MT:SetOption("locked", true)
-        f:GetScript("OnDragStart")(f)
-        equal(f._dragging, false, "locked tracker cannot be dragged")
-
+        equal(MP.db.profile.settings.hud.x, 120)
         local cleared = calls.clear
         for _ = 1, 5 do MT:Refresh("TEST") end
         equal(calls.clear, cleared, "refresh never re-anchors")
-        MT:SetOption("showConfidence", false)
-        equal(MT:GetDisplayed().confidence, nil)
-        MT:SetEnabled(false)
-        equal(MT:GetMode(), "PREVIEW", "preview is explicit even when disabled")
+        -- Embedded scale is clamped and applied only to Mitzu's own elements.
+        local EN = MP.BlizzardTrackerEnhancer
+        EN:_CreateElements()
+        local scaled
+        EN.elements.root.SetScale = function(_, v) scaled = v end
+        MT:SetOption("scale", 2.0)
+        equal(scaled, EN.SCALE_MAX)
         MT:SetPreview(false)
-        equal(MT:IsVisible(), false)
-    end)
-end)
-
-test("long dungeon names and large counts are laid out inside the frame", function()
-    S.isolated(function()
-        S.boot({})
-        local MP = _G.MitzuMPlus
-        local TV, TP = MP.TrackerView, MP.TrackerPresenter
-        MP.MitzuTracker:SetPreview(true)
-        local input = TP.PreviewInput({})
-        input.state.mapName = "Operacion: Compuerta de las Profundidades del Remolino Eterno"
-        input.state.forcesCurrent, input.state.forcesTotal = 1234, 1450
-        input.state.forcesPercent = 1234 / 1450 * 100
-        local shown = TV:Render(TP.Build(input))
-        equal(shown.forces, "1,234 / 1,450 85.10%")
-        local r = TV.r
-        -- The title is bounded on both sides: the key badge can never be pushed out.
-        equal(#r.title.__points, 2)
-        equal(r.title.__points[2][1], "RIGHT"); equal(r.title.__points[2][2], r.badge)
-        equal(r.title:GetText(), input.state.mapName)
-        -- Threshold labels live in three fixed, equal columns.
-        local w = r.segs[1]:GetWidth()
-        truthy(w > 0 and w == r.segs[2]:GetWidth() and w == r.segs[3]:GetWidth(), "equal columns")
-        truthy(w * 3 <= TV.WIDTH - 2 * TV.PAD + 0.5, "columns fit")
-        MP.MitzuTracker:SetPreview(false)
     end)
 end)
 
