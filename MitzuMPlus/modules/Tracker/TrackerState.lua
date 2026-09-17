@@ -38,8 +38,24 @@
 --       COMPLETION_INTERVAL hasta COMPLETION_WINDOW (ticker propio, se cancela);
 --     * cada lectura solo puede mejorar lo sabido: nil, 0 o un retroceso nunca
 --       sustituyen un valor real;
---     * si Blizzard no llega a exponer el final, se congela lo ultimo real con
---       completionCriteriaIncomplete=true. Nunca se inventa un boss.
+--     * si Blizzard no llega a exponer el final, se congela lo ultimo real.
+--       Nunca se inventa un boss.
+--
+-- AUTORIDAD DEL FINAL (1.1.0-dev.6)
+--   Retail dev.5 (Reposo de los Reyes +12): el evento llego con 3/4 y 100 %, y
+--   la primera relectura ya no traia nada (active=false, criterios nil). La
+--   llave estaba terminada, pero el snapshot quedo como "criterios incompletos".
+--   CHALLENGE_MODE_COMPLETED es la autoridad terminal: una Mitica+ solo termina
+--   con todos los criterios cumplidos. Se separan dos preguntas:
+--     * convergencia de API  -> completionConverged: Blizzard llego a mostrar
+--       el final (100 % y todos los bosses) en alguna lectura;
+--     * final autoritativo   -> terminalStateConfirmed: la llave termino.
+--   Lo observado NO se toca (bossesCompleted sigue siendo 3). El valor terminal
+--   va aparte y dice de donde sale:
+--       bossesCompletedFinal=4  bossCountSource=INFERRED_FROM_COMPLETION_EVENT
+--   criteriaUnavailableAfterCompletion=true si ninguna lectura de la ventana
+--   trajo criterios. completionCriteriaIncomplete solo seria true con un final
+--   sin autoridad, cosa que hoy no puede ocurrir (se conserva por compatibilidad).
 -- ===========================================================================
 
 local MitzuMPlus = _G.MitzuMPlus
@@ -64,6 +80,14 @@ TS.COMPLETION_WINDOW       = 3     -- segundos maximos de relectura tras complet
 TS.COMPLETION_INTERVAL     = 0.25  -- periodo del ticker de convergencia
 TS.COMPLETION_MAX_ATTEMPTS = 16    -- tope duro de lecturas en la ventana
 TS.COMPLETION_MAX_RECORDS  = 8     -- lecturas distintas anotadas en la caja negra
+
+-- De donde sale un valor terminal del final de llave.
+TS.SOURCE = {
+    OBSERVED = "OBSERVED",                           -- leido de Blizzard
+    INFERRED = "INFERRED_FROM_COMPLETION_EVENT",     -- implicado por el evento oficial
+    UNAVAILABLE = "UNAVAILABLE",                     -- no hubo dato ni autoridad
+}
+TS.COMPLETION_AUTHORITY = "CHALLENGE_MODE_COMPLETED"
 
 -- Carreras normales de sincronizacion: al arrancar la llave (o tras /reload)
 -- Blizzard tarda unos segundos en exponer temporizador y criterios. Mientras
@@ -295,7 +319,7 @@ local function signature(s)
         tostring(s.forcesStale), tostring(s.bossesStale), tostring(s.recovered),
         tostring(s.elapsedBase ~= nil), table.concat(s.warnings or {}, ","),
         tostring(s.completionAttempts), tostring(s.completionConverged),
-        tostring(s.completionCriteriaIncomplete),
+        tostring(s.completionCriteriaIncomplete), tostring(s.terminalStateConfirmed),
     }, "|")
 end
 
@@ -478,6 +502,7 @@ function TS:_EnterCompleting(base, raw, reason)
         finalElapsed = self._completedElapsed or self:_LiveElapsed(base)
             or (type(raw) == "table" and raw.elapsed or nil),
         attempts = 0, regressions = 0, records = 0, best = best,
+        source = TS.COMPLETION_AUTHORITY,
         forcesFresh = false, bossesFresh = false, sawInactive = false,
     }
     self._completedEvent, self._completedElapsed = nil, nil
@@ -568,7 +593,13 @@ function TS:_FinishCompletion(reason)
     if snap.forcesPercent ~= nil then snap.forcesStale = not (c.forcesFresh or forcesDone(snap)) end
     if snap.bossesTotal ~= nil then snap.bossesStale = not (c.bossesFresh or bossesDone(snap)) end
     snap.completionConverged = converged
-    snap.completionCriteriaIncomplete = not converged
+    -- La ventana solo se abre con CHALLENGE_MODE_COMPLETED: el final es oficial.
+    local terminal = c.source ~= nil
+    snap.completionSource = c.source
+    snap.terminalStateConfirmed = terminal
+    snap.completionCriteriaIncomplete = not (converged or terminal)
+    snap.criteriaUnavailableAfterCompletion = not (c.forcesFresh or c.bossesFresh)
+    TS.ApplyTerminalCounts(snap, terminal)
     snap.completionAttempts = c.attempts
     snap.completionConvergenceMs = math.floor((mono() - c.startedAt) * 1000 + 0.5)
     snap.completionRegressionsIgnored = c.regressions
@@ -582,9 +613,35 @@ function TS:_FinishCompletion(reason)
         forces = snap.forcesPercent and string.format("%.2f", snap.forcesPercent) or nil,
         bosses = snap.bossesTotal and (tostring(snap.bossesCompleted) .. "/" .. tostring(snap.bossesTotal)) or nil,
         converged = converged, attempts = c.attempts, ms = snap.completionConvergenceMs,
+        terminal = terminal, source = c.source, bossSource = snap.bossCountSource,
+        criteriaUnavailable = snap.criteriaUnavailableAfterCompletion,
     })
     self:_Commit(snap, reason)
     emit("MITZU_TRACKER_RUN_COMPLETED", self)
+end
+
+-- Valores terminales separados de lo observado. Con autoridad, todos los bosses
+-- y el 100 % de fuerzas estan implicados por el evento; sin ella, solo cuenta
+-- lo que Blizzard mostro. Nunca se toca bossesCompleted / forcesPercent.
+function TS.ApplyTerminalCounts(snap, terminal)
+    local SRC = TS.SOURCE
+    snap.bossesCompletedObserved = snap.bossesCompleted
+    if snap.bossesTotal == nil or snap.bossesTotal <= 0 then
+        snap.bossCountSource, snap.bossesCompletedFinal = SRC.UNAVAILABLE, nil
+    elseif bossesDone(snap) or not terminal then
+        snap.bossCountSource, snap.bossesCompletedFinal = SRC.OBSERVED, snap.bossesCompleted
+    else
+        snap.bossCountSource, snap.bossesCompletedFinal = SRC.INFERRED, snap.bossesTotal
+    end
+    if forcesDone(snap) then
+        snap.forcesCompletionSource, snap.forcesPercentFinal = SRC.OBSERVED, snap.forcesPercent
+    elseif terminal then
+        snap.forcesCompletionSource, snap.forcesPercentFinal = SRC.INFERRED, 100
+    elseif snap.forcesPercent ~= nil then
+        snap.forcesCompletionSource, snap.forcesPercentFinal = SRC.OBSERVED, snap.forcesPercent
+    else
+        snap.forcesCompletionSource, snap.forcesPercentFinal = SRC.UNAVAILABLE, nil
+    end
 end
 
 function TS:_StartCompletionTicker()
@@ -763,6 +820,14 @@ function TS:DiagnosticFields()
         { "completionConvergenceMs", s.completionConvergenceMs },
         { "completionCriteriaIncomplete", s.completionCriteriaIncomplete },
         { "completionRegressionsIgnored", s.completionRegressionsIgnored },
+        { "completionSource", s.completionSource },
+        { "terminalStateConfirmed", s.terminalStateConfirmed },
+        { "criteriaUnavailableAfterCompletion", s.criteriaUnavailableAfterCompletion },
+        { "bossesCompletedObserved", s.bossesCompletedObserved },
+        { "bossesCompletedFinal", s.bossesCompletedFinal },
+        { "bossCountSource", s.bossCountSource },
+        { "forcesPercentFinal", s.forcesPercentFinal and string.format("%.2f", s.forcesPercentFinal) or nil },
+        { "forcesCompletionSource", s.forcesCompletionSource },
         { "completionWindowOpen", self._completion ~= nil },
         { "duplicateCompletions", st.duplicateCompletions },
     }
@@ -793,9 +858,14 @@ function TS:ReportLines()
             .. "completionCriteriaIncomplete=%s regressionsIgnored=%s windowOpen=%s",
             text(s.completionConverged), text(s.completionAttempts), text(s.completionConvergenceMs),
             text(s.completionCriteriaIncomplete), text(s.completionRegressionsIgnored), text(self._completion ~= nil))
-        if s.completionCriteriaIncomplete then
-            L[#L + 1] = "  (Blizzard no expuso el final de los criterios en " .. TS.COMPLETION_WINDOW
-                .. " s: se conserva el ultimo valor real; limitacion del cliente, no error del addon)"
+        L[#L + 1] = string.format("completionSource=%s terminalStateConfirmed=%s criteriaUnavailableAfterCompletion=%s",
+            text(s.completionSource), text(s.terminalStateConfirmed), text(s.criteriaUnavailableAfterCompletion))
+        L[#L + 1] = string.format("bossesObserved=%s bossesFinal=%s/%s bossCountSource=%s forcesFinal=%s forcesCompletionSource=%s",
+            text(s.bossesCompletedObserved), text(s.bossesCompletedFinal), text(s.bossesTotal), text(s.bossCountSource),
+            s.forcesPercentFinal and string.format("%.2f%%", s.forcesPercentFinal) or "nil", text(s.forcesCompletionSource))
+        if s.terminalStateConfirmed and not s.completionConverged then
+            L[#L + 1] = "  (Blizzard retiro los criterios antes de mostrar el final: la llave termino segun "
+                .. text(s.completionSource) .. " y lo inferido queda marcado; limitacion del cliente, no error)"
         end
     end
     L[#L + 1] = "warnings=" .. ((#s.warnings > 0) and table.concat(s.warnings, ",") or "none")

@@ -184,7 +184,9 @@ test("real Retail sample is stored with normalized fields only", function()
         "elapsedBase", "elapsedAt", "timerSource", "timerStale", "forcesStale", "bossesStale", "timestamp", "reason",
         "revision", "recovered", "firstSeenAt", "completedAt", "finalElapsed", "adapterAvailable", "runWarnings", "transient",
         "completionConverged", "completionAttempts", "completionConvergenceMs", "completionCriteriaIncomplete",
-        "completionRegressionsIgnored" }) do allowed[k] = true end
+        "completionRegressionsIgnored", "completionSource", "terminalStateConfirmed", "criteriaUnavailableAfterCompletion",
+        "bossesCompletedObserved", "bossesCompletedFinal", "bossCountSource", "forcesPercentFinal",
+        "forcesCompletionSource" }) do allowed[k] = true end
     for k in pairs(s) do truthy(allowed[k], "unexpected snapshot field " .. tostring(k)) end
 end)
 
@@ -372,7 +374,9 @@ test("completion after the client already went inactive", function()
     advance(TS.COMPLETION_WINDOW + 0.1)
     equal(TS:GetStatus(), "COMPLETED"); near(TS:GetSnapshot().finalElapsed, 905)
     equal(TS:GetSnapshot().active, false); equal(TS:GetSnapshot().forcesCurrent, 144)
-    equal(TS:GetSnapshot().completionCriteriaIncomplete, true)
+    equal(TS:GetSnapshot().completionConverged, false, "the API never showed the end")
+    equal(TS:GetSnapshot().terminalStateConfirmed, true, "the official event did")
+    equal(TS:GetSnapshot().completionCriteriaIncomplete, false)
 end)
 
 test("a new key after completion starts a new run", function()
@@ -501,6 +505,8 @@ test("completion 1: criteria already converged freeze immediately", function()
     equal(s.bossesCompleted, 3); equal(s.bossesTotal, 3); equal(s.forcesPercent, 100); equal(s.forcesCurrent, 817)
     equal(s.completionConverged, true); equal(s.completionCriteriaIncomplete, false)
     equal(s.completionAttempts, 1); equal(s.completionConvergenceMs, 0)
+    equal(s.terminalStateConfirmed, true); equal(s.criteriaUnavailableAfterCompletion, false)
+    equal(s.bossCountSource, "OBSERVED"); equal(s.bossesCompletedFinal, 3); equal(s.forcesCompletionSource, "OBSERVED")
     equal(s.timerStale, false); equal(s.forcesStale, false); equal(s.bossesStale, false)
     near(s.finalElapsed, 1783); equal(s.deaths, 9); equal(s.deathTimeLost, 135)
     equal(s.mapID, 588); equal(s.keystoneLevel, 12)
@@ -589,7 +595,12 @@ test("completion 4: Blizzard never exposes 3/3, the real value is kept and flagg
     equal(s.bossesCompleted, 2, "never invented"); equal(s.bossesTotal, 3); equal(s.bosses[3].completed, false)
     equal(s.bossesStale, true, "2/3 was not confirmed after the event")
     equal(s.forcesPercent, 100); equal(s.forcesStale, false, "100 % is terminal")
-    equal(s.completionConverged, false); equal(s.completionCriteriaIncomplete, true)
+    equal(s.completionConverged, false); equal(s.completionCriteriaIncomplete, false)
+    equal(s.terminalStateConfirmed, true); equal(s.completionSource, "CHALLENGE_MODE_COMPLETED")
+    equal(s.criteriaUnavailableAfterCompletion, true)
+    equal(s.bossesCompletedObserved, 2); equal(s.bossesCompletedFinal, 3)
+    equal(s.bossCountSource, "INFERRED_FROM_COMPLETION_EVENT")
+    equal(s.forcesCompletionSource, "OBSERVED"); equal(s.forcesPercentFinal, 100)
     equal(s.completionConvergenceMs, TS.COMPLETION_WINDOW * 1000)
     equal(s.completionAttempts, TS.COMPLETION_WINDOW / TS.COMPLETION_INTERVAL + 1)
     truthy(s.completionAttempts <= TS.COMPLETION_MAX_ATTEMPTS, "bounded")
@@ -602,10 +613,16 @@ test("completion 4: Blizzard never exposes 3/3, the real value is kept and flagg
     truthy(calls - calls0 <= TS.COMPLETION_MAX_ATTEMPTS)
     local report = table.concat(TS:ReportLines(), "\n")
     truthy(report:find("completionConverged=false", 1, true), report)
-    truthy(report:find("completionCriteriaIncomplete=true", 1, true), report)
+    truthy(report:find("completionCriteriaIncomplete=false", 1, true), report)
+    truthy(report:find("terminalStateConfirmed=true", 1, true), report)
+    truthy(report:find("bossCountSource=INFERRED_FROM_COMPLETION_EVENT", 1, true), report)
     local f = {}
     for _, p in ipairs(TS:DiagnosticFields()) do f[p[1]] = p[2] end
-    equal(f.status, "COMPLETED"); equal(f.completionConverged, false); equal(f.completionCriteriaIncomplete, true)
+    equal(f.status, "COMPLETED"); equal(f.completionConverged, false); equal(f.completionCriteriaIncomplete, false)
+    equal(f.terminalStateConfirmed, true); equal(f.criteriaUnavailableAfterCompletion, true)
+    equal(f.bossesCompletedFinal, 3); equal(f.bossCountSource, "INFERRED_FROM_COMPLETION_EVENT")
+    local done = recordData("STATE_RUN_COMPLETED")[1]
+    equal(done.terminal, true); equal(done.converged, false); equal(done.bossSource, "INFERRED_FROM_COMPLETION_EVENT")
     equal(f.completionWindowOpen, false); equal(f.bossesCompleted, 2)
     local reads = recordData("STATE_COMPLETION_READ")
     equal(#reads, 1, "identical reads are recorded once")
@@ -653,7 +670,8 @@ test("completion 8/9: adapter errors inside the window still end it and clean up
     advance(TS.COMPLETION_WINDOW + 0.5)
     equal(TS:GetStatus(), "COMPLETED")
     local s = TS:GetSnapshot()
-    equal(s.bossesCompleted, 2); equal(s.completionCriteriaIncomplete, true)
+    equal(s.bossesCompleted, 2); equal(s.completionCriteriaIncomplete, false); equal(s.terminalStateConfirmed, true)
+    equal(s.criteriaUnavailableAfterCompletion, true, "no read inside the window succeeded")
     equal((activeTickers()), 0); equal(TS._completionTicker, nil); equal(TS._completion, nil)
     truthy(TS._stats.adapterErrors >= 2)
 end)
@@ -665,7 +683,8 @@ test("completion: RESET inside the window freezes, then the run ends", function(
     raw = { active = false, warnings = {} }
     TS:OnEvent("CHALLENGE_MODE_RESET")
     equal(TS:GetStatus(), "COMPLETED"); equal(TS._completion, nil)
-    equal(TS:GetSnapshot().bossesCompleted, 1); equal(TS:GetSnapshot().completionCriteriaIncomplete, true)
+    equal(TS:GetSnapshot().bossesCompleted, 1); equal(TS:GetSnapshot().completionCriteriaIncomplete, false)
+    equal(TS:GetSnapshot().bossesCompletedFinal, 3); equal(TS:GetSnapshot().terminalStateConfirmed, true)
     advance(1)
     equal((activeTickers()), 0); equal(count(records, "STATE_RUN_COMPLETED"), 1)
 end)
@@ -692,6 +711,107 @@ test("completion 10: startup transients still behave after the dev.5 changes", f
     advance(1)
     equal(TS:GetStatus(), "RUNNING"); equal(#TS:GetSnapshot().runWarnings, 0)
     equal(count(records, "STATE_SYNC"), 1)
+end)
+
+-- ---------------------------------------------------------------------------
+-- AUTHORITATIVE COMPLETION (1.1.0-dev.6)
+-- Retail 12.1.0 dev.5 run: Reposo de los Reyes (map 249) +12, limit 33:00,
+-- session 249:12:1789600084. /reload at 19:59, CHALLENGE_MODE_COMPLETED at
+-- 27:57 with 3/4 bosses observed and 100 % forces; the first read after the
+-- event was "active=false forces=nil bosses=nil criteria=nil".
+-- ---------------------------------------------------------------------------
+
+local function reposo(elapsed, forces, bossesDone, deaths)
+    local bosses = {}
+    for i = 1, 4 do bosses[i] = { index = i, name = "B" .. i, completed = i <= bossesDone } end
+    return {
+        active = true, available = true, mapID = 249, mapName = "Reposo de los Reyes", keystoneLevel = 12,
+        timeLimit = 1980, elapsed = elapsed, timerSource = "WORLD_ELAPSED_TIMER", deaths = deaths or 0,
+        deathTimeLost = (deaths or 0) * 5, forcesCurrent = forces, forcesTotal = 608,
+        forcesPercent = forces / 608 * 100, forcesRemaining = 608 - forces,
+        forcesRemainingPercent = 100 - forces / 608 * 100, forcesSource = "COUNT_TOTAL",
+        bossesCompleted = bossesDone, bossesTotal = 4, bosses = bosses, warnings = {}, criteriaCount = 5,
+    }
+end
+local function reposoRunning(elapsedNow, forces, bossesDone, deaths)
+    local s = reposo(elapsedNow, forces, bossesDone, deaths)
+    s.serverStartAt = clock.now - elapsedNow
+    return s
+end
+
+test("reposo +12 fixture: snapshots T1-T3 are stored exactly", function()
+    local TS = install()
+    for _, case in ipairs({ { 152, 136, 0, 22.37 }, { 353, 211, 1, 34.70 }, { 804, 449, 2, 73.85 } }) do
+        raw = reposoRunning(case[1], case[2], case[3]); TS:Refresh("fixture")
+        local s = TS:GetLiveSnapshot()
+        equal(TS:GetStatus(), "RUNNING"); near(s.elapsed, case[1], 1e-9)
+        near(s.timeRemaining, 1980 - case[1], 1e-9)
+        equal(s.forcesCurrent, case[2]); equal(s.forcesTotal, 608); near(s.forcesPercent, case[4], 0.005)
+        equal(s.forcesRemaining, 608 - case[2]); equal(s.bossesCompleted, case[3]); equal(s.bossesTotal, 4)
+    end
+    equal(count(records, "STATE_RUN_STARTED"), 1)
+end)
+
+test("reposo +12 fixture: reload at 19:59 recovers, API disappears at the end, run is terminal", function()
+    local TS = install()                                        -- fresh Lua state after /reload
+    raw = reposo(nil, 608, 3, 11)
+    TS:OnEvent("PLAYER_ENTERING_WORLD"); advance(0.3)
+    equal(TS:GetStatus(), "PENDING"); equal(TS:GetSnapshot().forcesCurrent, 608)
+    raw = reposoRunning(1199, 608, 3, 11)
+    advance(1)
+    equal(TS:GetStatus(), "RUNNING"); equal(TS:GetSnapshot().recovered, true)
+    equal(count(records, "STATE_RUN_RECOVERED"), 1); equal(count(records, "STATE_RUN_STARTED"), 1)
+    near(TS:GetElapsed(), 1200, 1e-9, "server time continues after the reload")
+
+    advance(1677 - 1200)
+    raw = reposoRunning(1677, 608, 3, 14); TS:Refresh("last read")
+    raw = { active = false, available = true, warnings = {}, criteriaCount = nil }   -- criteria=nil
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED")
+    equal(TS:GetStatus(), "COMPLETING", "the normal convergence window still runs first")
+    advance(TS.COMPLETION_WINDOW + 0.2)
+    equal(TS:GetStatus(), "COMPLETED")
+
+    local s = TS:GetSnapshot()
+    near(s.finalElapsed, 1677, 1e-9)
+    equal(s.forcesCurrent, 608); equal(s.forcesTotal, 608); equal(s.forcesPercent, 100); equal(s.deaths, 14)
+    -- RAW OBSERVED STATE is untouched.
+    equal(s.bossesCompleted, 3, "observed value is never rewritten"); equal(s.bossesTotal, 4)
+    equal(s.bossesCompletedObserved, 3); equal(s.bosses[4].completed, false)
+    -- TERMINAL COMPLETION STATE is explicit and traceable.
+    equal(s.completionConverged, false, "API convergence and authoritative completion are separate")
+    equal(s.terminalStateConfirmed, true); equal(s.completionSource, "CHALLENGE_MODE_COMPLETED")
+    equal(s.criteriaUnavailableAfterCompletion, true); equal(s.completionCriteriaIncomplete, false)
+    equal(s.bossesCompletedFinal, 4); equal(s.bossCountSource, "INFERRED_FROM_COMPLETION_EVENT")
+    equal(s.forcesPercentFinal, 100); equal(s.forcesCompletionSource, "OBSERVED")
+    equal(#s.warnings, 0); equal(#s.runWarnings, 0, "no false warning")
+
+    -- Finalized once, even with the client repeating the event.
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED"); advance(5)
+    equal(count(records, "STATE_RUN_COMPLETED"), 1); equal(count(emitted, "MITZU_TRACKER_RUN_COMPLETED"), 1)
+    equal(count(records, "STATE_RUN_STARTED"), 1, "no second run")
+    local done = recordData("STATE_RUN_COMPLETED")[1]
+    equal(done.bosses, "3/4"); equal(done.terminal, true); equal(done.criteriaUnavailable, true)
+end)
+
+test("authority: forces below 100 % at the event are inferred, observed value kept", function()
+    local TS = install()
+    raw = reposoRunning(1500, 600, 4); TS:Refresh("t")
+    raw = { active = false, warnings = {} }
+    TS:OnEvent("CHALLENGE_MODE_COMPLETED"); advance(TS.COMPLETION_WINDOW + 0.5)
+    local s = TS:GetSnapshot()
+    equal(s.forcesCurrent, 600); truthy(s.forcesPercent < 100)
+    equal(s.forcesPercentFinal, 100); equal(s.forcesCompletionSource, "INFERRED_FROM_COMPLETION_EVENT")
+    equal(s.bossCountSource, "OBSERVED"); equal(s.bossesCompletedFinal, 4)
+end)
+
+test("authority: a run that ends without the event is not terminal", function()
+    local TS = install()
+    raw = reposoRunning(900, 300, 2); TS:Refresh("t")
+    raw = { active = false, warnings = {} }
+    TS:OnEvent("CHALLENGE_MODE_RESET"); advance(0.3)
+    local s = TS:GetSnapshot()
+    equal(TS:GetStatus(), "IDLE"); equal(s.terminalStateConfirmed, nil); equal(s.bossesCompletedFinal, nil)
+    equal(count(records, "STATE_RUN_COMPLETED"), 0)
 end)
 
 if #failures > 0 then error(string.format("TrackerState: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end
