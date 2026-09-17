@@ -13,6 +13,61 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.9 — desarrollo interno (Retail dev, sin publicar)
+
+Pasada final de pulido y observabilidad. **Sin funciones nuevas** y sin tocar
+adaptador, estado, predicción, perfilado de grupo, sesiones, historial ni la
+autoridad de finalización. dev.8 quedó validado en Retail (Guarida de Nalorakk
++4: `renderMode=EMBEDDED`, `NO_FLOATING_HUD_DURING_KEY=PASS`, `tainted=none`,
+`enhancerErrors=0`, `/reload` con la misma sesión, historial +1,
+`completionSource=CHALLENGE_MODE_COMPLETED` con el último jefe inferido).
+
+- **RITMO más legible en combate**: la etiqueta deja el gris casi invisible
+  (`a8a8b0` → `c8c8d2`) y la línea ya no se atenúa al 80 % cuando el bracket es
+  provisional; eso lo cuenta la confianza, que sigue siendo secundaria y en
+  `GameFontDisableSmall`. Mismo tamaño, sin fondo, sin borde y sin brillo: el
+  temporizador de Blizzard sigue siendo lo más visible.
+- **Fuerzas ancladas a la barra de Blizzard**: `502 / 729` y `faltan 227` cuelgan
+  de una fila propia anclada a los extremos reales de la `StatusBar`
+  (`BOTTOMLEFT`/`BOTTOMRIGHT` de la misma fila), con una única separación
+  vertical. Misma base, misma altura, sin coordenadas absolutas y sin escribir
+  nada sobre la barra de Blizzard.
+- **Snapshot QA del último render integrado** (`MitzuTracker._lastEmbedded`):
+  copia plana de lo último que Mitzu pintó **de verdad** dentro del bloque M+.
+  Solo se actualiza con un render `EMBEDDED` válido (bloque visible, activo y
+  enganche sano) y no se borra al ocultarse el tracker, con el resumen, con la
+  vista previa, al terminar la llave ni al salir de la mazmorra. Vive en memoria:
+  no toca SavedVariables, ni `TrackerState`, ni sesiones, ni historial.
+- **Bug Report `[LAST EMBEDDED RENDER]`**: `lastEmbedded.available`,
+  `lastEmbedded.age`, `stateRevision`, `renderRevision`, `thresholdDisplayed`,
+  `thresholdTimeDisplayed`, `thresholdMode`, `paceDisplayed`, `paceMode`,
+  `prediction`, `provisional`, `confidenceDisplayed`, `etaDisplayed`,
+  `forcesPrimaryDisplayed`, `forcesSecondaryDisplayed`, `forcesLayoutMode`,
+  `penaltyDisplayed`, `availableWidth`, `angryKeystonesLoaded`,
+  `attachGeneration`, `attachmentHealthy`, `renderReason`. El prefijo separa
+  ACTUAL (`[TRACKER VISUAL]`) de ÚLTIMO: tras el resumen el primero es `nil` y el
+  segundo sigue contando la llave. `ReportVersion` pasa a 4.
+- **Penalización de muertes**: política intacta (solo el tiempo perdido que
+  publica Blizzard, nunca el recuento, que ya es suyo) más un mínimo de 1 s para
+  que una penalización sub-segundo no se pinte como `-0:00`.
+- **Angry Keystones**: sin capa de compatibilidad nueva. Solo
+  `C_AddOns.IsAddOnLoaded("AngryKeystones")`; con AK cargado el umbral es suyo
+  (`thresholdMode=DEFERRED`) y Mitzu mantiene ritmo y fuerzas sin duplicar
+  porcentaje ni temporizador.
+- Vista previa alineada con el render real (misma fila de fuerzas, misma
+  etiqueta de RITMO); ni el resumen ni la vista previa se rediseñan.
+- Tests: fixture de regresión de la llave real (mapID 586 +4, límite 1920,
+  `502 / 729`, `+3 5:18`, `RITMO +2` 50 %), ciclo de vida del snapshot (crear,
+  actualizar, ocultar, resumen, vista previa, salir, llave nueva, sin efectos
+  sobre estado/historial/sesión), jerarquía de RITMO, alineación de fuerzas,
+  penalización de muertes y coexistencia con Angry Keystones.
+- Nuevas comprobaciones estáticas: el enhancer no puede pintar fondo ni texturas,
+  no puede escribir en `DeathCount`/`StatusBar`/`Label` de Blizzard, las fuentes
+  secundarias siguen siendo pequeñas y grises, y el snapshot QA no puede escribir
+  `TrackerState`, sesiones ni SavedVariables.
+- Nueva puerta `tests/run_mutation_tests.py`: 25 mutantes (dev.6/7/8 conservados
+  + los de dev.9), 25 detectados, 0 supervivientes.
+
 ### 1.1.0-dev.8 — desarrollo interno (Retail dev, sin publicar)
 
 - Pasada de densidad y jerarquía visual del tracker integrado (sin cambios de

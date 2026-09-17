@@ -548,5 +548,303 @@ test("floating settings: scale, alpha, lock and position only move the preview w
     end)
 end)
 
+-- ---------------------------------------------------------------------------
+-- 1.1.0-dev.9: pulido final y observabilidad del ultimo render integrado.
+-- ---------------------------------------------------------------------------
+
+local function flat(snap)
+    for key, value in pairs(snap or {}) do
+        local t = type(value)
+        truthy(t == "string" or t == "number" or t == "boolean",
+            "the QA snapshot only stores flat values: " .. tostring(key) .. " is " .. t)
+    end
+end
+local function reportValue(report, key)
+    return report:match("\n" .. key:gsub("([%.%-%+])", "%%%1") .. "=([^\n]*)")
+end
+
+test("dev.9 A/B/C/H/I/J: the embedded render is snapshotted, updated and never erased by a hide", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local MT, TS, EN = MP.MitzuTracker, MP.TrackerState, MP.BlizzardTrackerEnhancer
+        equal(MT:GetLastEmbedded(), nil, "nothing to remember before a key")
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+
+        -- A: a valid embedded render creates the snapshot, with what was painted.
+        local snap = MT:GetLastEmbedded()
+        truthy(snap, "A: the embedded render creates the snapshot")
+        equal(snap.forcesPrimaryDisplayed, "343 / 686"); equal(snap.forcesSecondaryDisplayed, "faltan 343")
+        equal(snap.forcesLayoutMode, "SPLIT"); equal(snap.thresholdDisplayed, "+3"); equal(snap.thresholdMode, "NEXT")
+        truthy(snap.paceDisplayed and snap.paceDisplayed:find("RITMO", 1, true), tostring(snap.paceDisplayed))
+        equal(snap.angryKeystonesLoaded, false); equal(snap.attachmentHealthy, true)
+        equal(snap.attachGeneration, EN._generation); equal(snap.availableWidth, EN._displayed.available)
+        equal(snap.penaltyDisplayed, nil, "no deaths yet: no penalty remembered")
+        equal(snap.stateRevision, TS:GetRevision()); equal(snap.renderRevision, MT._renderRevision)
+        flat(snap)
+
+        -- H/I/J: taking the picture changes no game state at all.
+        local before = { revision = TS:GetRevision(), runs = historyCount(MP), status = TS:GetStatus(),
+                         session = S.serialize(MP.db.global.activeRunSession),
+                         sessionID = _G.MitzuMPlusCurrentRun.sessionID,
+                         state = S.serialize(TS:GetSnapshot()) }
+        for _ = 1, 3 do MT:Refresh("TEST") end
+        equal(TS:GetRevision(), before.revision, "H: no state revision moved")
+        equal(S.serialize(TS:GetSnapshot()), before.state, "H: TrackerState untouched")
+        equal(historyCount(MP), before.runs, "I: history never grows for a snapshot")
+        equal(_G.MitzuMPlusCurrentRun.sessionID, before.sessionID, "J: same sessionID")
+        equal(S.serialize(MP.db.global.activeRunSession), before.session, "J: same stored session")
+        equal(MP.db.global.lastEmbedded, nil, "the snapshot never reaches SavedVariables")
+
+        -- B: a later valid render replaces it (and clears what stopped showing).
+        crit.count = 600
+        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+        BT.setDeaths(2)
+        _G.C_ChallengeMode.GetDeathCount = function() return 2, 10 end
+        env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+        env.WoW.advance(2)
+        local second = MT:GetLastEmbedded()
+        equal(second, snap, "B: the same table is reused, not a new allocation per render")
+        equal(second.forcesPrimaryDisplayed, "600 / 686"); equal(second.forcesSecondaryDisplayed, "faltan 86")
+        equal(second.penaltyDisplayed, "-0:10", "B: the published penalty is remembered")
+        truthy(second.timestamp >= snap.timestamp)
+
+        -- C: Blizzard hides its block (timer stopped) -> nothing of ours is shown,
+        -- but the picture of the run stays exactly as it was.
+        BT.stopTimer()
+        env.WoW.advance(2)
+        equal(EN:IsVisible(), false); equal(EN._displayed.thresholdMode, nil, "current state is gone")
+        local kept = MT:GetLastEmbedded()
+        truthy(kept, "C: hiding never erases the snapshot")
+        equal(kept.forcesPrimaryDisplayed, "600 / 686"); equal(kept.penaltyDisplayed, "-0:10")
+        equal(kept.thresholdMode, "NEXT"); equal(kept.attachmentHealthy, true)
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("dev.9 D/E/F/G: summary, preview and leaving the dungeon keep the snapshot; a new key replaces it", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local MT, TS, EN = MP.MitzuTracker, MP.TrackerState, MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local during = S.serialize(MT:GetLastEmbedded())
+        truthy(MT:GetLastEmbedded().forcesPrimaryDisplayed, "a run was painted")
+
+        -- D: the key completes and the floating summary takes over.
+        env.WoW.advance(1200)
+        crit.count, crit.bosses = 686, { true, true, false }
+        env.WoW.fire("SCENARIO_CRITERIA_UPDATE")
+        BT.setForces(false)
+        env.WoW.advance(1)
+        env.WoW.state.challengeActive = false
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        env.WoW.fire("CHALLENGE_MODE_COMPLETED")
+        BT.stopTimer()
+        env.WoW.advance(4)
+        equal(MT:GetMode(), "SUMMARY"); equal(MT:GetRenderMode(), "PREVIEW_FLOATING")
+        local afterSummary = MT:GetLastEmbedded()
+        truthy(afterSummary, "D: the summary does not replace the snapshot")
+        equal(afterSummary.thresholdMode, "NEXT", "D: still the embedded values, not the summary window")
+        truthy(afterSummary.paceDisplayed:find("RITMO", 1, true), "D: the pace of the run, not the result")
+        equal(afterSummary.attachmentHealthy, true)
+        -- Blizzard frees its bar at 100 %, so the last thing Mitzu painted under
+        -- it was nothing: that is exactly what has to be remembered.
+        equal(afterSummary.forcesLayoutMode, "NO_BAR"); equal(afterSummary.forcesPrimaryDisplayed, nil)
+        local frozen = S.serialize(afterSummary)
+
+        -- The bug report tells CURRENT and LAST apart while the summary is up.
+        local report = MP.BugReport:Build()
+        truthy(report:find("[LAST EMBEDDED RENDER]", 1, true), "the section exists")
+        equal(reportValue(report, "renderMode"), "PREVIEW_FLOATING", "CURRENT is the summary window")
+        equal(reportValue(report, "lastEmbedded.available"), "true")
+        equal(reportValue(report, "lastEmbedded.thresholdMode"), "NEXT")
+        equal(reportValue(report, "thresholdMode"), "nil", "CURRENT has no threshold any more")
+
+        -- F: the summary expires and the player leaves the dungeon.
+        env.WoW.advance(MT.SUMMARY_SECONDS + 1)
+        equal(MT:GetMode(), "HIDDEN")
+        S.leaveDungeon(env)
+        env.WoW.advance(2)
+        equal(MT:GetRenderMode(), "NONE"); equal(MT:IsVisible(), false)
+        equal(S.serialize(MT:GetLastEmbedded()), frozen, "F: leaving the dungeon never erases the snapshot")
+        report = MP.BugReport:Build()
+        equal(reportValue(report, "trackerVisible"), "false")
+        equal(reportValue(report, "renderMode"), "NONE", "CURRENT: nothing is being painted")
+        equal(reportValue(report, "lastEmbedded.available"), "true", "still answerable after the key")
+        equal(reportValue(report, "lastEmbedded.paceDisplayed"), afterSummary.paceDisplayed)
+        truthy(tonumber(reportValue(report, "lastEmbedded.age")), "the age of the picture is reported")
+
+        -- E: the floating preview simulates the same layout but is not a real render.
+        equal(MT:SetPreview(true), true)
+        env.WoW.advance(3)
+        equal(MT:GetRenderMode(), "PREVIEW_FLOATING")
+        equal(S.serialize(MT:GetLastEmbedded()), frozen, "E: the preview never overwrites the snapshot")
+        truthy(not frozen:find("449", 1, true), "E: no preview data leaked in")
+        MT:SetPreview(false)
+
+        -- G: a brand new key replaces it as soon as it paints its first valid render.
+        local generation = MT:GetLastEmbedded().attachGeneration
+        local BT2 = freshMock(); BT2.install()
+        runningKey(env, BT2, 8)
+        local fresh = MT:GetLastEmbedded()
+        equal(fresh.forcesPrimaryDisplayed, "343 / 686", "G: the new run owns the snapshot")
+        truthy(fresh.attachGeneration > generation, "G: a new attachment generation")
+        truthy(S.serialize(fresh) ~= during, "G: the old picture is gone")
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("dev.9: the snapshot only follows a healthy embedded render", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local MT, EN = MP.MitzuTracker, MP.BlizzardTrackerEnhancer
+        -- Running key with no Blizzard block at all: nothing was painted, nothing stored.
+        startRun(env, 12)
+        env.WoW.advance(3)
+        equal(MT:GetRenderMode(), "EMBEDDED"); equal(EN:IsAttached(), false)
+        equal(MT:GetLastEmbedded(), nil, "an unavailable block leaves no picture")
+        local report = MP.BugReport:Build()
+        equal(reportValue(report, "lastEmbedded.available"), "false")
+        -- Attached but the block is not active yet: still nothing.
+        local BT = freshMock(); BT.install()
+        env.WoW.advance(1.1)
+        equal(EN:IsAttached(), true); equal(EN:IsVisible(), false)
+        equal(MT:GetLastEmbedded(), nil, "attached is not the same as painted")
+        BT.activate(305, 1800); BT.setForces(true)
+        env.WoW.advance(1.1)
+        truthy(MT:GetLastEmbedded(), "the first visible render is the first picture")
+        -- Kill switch: a disabled enhancer paints nothing, so it stores nothing new.
+        local kept = S.serialize(MT:GetLastEmbedded())
+        local build = MP.TrackerPresenter.BuildEmbedded
+        MP.TrackerPresenter.BuildEmbedded = function() error("boom") end
+        for _ = 1, 4 do BT.layout() end
+        env.WoW.advance(2)
+        MP.TrackerPresenter.BuildEmbedded = build
+        equal(EN._disabled, true)
+        equal(S.serialize(MT:GetLastEmbedded()), kept, "a disabled enhancer never refreshes the picture")
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+    end)
+end)
+
+test("dev.9: RITMO stays readable and the forces columns share the Blizzard bar geometry", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+
+        -- The pace line is never dimmed as a whole: the confidence is the
+        -- secondary part, in its own (grey, disabled) font.
+        local alphas = {}
+        local setAlpha = EN.elements.pace.SetAlpha
+        EN.elements.pace.SetAlpha = function(self, v) alphas[#alphas + 1] = v; return setAlpha(self, v) end
+        for _ = 1, 3 do EN:Render(EN._model, EN._opts, "TEST") end
+        EN.elements.pace.SetAlpha = setAlpha
+        for _, a in ipairs(alphas) do truthy(a >= 1, "the pace line is never faded: " .. tostring(a)) end
+        equal(EN.FONT.pace, "GameFontHighlightSmall", "RITMO keeps a legible highlight font")
+        equal(EN.FONT.secondary, "GameFontDisableSmall", "the confidence stays secondary")
+        equal(EN.FONT.forces, "GameFontHighlightSmall")
+        truthy(EN.COLOR.label ~= "a8a8b0", "dev.9 lifts the RITMO label out of near-grey")
+        for _, font in pairs(EN.FONT) do truthy(not font:find("Huge"), "no big font competes with the timer") end
+        truthy(EN.elements.pace:GetText():find("RITMO", 1, true), EN.elements.pace:GetText())
+
+        -- Both columns hang from one row anchored to the real ends of the bar.
+        local bar = BT.tracker.usedProgressBars[BT.tracker.ObjectivesBlock.forcesLine].Bar
+        local row = EN.elements.forcesRoot
+        equal(#row.__points, 2, "the row spans the whole bar")
+        equal(row.__points[1][1], "TOPLEFT"); equal(row.__points[1][2], bar); equal(row.__points[1][3], "BOTTOMLEFT")
+        equal(row.__points[2][1], "TOPRIGHT"); equal(row.__points[2][2], bar); equal(row.__points[2][3], "BOTTOMRIGHT")
+        equal(row.__points[1][5], row.__points[2][5], "one single vertical gap under the bar")
+        local left, right = EN.elements.forcesPrimary.__points[1], EN.elements.forcesSecondary.__points[1]
+        equal(left[1], "BOTTOMLEFT"); equal(left[2], row); equal(left[3], "BOTTOMLEFT")
+        equal(right[1], "BOTTOMRIGHT"); equal(right[2], row); equal(right[3], "BOTTOMRIGHT")
+        equal(left[5], right[5], "same baseline for count and remaining")
+        equal(left[4], -right[4], "symmetric inset: neither column leaves the bar")
+        equal(EN._displayed.forcesLayoutMode, "SPLIT")
+        equal(#BT.foreign, 0, "Blizzard's bar is only read: " .. table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("dev.9 Angry Keystones: deferred threshold, one pace, one percentage, snapshot says so", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        env.WoW.addonsLoaded.AngryKeystones = true
+        local MP = _G.MitzuMPlus
+        local MT, EN = MP.MitzuTracker, MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        equal(EN._displayed.angryKeystones, true); equal(EN._displayed.thresholdMode, "DEFERRED")
+        equal(EN.elements.threshold:GetText(), "", "Angry Keystones owns the threshold next to the clock")
+        truthy(EN.elements.pace:GetText():find("RITMO", 1, true), "the pace is still Mitzu's")
+        truthy(not (EN.elements.forcesPrimary:GetText() or ""):find("%%"), "no second percentage")
+        truthy(not (EN.elements.forcesSecondary:GetText() or ""):find("%%"))
+        equal(EN._displayed.forcesLayoutMode, "SPLIT", "the forces columns are not duplicated either")
+        local snap = MT:GetLastEmbedded()
+        equal(snap.angryKeystonesLoaded, true); equal(snap.thresholdMode, "DEFERRED")
+        equal(snap.thresholdDisplayed, nil, "nothing to remember: Mitzu painted no threshold")
+        truthy(snap.paceDisplayed:find("RITMO", 1, true))
+        local report = MP.BugReport:Build()
+        equal(reportValue(report, "lastEmbedded.angryKeystonesLoaded"), "true")
+        equal(reportValue(report, "lastEmbedded.thresholdMode"), "DEFERRED")
+        -- Without Angry Keystones the same run shows Mitzu's own threshold.
+        env.WoW.addonsLoaded.AngryKeystones = nil
+        env.WoW.advance(2)
+        equal(EN._displayed.thresholdMode, "NEXT")
+        equal(MT:GetLastEmbedded().thresholdMode, "NEXT")
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+    end)
+end)
+
+test("dev.9 death penalty: only the published time lost, beside Blizzard's own counter", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        equal(EN._displayed.penalty, nil, "deaths=0 timeLost=0: nothing")
+        equal(EN.elements.penalty:GetText(), "")
+        local cases = { { 1, 5, "-0:05" }, { 3, 15, "-0:15" }, { 12, 60, "-1:00" } }
+        for _, case in ipairs(cases) do
+            BT.setDeaths(case[1])
+            _G.C_ChallengeMode.GetDeathCount = function() return case[1], case[2] end
+            env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+            env.WoW.advance(1.1)
+            equal(EN._displayed.penalty, case[3], "deaths=" .. case[1] .. " timeLost=" .. case[2])
+            equal(EN.elements.penalty:GetText(), case[3])
+            truthy(not EN.elements.penalty:GetText():find(tostring(case[1]) .. "$"),
+                "the count is Blizzard's, never repeated")
+        end
+        -- The penalty hangs off Blizzard's death counter, which is only read.
+        equal(EN.elements.penalty.__points[1][1], "RIGHT")
+        equal(EN.elements.penalty.__points[1][2], BT.block.DeathCount)
+        equal(EN.elements.penalty.__points[1][3], "LEFT")
+        -- Deaths without a published time lost: nothing at all, never "-0:00".
+        _G.C_ChallengeMode.GetDeathCount = function() return 4, nil end
+        env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+        env.WoW.advance(1.1)
+        equal(EN._displayed.penalty, nil); equal(EN.elements.penalty:GetText(), "")
+        _G.C_ChallengeMode.GetDeathCount = function() return 4, 0 end
+        env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+        env.WoW.advance(1.1)
+        equal(EN._displayed.penalty, nil, "timeLost=0 is not a penalty")
+        equal(#BT.foreign, 0, "Blizzard's DeathCount is never written: " .. table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
 if #failures > 0 then error(string.format("TrackerVisual: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end
 return { tests = tests, assertions = assertions }

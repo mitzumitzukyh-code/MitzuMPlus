@@ -1,5 +1,5 @@
 -- ===========================================================================
--- MitzuMPlus - Tracker/MitzuTracker  (1.1.0-dev.8)
+-- MitzuMPlus - Tracker/MitzuTracker  (1.1.0-dev.9)
 --
 --     TrackerState ---------\                       /-> BlizzardTrackerEnhancer (llave real)
 --     PredictionEngine ------> MitzuTracker -> Presenter
@@ -69,6 +69,7 @@ MT._tick           = 0
 MT._pendingApply   = false
 MT._route          = "NONE"
 MT._warnedNoBlock  = false
+MT._lastEmbedded   = nil      -- dev.9: foto QA del ultimo render integrado
 
 local function now()
     local fn = rawget(_G, "GetTime")
@@ -277,7 +278,7 @@ function MT:Refresh(reason, readPrediction)
         local before, beforePred = self._mode, self._displayed.prediction
         local model = TP.Build(self:GatherInput(readPrediction))
         local route = MT.RENDER_ROUTE[model.mode] or "NONE"
-        local shown
+        local shown, embedded
         if route == "FLOATING" then
             self:_Build()
             EN:Render({ mode = "HIDDEN" }, nil, self._lastReason)
@@ -286,6 +287,7 @@ function MT:Refresh(reason, readPrediction)
             if TV.frame then TV:Render({ mode = "HIDDEN" }) end
             local opts = self:EmbeddedOptions()
             local emb = EN:Render(model, opts, self._lastReason) or {}
+            embedded = emb
             if route == "EMBEDDED" and not EN:IsAttached() and not self._warnedNoBlock then
                 self._warnedNoBlock = true
                 record("EMBED_UNAVAILABLE", { reason = EN._attachReason })
@@ -321,6 +323,9 @@ function MT:Refresh(reason, readPrediction)
         if not model.preview then
             self._stateRevision = method(MitzuMPlus.TrackerState, "GetRevision")
         end
+        -- Foto QA: solo tras un render integrado valido, ya con las revisiones
+        -- de este refresco. Nunca se borra en los demas caminos.
+        self:_CaptureEmbedded(route, embedded)
         if before ~= model.mode then
             record(model.mode == "HIDDEN" and "HIDDEN" or "SHOWN",
                 { mode = model.mode, reason = self._lastReason, preview = model.preview or nil })
@@ -357,6 +362,96 @@ function MT:_OnTick()
     self._tick = (self._tick or 0) + 1
     if self._preview then return end
     self:Refresh("TICK", self._tick % 2 == 0)
+end
+
+-- -------------------------------------------------------------------------
+-- SNAPSHOT QA DEL ULTIMO RENDER INTEGRADO  (dev.9)
+--
+-- Cuando la llave termina, Blizzard retira el ChallengeModeBlock y todo lo que
+-- el enhancer ensena pasa a nil: un `/emp bugreport` posterior no podia contar
+-- ya nada de lo que se vio DURANTE la run. Esto no era un fallo visual, era una
+-- limitacion de observabilidad.
+--
+-- La foto es SOLO diagnostico y solo de lectura para el juego: copia PLANA de
+-- strings, numeros y booleanos ya calculados (nada de frames, nada de tablas de
+-- Blizzard, ninguna medicion extra, sin copia profunda). Vive en memoria, no
+-- toca SavedVariables, ni TrackerState, ni la sesion, ni el historial, y
+-- desaparece con /reload como cualquier dato de vista.
+--
+-- Se ACTUALIZA solo con un render integrado valido: ruta EMBEDDED, bloque de
+-- Blizzard visible y activo y enganche sano. NO se borra ni se sobrescribe al
+-- ocultarse el tracker, con el resumen, con la vista previa, al pasar a
+-- COMPLETED o al salir de la mazmorra. Una llave nueva la reemplaza en cuanto
+-- pinta su primer render integrado valido.
+-- -------------------------------------------------------------------------
+
+MT.LAST_EMBEDDED_PREFIX = "lastEmbedded."
+
+-- { campo del informe, campo de BlizzardTrackerEnhancer._displayed }
+MT.LAST_EMBEDDED_FIELDS = {
+    { "thresholdDisplayed", "threshold" },
+    { "thresholdTimeDisplayed", "thresholdTime" },
+    { "thresholdMode", "thresholdMode" },
+    { "paceDisplayed", "paceText" },
+    { "paceMode", "paceMode" },
+    { "prediction", "pace" },
+    { "provisional", "provisional" },
+    { "confidenceDisplayed", "confidence" },
+    { "etaDisplayed", "eta" },
+    { "forcesPrimaryDisplayed", "forcesPrimary" },
+    { "forcesSecondaryDisplayed", "forcesSecondary" },
+    { "forcesLayoutMode", "forcesLayoutMode" },
+    { "penaltyDisplayed", "penalty" },
+    { "availableWidth", "available" },
+    { "angryKeystonesLoaded", "angryKeystones" },
+    { "attachGeneration", "attachGeneration" },
+    { "attachmentHealthy", "attachmentHealthy" },
+    { "renderReason", "reason" },
+}
+
+-- `emb` es BlizzardTrackerEnhancer._displayed (tabla plana). Devuelve si se
+-- guardo. La tabla se reutiliza: cada captura reescribe TODOS los campos, asi
+-- que un valor que desaparece (la penalizacion, por ejemplo) no se queda pegado.
+function MT:_CaptureEmbedded(route, emb)
+    if route ~= "EMBEDDED" or type(emb) ~= "table" or emb.active ~= true then return false end
+    if emb.attachmentHealthy ~= true or not self:IsEmbeddedVisible() then return false end
+    local snap = self._lastEmbedded
+    if not snap then snap = {}; self._lastEmbedded = snap end
+    for _, pair in ipairs(MT.LAST_EMBEDDED_FIELDS) do
+        local v = emb[pair[2]]
+        local t = type(v)
+        -- Sin `a and b or c`: un `false` legitimo (angryKeystonesLoaded,
+        -- attachmentHealthy, provisional) se perderia como nil.
+        if t == "string" or t == "number" or t == "boolean" then
+            snap[pair[1]] = v
+        else
+            snap[pair[1]] = nil
+        end
+    end
+    snap.timestamp = now()
+    snap.stateRevision = self._stateRevision
+    snap.renderRevision = self._renderRevision
+    return true
+end
+
+function MT:GetLastEmbedded() return self._lastEmbedded end
+
+-- Pares clave/valor con prefijo propio: el informe no puede confundir el estado
+-- ACTUAL ([TRACKER VISUAL]) con lo ultimo que se vio durante la llave.
+function MT:LastEmbeddedFields()
+    local P = MT.LAST_EMBEDDED_PREFIX
+    local snap = self._lastEmbedded
+    local out = { { P .. "available", snap ~= nil } }
+    if not snap then return out end
+    local age = now() - (snap.timestamp or 0)
+    if age < 0 then age = 0 end
+    out[#out + 1] = { P .. "age", math.floor(age * 10 + 0.5) / 10 }
+    out[#out + 1] = { P .. "stateRevision", snap.stateRevision }
+    out[#out + 1] = { P .. "renderRevision", snap.renderRevision }
+    for _, pair in ipairs(MT.LAST_EMBEDDED_FIELDS) do
+        out[#out + 1] = { P .. pair[1], snap[pair[1]] }
+    end
+    return out
 end
 
 -- -------------------------------------------------------------------------

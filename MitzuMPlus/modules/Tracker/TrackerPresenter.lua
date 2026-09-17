@@ -374,6 +374,9 @@ TP.EMBEDDED_MODES = { PENDING = true, RUNNING = true, COMPLETING = true }
 TP.SEPARATOR = " · "
 TP.GAP = 6             -- px entre partes de una misma linea
 TP.SPLIT_GAP = 12      -- px minimos entre recuento y restantes
+-- Penalizacion de muertes: por debajo de un segundo no hay nada que ensenar.
+-- Sin este minimo un tiempo perdido de 0,4 s se pintaria como "-0:00".
+TP.MIN_PENALTY_SECONDS = 1
 
 -- Primer candidato cuyo ancho medido cabe. Determinista. Sin ancho conocido
 -- se elige el mas corto. Si ni el mas corto cabe, nada ("").
@@ -449,7 +452,8 @@ function TP.BuildEmbedded(model, opts)
     -- Muertes: Blizzard ya ensena icono y numero; Mitzu solo el tiempo perdido
     -- publicado (el reloj de Blizzard es tiempo restante: "-").
     local d = m.deaths or {}
-    if o.showDeaths ~= false and d.count and d.count > 0 and d.timeLost and d.timeLost > 0 then
+    if o.showDeaths ~= false and d.count and d.count > 0
+       and d.timeLost and d.timeLost >= TP.MIN_PENALTY_SECONDS then
         e.penaltyText = "-" .. TP.FormatClock(d.timeLost)
     end
     return e

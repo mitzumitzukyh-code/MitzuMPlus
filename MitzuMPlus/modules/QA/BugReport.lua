@@ -4,7 +4,7 @@ if not MitzuMPlus then return end
 
 local BR = {}
 MitzuMPlus.BugReport = BR
-BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 3, 80, 10
+BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 4, 80, 10
 
 local function safe()
     return MitzuMPlus.QASafe or {
@@ -144,6 +144,20 @@ SECTIONS[#SECTIONS + 1] = { "TRACKER VISUAL", function(add)
     local MT = MitzuMPlus.MitzuTracker
     local fields = call(MT, "DiagnosticFields")
     if type(fields) ~= "table" then add("module", MT and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
+-- 1.1.0-dev.9: lo ULTIMO que Mitzu pinto DE VERDAD dentro del bloque M+ de
+-- Blizzard durante la llave. La seccion anterior es el estado ACTUAL, que al
+-- terminar la llave es nil porque Blizzard retira el ChallengeModeBlock; esta
+-- conserva la evidencia de la run para poder pedirla despues del resumen.
+-- Nunca se mezclan: las claves de aqui llevan el prefijo `lastEmbedded.`.
+SECTIONS[#SECTIONS + 1] = { "LAST EMBEDDED RENDER", function(add)
+    local MT = MitzuMPlus.MitzuTracker
+    local fields = call(MT, "LastEmbeddedFields")
+    if type(fields) ~= "table" then add("lastEmbedded.available", MT and "ERROR" or "UNAVAILABLE") return end
     for _, pair in ipairs(fields) do
         if type(pair) == "table" then add(pair[1], pair[2]) end
     end

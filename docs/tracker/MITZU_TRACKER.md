@@ -1,4 +1,4 @@
-# Mitzu Tracker (1.1.0-dev.8)
+# Mitzu Tracker (1.1.0-dev.9)
 
 - **dev.6**: prototipo visual independiente (ventana flotante durante la llave).
 - **dev.7**: arquitectura integrada (**Blizzard Objective Tracker enhancement**).
@@ -6,6 +6,11 @@
   bloque M+ nativo. Validada en Retail (Guarida de Nalorakk +10).
 - **dev.8**: pasada de densidad y jerarquía visual. Menos texto, un solo umbral,
   secundarios en gris, fuerzas en dos columnas. Sin cambios de lógica.
+- **dev.9**: pulido final y diagnóstico del render integrado. RITMO legible en
+  combate, fuerzas ancladas a la geometría real de la barra y snapshot QA del
+  último render `EMBEDDED`. Sin funciones nuevas ni cambios de backend. dev.8
+  validado en Retail (Guarida de Nalorakk +4: `attachmentHealthy=true`,
+  `tainted=none`, `enhancerErrors=0`, `/reload` con la misma sesión).
 
 ## Capas
 
@@ -100,7 +105,28 @@ Jerarquía: TimeLeft > umbral (`GameFontHighlight`) > ritmo
 (`GameFontHighlightSmall`) > fuerzas > restantes/penalización > confianza/ETA
 (`GameFontDisableSmall`). Solo objetos de fuente de Blizzard; el color refuerza
 el código (`+3` verde, `+2` dorado, `+1` naranja, `OVERTIME` rojo) pero el texto
-siempre está.
+siempre está. `run_static_checks.py` congela esa jerarquía: ritmo, fuerzas,
+penalización y secundarios tienen que seguir siendo fuentes `*Small`, el
+secundario `GameFontDisable*`, y no puede aparecer ninguna fuente `Huge`.
+
+### Legibilidad del ritmo (dev.9)
+
+dev.8 dejaba `RITMO +2` demasiado tenue durante el combate: la etiqueta iba en
+`a8a8b0` y, además, toda la línea bajaba a `alpha 0.8` cuando el bracket era
+provisional. dev.9 sube la etiqueta a `c8c8d2` y quita esa atenuación: la
+provisionalidad ya la cuenta la confianza, que es la parte secundaria y va en
+gris. No se toca el tamaño y no se añade fondo, borde, recuadro ni brillo.
+
+### Fuerzas ancladas a la barra (dev.9)
+
+`forcesRoot` es una fila propia de 12 px anclada `TOPLEFT/TOPRIGHT` a
+`BOTTOMLEFT/BOTTOMRIGHT` de la `StatusBar` de fuerzas de Blizzard, con una sola
+separación vertical (`FORCES_GAP_Y`). Dentro, `forcesPrimary` va a `BOTTOMLEFT`
+y `forcesSecondary` a `BOTTOMRIGHT` de esa fila con el mismo margen
+(`FORCES_INSET`): comparten base y altura, quedan pegadas a los extremos reales
+de la barra y no dependen de ninguna coordenada absoluta. La barra de Blizzard
+solo se lee (`GetWidth`), nunca se reancla ni se reescribe. `TrackerView` usa la
+misma fila para que la vista previa no diverja del render real.
 
 ### Umbral único
 
@@ -136,7 +162,38 @@ Detección robusta y sin internals: `C_AddOns.IsAddOnLoaded("AngryKeystones")`.
 Con AK: el umbral junto al reloj es suyo (`thresholdMode=DEFERRED`), el ritmo se
 alinea a la derecha (junto al contador de muertes) para no pisar su texto.
 Mitzu nunca escribe un porcentaje, así que no se duplica el de AK ni el de
-Blizzard. Pendiente de confirmar a ojo en Retail con AK activo.
+Blizzard. Tampoco se leen frames, globales, funciones privadas ni
+SavedVariables de AK: si AK cambia por dentro, Mitzu no se entera. El Bug
+Report lo deja por escrito con `angryKeystonesLoaded` y `thresholdMode`.
+Pendiente de confirmar a ojo en Retail con AK activo.
+
+## Snapshot QA del último render integrado (dev.9)
+
+Cuando la llave termina, Blizzard retira el `ChallengeModeBlock`: a partir de
+ahí `thresholdDisplayed`, `paceDisplayed`, `forces*Displayed` y `availableWidth`
+son `nil`, y un `/emp bugreport` posterior no podía contar nada de lo que se vio
+DURANTE la run. No era un fallo visual, era una limitación de observabilidad.
+
+`MitzuTracker._lastEmbedded` guarda una copia **plana** (solo cadenas, números y
+booleanos ya calculados) de lo último que Mitzu pintó de verdad dentro del
+bloque. Solo diagnóstico:
+
+- **Se actualiza** cuando la ruta es `EMBEDDED`, el render es válido
+  (`active`), el enganche está sano (`attachmentHealthy`) y las líneas están
+  visibles (`IsEmbeddedVisible`). Se reutiliza la misma tabla y se reescriben
+  todos los campos, así que un valor que deja de mostrarse no se queda pegado.
+- **No se toca** al ocultarse el tracker, con el resumen flotante, con la vista
+  previa, al pasar a `COMPLETED`, al salir de la mazmorra ni cuando el enhancer
+  se apaga solo por errores. Una llave nueva la reemplaza en cuanto pinta su
+  primer render integrado válido.
+- **No es estado de juego**: no escribe `TrackerState`, ni sesiones, ni
+  historial, ni SavedVariables; no mide texto extra, no copia tablas de Blizzard
+  y no guarda referencias a frames. Desaparece con `/reload`.
+
+`run_static_checks.py` exige que `MT:_CaptureEmbedded` no nombre `TrackerState`,
+`RunSession`, `PredictionEngine`, `db.global`, `db.profile` ni las medidas de
+texto, que solo acepte renders `EMBEDDED` y que ningún camino ponga el snapshot
+a `nil`.
 
 ## Estados
 
@@ -181,8 +238,34 @@ Bug Report `[TRACKER VISUAL]`: `implementation=BLIZZARD_TRACKER_ENHANCER`,
 `enhancerErrors`, `enhancerDisabled`, `lastRenderError`. Sin referencias a frames.
 Invariante `NO_FLOATING_HUD_DURING_KEY`.
 
+Bug Report `[LAST EMBEDDED RENDER]` (dev.9): los mismos datos, pero del último
+render integrado de la llave, con el prefijo `lastEmbedded.` para que no se
+confundan con el estado ACTUAL. `available`, `age`, `stateRevision`,
+`renderRevision`, `thresholdDisplayed`, `thresholdTimeDisplayed`,
+`thresholdMode`, `paceDisplayed`, `paceMode`, `prediction`, `provisional`,
+`confidenceDisplayed`, `etaDisplayed`, `forcesPrimaryDisplayed`,
+`forcesSecondaryDisplayed`, `forcesLayoutMode`, `penaltyDisplayed`,
+`availableWidth`, `angryKeystonesLoaded`, `attachGeneration`,
+`attachmentHealthy`, `renderReason`. Fuera de la mazmorra el informe dice a la
+vez `renderMode=NONE` / `trackerVisible=false` y `lastEmbedded.available=true`.
+
+Puerta de mutación: `python tests/run_mutation_tests.py` rompe a propósito cada
+promesa visual (borrar el snapshot al ocultar, que el resumen o la vista previa
+lo sobrescriban, que la confianza gane al ritmo, anclar las fuerzas al lado
+equivocado, pintar `-0:00`, duplicar muertes o porcentaje, repetir el umbral con
+AK, escribir sobre la `StatusBar` o el `DeathCount` de Blizzard, meter fondo,
+agrandar RITMO) y comprueba que la suite o las comprobaciones estáticas lo
+cazan. Los mutantes de dev.6/7/8 se conservan.
+
 ## Pendiente de validar en Retail
 
 Anchos reales de fuente (el mock usa 6 px/carácter), solape con afijos largos y
 con Angry Keystones activo, línea de fuerzas bajo la barra, `tainted=none` tras
 `/reload` (`/emp dev blizzard`).
+
+dev.9 necesita dos pruebas en Retail: una **sin** Angry Keystones (umbral único,
+RITMO legible, confianza secundaria, fuerzas alineadas con la barra, un solo
+porcentaje, `/reload`, penalización si hay muertes, final de llave) y otra
+**con** AK (`angryKeystonesLoaded=true`, `thresholdMode=DEFERRED`, sin umbral
+duplicado, sin porcentaje duplicado, sin solapes). En ambas, `/emp bugreport`
+después de que expire el resumen tiene que seguir enseñando `lastEmbedded.*`.

@@ -1,5 +1,6 @@
 -- ===========================================================================
--- MitzuMPlus - Tracker/BlizzardTrackerEnhancer  (dev.7 integracion, dev.8 densidad)
+-- MitzuMPlus - Tracker/BlizzardTrackerEnhancer  (dev.7 integracion, dev.8
+-- densidad, dev.9 pulido final)
 --
 --     TrackerState -> MitzuTracker -> TrackerPresenter -> BlizzardTrackerEnhancer
 --                                                              |  (anclas)
@@ -43,8 +44,18 @@
 --   329 / 729      faltan 400  <- recuento y restantes, sin repetir el %
 --   [calavera 4] -0:20         <- solo la penalizacion publicada
 -- Que cabe lo decide TrackerPresenter.LayoutEmbedded (puro, testeado).
+--
 -- Con Angry Keystones cargado, el umbral junto al reloj es suyo: Mitzu no lo
 -- repite y alinea el ritmo a la derecha para no pisar su texto.
+--
+-- PULIDO dev.9 (solo presentacion, sin logica nueva):
+--   * RITMO se lee mejor: la etiqueta deja de ser casi gris y la linea ya no
+--     se atenua por un bracket provisional. Mismo tamano, sin fondo, sin borde
+--     y sin brillo: el reloj de Blizzard sigue siendo lo mas visible.
+--   * Las dos columnas de fuerzas cuelgan de una fila propia anclada a los
+--     extremos REALES de la StatusBar, compartiendo base y separacion.
+--   * Cada render valido deja constancia de su salud (attachGeneration,
+--     attachmentHealthy) para el snapshot de QA de MitzuTracker.
 --
 -- DATOS: solo el modelo de TrackerPresenter. Este fichero no lee APIs de
 -- Mitica+ (C_ChallengeMode, C_ScenarioInfo, ...) ni el texto de Blizzard.
@@ -69,6 +80,9 @@ E.LAYOUT = {
     LOOT_ICON      = 24,   -- TimesUpLootStatus (19 px + 4) cuando se acaba el tiempo
     LINE_2_Y       = -14,  -- linea de ritmo bajo la del umbral
     AK_RESERVE     = 44,   -- px que se dejan al texto de Angry Keystones tras el reloj
+    FORCES_GAP_Y   = -1,   -- separacion unica bajo la StatusBar de Blizzard
+    FORCES_ROW_H   = 12,   -- alto de la fila propia anclada a los extremos de la barra
+    FORCES_INSET   = 1,    -- margen dentro de los extremos de la barra (no se sale)
     MEASURE_CACHE  = 256,  -- anchos medidos que se recuerdan
     FALLBACK_TIME_W = 60,
     FALLBACK_BLOCK_W = 251,
@@ -77,7 +91,9 @@ E.LAYOUT = {
 -- El codigo va siempre como texto (+3/+2/+1/OVERTIME); el color solo refuerza.
 E.COLOR = {
     code    = { ["+3"] = "40ff73", ["+2"] = "ffd100", ["+1"] = "ff9933", OVERTIME = "ff4545" },
-    label   = "a8a8b0",
+    -- dev.9: la etiqueta RITMO sube de a8a8b0 a c8c8d2. Sigue siendo secundaria
+    -- frente al reloj de Blizzard, pero se lee sobre fondos con mucho combate.
+    label   = "c8c8d2",
     forces  = { 0.86, 0.86, 0.86 },
     penalty = { 1.00, 0.40, 0.40, 0.9 },
 }
@@ -173,6 +189,7 @@ function E:_CreateElements()
     local function fs(parent, kind, justify)
         local t = parent:CreateFontString(nil, "OVERLAY", E.FONT[kind])
         t:SetJustifyH(justify or "LEFT")
+        t:SetJustifyV("BOTTOM")
         t:SetWordWrap(false)
         return t
     end
@@ -406,6 +423,9 @@ function E:_Render(model, opts, reason)
     if pc.eta then extras[#extras + 1] = pc.eta end
     setText(self, "paceExtra", el.paceExtra, pc.text and table.concat(extras, "  ") or "")
     local paceSig = (defer and "right:" or "left:") .. offsetX .. ":" .. math.floor(rightEdge + 0.5)
+    -- dev.9: la linea del ritmo ya no se atenua cuando el bracket es
+    -- provisional. La provisionalidad la cuenta la confianza (secundaria, gris);
+    -- bajar el alfa de todo el texto solo lo hacia ilegible en combate.
     place(self, "paceAt", el.pace, paceSig, function()
         el.paceExtra:ClearAllPoints()
         if defer then
@@ -418,19 +438,24 @@ function E:_Render(model, opts, reason)
             el.paceExtra:SetPoint("LEFT", el.pace, "RIGHT", TPL.GAP, 0)
         end
     end)
-    el.pace:SetAlpha(emb.provisional and 0.8 or 1)
 
     -- 3. Fuerzas: debajo de la barra de Blizzard, en dos columnas.
     local fo = lay.forces
     local showForces = blizzInner ~= nil and (fo.primary or fo.secondary) ~= nil
     if showForces then
         place(self, "forcesAt", el.forcesRoot, tostring(blizzInner), function()
-            el.forcesRoot:SetPoint("TOPLEFT", blizzInner, "BOTTOMLEFT", 0, -1)
-            el.forcesRoot:SetPoint("TOPRIGHT", blizzInner, "BOTTOMRIGHT", 0, -1)
-            el.forcesRoot:SetHeight(12)
+            -- La fila propia copia la geometria real de la barra: sus dos
+            -- extremos y una unica separacion vertical. Nada de coordenadas
+            -- absolutas y nada escrito sobre la StatusBar de Blizzard.
+            el.forcesRoot:SetPoint("TOPLEFT", blizzInner, "BOTTOMLEFT", 0, L.FORCES_GAP_Y)
+            el.forcesRoot:SetPoint("TOPRIGHT", blizzInner, "BOTTOMRIGHT", 0, L.FORCES_GAP_Y)
+            el.forcesRoot:SetHeight(L.FORCES_ROW_H)
             el.forcesPrimary:ClearAllPoints(); el.forcesSecondary:ClearAllPoints()
-            el.forcesPrimary:SetPoint("TOPLEFT", el.forcesRoot, "TOPLEFT", 1, 0)
-            el.forcesSecondary:SetPoint("TOPRIGHT", el.forcesRoot, "TOPRIGHT", -1, 0)
+            -- Ambos por el borde INFERIOR de la misma fila: misma base, misma
+            -- altura, misma separacion respecto a la barra (las dos fuentes son
+            -- del mismo tamano, solo cambia el color).
+            el.forcesPrimary:SetPoint("BOTTOMLEFT", el.forcesRoot, "BOTTOMLEFT", L.FORCES_INSET, 0)
+            el.forcesSecondary:SetPoint("BOTTOMRIGHT", el.forcesRoot, "BOTTOMRIGHT", -L.FORCES_INSET, 0)
         end)
     else
         self._cache.forcesAt = nil
@@ -446,6 +471,9 @@ function E:_Render(model, opts, reason)
     local forcesLine = showForces and table.concat({ fo.primary or "", fo.secondary or "" }, fo.primary and fo.secondary and "  " or "") or nil
     self._displayed = {
         active = true,
+        attachGeneration = self._generation,
+        attachmentHealthy = self._attached == true and el.root:GetParent() == blizzBlock,
+        provisional = emb.provisional == true,
         threshold = th.upgrade, thresholdTime = th.timeText, thresholdMode = th.mode,
         upgrade = th.text,
         pace = emb.paceCode, paceText = pc.text, paceMode = pc.mode,
@@ -495,6 +523,7 @@ function E:DiagnosticFields()
         { "thresholdMode", d.thresholdMode },
         { "paceDisplayed", d.paceText },
         { "paceMode", d.paceMode },
+        { "confidenceTextDisplayed", d.confidence },
         { "etaDisplayed", d.eta },
         { "forcesPrimaryDisplayed", d.forcesPrimary },
         { "forcesSecondaryDisplayed", d.forcesSecondary },

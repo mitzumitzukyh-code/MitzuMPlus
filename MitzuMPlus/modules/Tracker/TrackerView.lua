@@ -1,5 +1,6 @@
 -- ===========================================================================
--- MitzuMPlus - Tracker/TrackerView  (dev.8: simulador del tracker de Blizzard)
+-- MitzuMPlus - Tracker/TrackerView  (dev.8 simulador del tracker de Blizzard,
+-- dev.9 mismas anclas de fuerzas que el render integrado)
 --
 -- Ventana flotante SOLO para vista previa (herramienta de configuracion/QA
 -- fuera de llave) y el resumen final. Durante una llave real nunca se usa:
@@ -35,6 +36,9 @@ MitzuMPlus.TrackerView = TV
 TV.BLOCK_W, TV.BLOCK_H = 251, 87
 TV.LEVEL_X, TV.DEATH_RIGHT, TV.GAP, TV.LOOT_ICON, TV.LINE_2_Y = 28, 47, 8, 24, -14
 TV.BAR_W = 191
+-- Mismos numeros que E.LAYOUT en el enhancer: la vista previa debe ensenar la
+-- misma fila de fuerzas que se vera dentro del bloque de Blizzard.
+TV.FORCES_GAP_Y, TV.FORCES_ROW_H, TV.FORCES_INSET = -1, 12, 1
 TV.MAX_BOSSES = 4
 TV.WIDTH = TV.BLOCK_W + 20
 TV.HEADER_H, TV.BOSS_H = 22, 16
@@ -49,7 +53,7 @@ TV.COLOR = {
     bg       = { 0, 0, 0, 0.45 },
     title    = { 1.00, 0.82, 0.00 },
     code     = { ["+3"] = "40ff73", ["+2"] = "ffd100", ["+1"] = "ff9933", OVERTIME = "ff4545" },
-    label    = "a8a8b0",
+    label    = "c8c8d2",       -- dev.9: legible en combate, aun secundaria
     timeBarBg = { 0.10, 0.10, 0.12, 0.9 },
     timeBar  = { 0.95, 0.80, 0.25, 0.9 },
     forcesBg = { 0.08, 0.08, 0.10, 0.9 },
@@ -72,6 +76,7 @@ end
 local function fs(parent, template, justify)
     local t = parent:CreateFontString(nil, "OVERLAY", template or "GameFontHighlightSmall")
     t:SetJustifyH(justify or "LEFT")
+    t:SetJustifyV("BOTTOM")
     t:SetWordWrap(false)
     return t
 end
@@ -149,10 +154,17 @@ function TV:Create(parent, name)
     r.forcesBar:SetHeight(17); r.forcesBar:SetPoint("LEFT", r.forcesBarBg, "LEFT", 0, 0)
     r.forcesLabel = fs(f, "GameFontHighlightMedium", "CENTER")
     r.forcesLabel:SetPoint("CENTER", r.forcesBarBg, "CENTER", 0, 0)
-    r.forcesPrimary = fs(f, TV.FONT.forces)
-    r.forcesPrimary:SetPoint("TOPLEFT", r.forcesBarBg, "BOTTOMLEFT", 1, -1)
-    r.forcesSecondary = fs(f, TV.FONT.secondary, "RIGHT")
-    r.forcesSecondary:SetPoint("TOPRIGHT", r.forcesBarBg, "BOTTOMRIGHT", -1, -1)
+    -- Fila propia anclada a los dos extremos de la barra; las dos columnas
+    -- comparten borde inferior, asi que comparten base (misma jerarquia que el
+    -- render integrado: recuento legible, restantes en gris).
+    r.forcesRow = CreateFrame("Frame", nil, f)
+    r.forcesRow:SetHeight(TV.FORCES_ROW_H)
+    r.forcesRow:SetPoint("TOPLEFT", r.forcesBarBg, "BOTTOMLEFT", 0, TV.FORCES_GAP_Y)
+    r.forcesRow:SetPoint("TOPRIGHT", r.forcesBarBg, "BOTTOMRIGHT", 0, TV.FORCES_GAP_Y)
+    r.forcesPrimary = fs(r.forcesRow, TV.FONT.forces)
+    r.forcesPrimary:SetPoint("BOTTOMLEFT", r.forcesRow, "BOTTOMLEFT", TV.FORCES_INSET, 0)
+    r.forcesSecondary = fs(r.forcesRow, TV.FONT.secondary, "RIGHT")
+    r.forcesSecondary:SetPoint("BOTTOMRIGHT", r.forcesRow, "BOTTOMRIGHT", -TV.FORCES_INSET, 0)
 
     r.measure = {}
     for kind, template in pairs(TV.FONT) do

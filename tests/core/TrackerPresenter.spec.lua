@@ -175,6 +175,19 @@ test("summary of the real run: 3/4 observed + official completion shows 4/4 mark
     s.terminalStateConfirmed = nil
     m = build("COMPLETED", s, 1677, nil, { summary = true })
     equal(m.bosses.text, "3/4"); equal(m.bosses.inferred, nil)
+    -- A final count WITHOUT the completion event behind it is not an authority
+    -- either: only bossCountSource may promote it.
+    s.terminalStateConfirmed = true
+    for _, source in ipairs({ "OBSERVED", "CRITERIA", "UNKNOWN" }) do
+        s.bossCountSource = source
+        m = build("COMPLETED", s, 1677, nil, { summary = true })
+        equal(m.bosses.text, "3/4", "bossCountSource=" .. source .. " must not infer a boss")
+        equal(m.bosses.inferred, nil, "bossCountSource=" .. source)
+        equal(m.bosses.list[4].completed, false, "bossCountSource=" .. source)
+    end
+    s.bossCountSource = nil
+    m = build("COMPLETED", s, 1677, nil, { summary = true })
+    equal(m.bosses.text, "3/4", "no source at all: nothing is inferred")
 end)
 
 test("summary without official result falls back to the last pace, and overtime title", function()
@@ -412,6 +425,125 @@ test("Angry Keystones: threshold deferred to it, pace kept, overtime shows no th
     lay = layoutOf(nalorakkModel(1950, 729, 0, pred("FUERA", 99, true)), {}, { timerWidth = 114 })
     equal(lay.threshold.mode, "OVERTIME"); equal(lay.threshold.text, nil)
     equal(layoutOf(m, { showUpgradeTimes = false }, { timerWidth = 114 }).threshold.mode, "DISABLED")
+end)
+
+-- ---------------------------------------------------------------------------
+-- 1.1.0-dev.9 -- pulido final sobre la run real de regresion
+-- Guarida de Nalorakk (mapID 586) +4, limite 32:00, +3 a las 19:12.
+-- Observado en vivo: 502 / 729 (68 %, faltan 227), umbral "+3 5:18",
+-- "RITMO +2" con 50 % de confianza (bracket provisional).
+-- ---------------------------------------------------------------------------
+
+local function liveRun(elapsed, forces, deaths, prediction)
+    local state = { status = "RUNNING", mapID = 586, mapName = "Guarida de Nalorakk", keystoneLevel = 4,
+                    timeLimit = 1920, forcesCurrent = forces, forcesTotal = 729,
+                    forcesPercent = forces / 729 * 100, forcesRemaining = 729 - forces,
+                    bossesCompleted = 2, bossesTotal = 3, deaths = deaths or 0,
+                    deathTimeLost = (deaths or 0) * 5, warnings = {}, bosses = {} }
+    return TP.Build({ enabled = true, status = "RUNNING", state = state, elapsed = elapsed,
+                      prediction = prediction, constants = RATIOS,
+                      settings = { showConfidence = true, showETA = true } })
+end
+
+test("dev.9 live fixture: the +4 Nalorakk run reads exactly as it did in game", function()
+    local m = liveRun(834, 502, 0, pred("+2", 50, false))
+    local e = TP.BuildEmbedded(m, { showConfidence = true, showETA = true })
+    equal(e.threshold.text, "+3 5:18", "the threshold seen on screen")
+    equal(e.paceText, "RITMO +2"); equal(e.confidenceText, "50%")
+    equal(e.provisional, true, "50 % is not a confident bracket")
+    equal(e.forcesPrimary, "502 / 729"); equal(e.forcesSecondary, "faltan 227")
+    equal(m.forces.remaining, 227); equal(math.floor(m.forces.percent), 68)
+    -- The forces bar percentage belongs to Blizzard: Mitzu never repeats it.
+    equal(e.forcesPercent, nil)
+    for k, v in pairs(e) do
+        if type(v) == "string" then
+            truthy(not v:find("%%") or k == "confidenceText", "only the confidence carries a % : " .. k .. "=" .. v)
+        end
+    end
+    local lay = TP.LayoutEmbedded(e, { timerWidth = 114, forcesWidth = 191 }, glyphs)
+    equal(lay.threshold.mode, "NEXT"); equal(lay.pace.mode, "STANDARD"); equal(lay.pace.confidence, "50%")
+    equal(lay.forces.mode, "SPLIT"); equal(lay.forces.primary, "502 / 729"); equal(lay.forces.secondary, "faltan 227")
+end)
+
+test("dev.9 pace hierarchy: RITMO survives, the confidence is what gives way", function()
+    local m = liveRun(834, 502, 0, pred("+2", 50, true, 1800))
+    local opts = { showConfidence = true, showETA = true }
+    -- Wide enough: pace + confidence + ETA.
+    equal(TP.LayoutEmbedded(TP.BuildEmbedded(m, opts), { timerWidth = 200 }, glyphs).pace.mode, "WIDE")
+    -- Narrow: the secondary parts give way before the pace, the pace before the threshold.
+    local narrow = TP.LayoutEmbedded(TP.BuildEmbedded(m, opts), { timerWidth = 60 }, glyphs)
+    equal(narrow.pace.mode, "COMPACT"); equal(narrow.pace.text, "RITMO +2")
+    equal(narrow.pace.confidence, nil, "the confidence gives way before the pace")
+    equal(narrow.threshold.mode, "NEXT", "and the threshold before both")
+    -- The confidence is never promoted over the pace value.
+    local off = TP.BuildEmbedded(liveRun(834, 502, 0, pred("+2", 50, false)), { showConfidence = false })
+    equal(off.paceText, "RITMO +2"); equal(off.confidenceText, nil)
+    -- No engine bracket: no placeholder confidence either.
+    local blind = TP.BuildEmbedded(liveRun(834, 502, 0, nil), opts)
+    equal(blind.paceText, "RITMO --"); equal(blind.confidenceText, nil); equal(blind.etaText, nil)
+end)
+
+test("dev.9 forces: two columns that fit the bar, hidden at 100 %, never a duplicated %", function()
+    local function row(cur, total, width)
+        local st = { timeLimit = 1920, forcesCurrent = cur, forcesTotal = total, forcesPercent = cur / total * 100 }
+        local model = TP.Build({ status = "RUNNING", state = st, elapsed = 834, constants = RATIOS })
+        return TP.LayoutEmbedded(TP.BuildEmbedded(model, {}), { timerWidth = 114, forcesWidth = width }, glyphs)
+    end
+    local fo = row(502, 729, 191).forces
+    equal(fo.mode, "SPLIT"); equal(fo.primary, "502 / 729"); equal(fo.secondary, "faltan 227")
+    truthy(glyphs(fo.primary) + TP.SPLIT_GAP + glyphs(fo.secondary) <= 191, "never overflows the bar")
+    -- 100 %: Blizzard's own bar already says it; Mitzu adds nothing.
+    fo = row(729, 729, 191).forces
+    equal(fo.mode, "NONE"); equal(fo.primary, nil); equal(fo.secondary, nil)
+    -- Long counts keep the split while it fits, and drop "faltan" first.
+    fo = row(1234, 1450, 191).forces
+    equal(fo.mode, "SPLIT"); equal(fo.primary, "1,234 / 1,450"); equal(fo.secondary, "faltan 216")
+    fo = row(1234, 1450, 140).forces
+    equal(fo.mode, "PRIMARY"); equal(fo.secondary, nil, "clarity of the count comes first")
+    for _, case in ipairs({ { "SPLIT", 191 }, { "PRIMARY", 140 }, { "PRIMARY_COMPACT", 70 } }) do
+        local f2 = row(1234, 1450, case[2]).forces
+        equal(f2.mode, case[1])
+        truthy(not (f2.primary or ""):find("%%"), "no percentage in " .. case[1])
+        truthy(not (f2.primary or ""):find("-", 1, true), "never a negative count in " .. case[1])
+    end
+end)
+
+test("dev.9 death penalty: only the published time lost, never -0:00, never a second count", function()
+    local function penalty(deaths, timeLost)
+        local st = { timeLimit = 1920, forcesCurrent = 502, forcesTotal = 729, forcesPercent = 68,
+                     deaths = deaths, deathTimeLost = timeLost }
+        local model = TP.Build({ status = "RUNNING", state = st, elapsed = 834, constants = RATIOS })
+        return TP.BuildEmbedded(model, {}).penaltyText
+    end
+    equal(penalty(0, 0), nil, "no deaths, no penalty")
+    equal(penalty(1, 5), "-0:05"); equal(penalty(3, 15), "-0:15"); equal(penalty(12, 60), "-1:00")
+    equal(penalty(3, nil), nil, "deaths without a published time lost show nothing")
+    equal(penalty(3, 0), nil); equal(penalty(3, -5), nil)
+    equal(penalty(3, 0.4), nil, "a sub-second penalty is never painted as -0:00")
+    equal(penalty(nil, 15), nil, "no death count, no penalty")
+    -- The count itself stays Blizzard's: the embedded model never carries it.
+    local st = { timeLimit = 1920, deaths = 3, deathTimeLost = 15 }
+    local e = TP.BuildEmbedded(TP.Build({ status = "RUNNING", state = st, elapsed = 834, constants = RATIOS }), {})
+    for k, v in pairs(e) do
+        if type(v) == "string" then
+            truthy(not v:find(TP.TEXT.DEATHS, 1, true), "no death label in " .. k)
+            truthy(v ~= "3", "no bare death count in " .. k)
+        end
+    end
+end)
+
+test("dev.9 Angry Keystones: the threshold is deferred, the pace and the forces are not", function()
+    local m = liveRun(834, 502, 0, pred("+2", 50, false))
+    local e = TP.BuildEmbedded(m, {})
+    local withAK = TP.LayoutEmbedded(e, { timerWidth = 70, forcesWidth = 191, deferThreshold = true }, glyphs)
+    equal(withAK.threshold.mode, "DEFERRED"); equal(withAK.threshold.text, nil); equal(withAK.threshold.upgrade, nil)
+    truthy(withAK.pace.text, "the pace is Mitzu's, Angry Keystones does not show it")
+    equal(withAK.forces.mode, "SPLIT", "and the forces columns stay: Angry only owns the %")
+    truthy(not (withAK.forces.primary or ""):find("%%"), "no second percentage over Angry's label")
+    local without = TP.LayoutEmbedded(e, { timerWidth = 114, forcesWidth = 191, deferThreshold = false }, glyphs)
+    equal(without.threshold.mode, "NEXT"); equal(without.threshold.text, "+3 5:18")
+    -- The model itself is identical: only the layout decision changes.
+    equal(TP.BuildEmbedded(m, {}).threshold.text, "+3 5:18")
 end)
 
 if #failures > 0 then error(string.format("TrackerPresenter: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end

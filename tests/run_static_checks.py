@@ -211,6 +211,16 @@ ENHANCER_OWN_PARENTED = {"el.root", "el.forcesRoot"}
 ENHANCER_FORBIDDEN = ["HookScript", "SetScript", "OnUpdate", "EnableMouse", "RegisterForDrag", "StartMoving",
                       "ObjectiveTrackerFrame", "SetHeightModifier", "MarkDirty", "hooksecurefunc(\"",
                       "RouteArrows", "MDT", "C_AddOns"]
+# 1.1.0-dev.9: the embedded lines are text only. A backdrop, a texture or a
+# badge behind them would turn Blizzard's block into a Mitzu panel.
+ENHANCER_NO_BACKGROUND = ["SetBackdrop", "SetBackdropColor", "CreateTexture", "SetColorTexture",
+                          "SetTexture", "SetAtlas"]
+# Blizzard already owns the death counter and the forces bar: Mitzu never
+# writes their text, their visibility or their anchors.
+ENHANCER_READ_ONLY_REGIONS = ["DeathCount", "StatusBar", "TimeLeft", "Label"]
+# Font hierarchy: Blizzard's TimeLeft stays the only large text. Pace, forces,
+# penalty and the secondary parts stay Small, and the secondary stays dimmed.
+ENHANCER_SMALL_FONTS = ["pace", "secondary", "forces", "penalty"]
 RUN_MODES = ["PENDING", "RUNNING", "COMPLETING"]
 
 
@@ -244,6 +254,22 @@ def check_enhancer_safety(c):
     for global_name in re.findall(r"rawget\(\s*_G\s*,\s*\"(\w+)\"", code):
         c.check(global_name in {"ScenarioObjectiveTracker", "hooksecurefunc", "CreateFrame"},
                 f"{name}: unexpected global read: {global_name}")
+    # dev.9: no background of its own behind the embedded lines.
+    for token in ENHANCER_NO_BACKGROUND:
+        c.check(token not in code, f"{name}: embedded mode must stay text-only: {token}")
+    # dev.9: never write into the regions Blizzard owns, whatever they are called.
+    for region in ENHANCER_READ_ONLY_REGIONS:
+        c.check(re.search(rf"\w*{region}\w*\s*:\s*(Set|Show|Hide|Clear)\w*\s*\(", code) is None,
+                f"{name}: writes into Blizzard's {region}")
+    # dev.9: font hierarchy. RITMO gets a readable colour, never a bigger font.
+    fonts_block = re.search(r"E\.FONT\s*=\s*\{(.*?)\}", code, re.DOTALL)
+    c.check(fonts_block is not None, f"{name}: E.FONT table missing")
+    fonts = dict(re.findall(r"(\w+)\s*=\s*\"(\w+)\"", fonts_block.group(1))) if fonts_block else {}
+    for kind in ENHANCER_SMALL_FONTS:
+        c.check(fonts.get(kind, "").endswith("Small"),
+                f"{name}: {kind} must keep a Small font, not {fonts.get(kind)!r}")
+    c.check(fonts.get("secondary", "").startswith("GameFontDisable"),
+            f"{name}: confidence/ETA must stay a disabled (grey) font, not {fonts.get('secondary')!r}")
 
     # The floating view never knows about Blizzard's tracker; the presenter has no frames.
     view = re.sub(r"--[^\n]*", "", read(ADDON / "modules" / "Tracker" / "TrackerView.lua"))
@@ -263,6 +289,33 @@ def check_enhancer_safety(c):
     c.check(set(k for k, v in routes.items() if v == "FLOATING") <= {"PREVIEW", "SUMMARY"},
             f"MitzuTracker.lua: floating view allowed only for PREVIEW/SUMMARY: {routes}")
 
+# 1.1.0-dev.9: the QA snapshot of the last embedded render is diagnostics only.
+# It may never write game state, and it may only copy flat values.
+SNAPSHOT_FORBIDDEN = ["TrackerState", "RunSession", "PredictionEngine", "db.global", "db.profile",
+                      "MitzuMPlusCurrentRun", "GetStringWidth", "Measure"]
+
+
+def check_qa_snapshot(c):
+    path = ADDON / "modules" / "Tracker" / "MitzuTracker.lua"
+    name = relative(path)
+    code = re.sub(r"--[^\n]*", "", read(path))
+    c.check("MT.LAST_EMBEDDED_FIELDS" in code, f"{name}: the lastEmbedded field list is missing")
+    capture = re.search(r"function MT:_CaptureEmbedded\(.*?\nend\n", code, re.DOTALL)
+    c.check(capture is not None, f"{name}: MT:_CaptureEmbedded is missing")
+    body = capture.group(0) if capture else ""
+    for token in SNAPSHOT_FORBIDDEN:
+        c.check(token not in body, f"{name}: the QA snapshot must not touch {token}")
+    # Only EMBEDDED renders feed it, and nothing ever clears it.
+    c.check('route ~= "EMBEDDED"' in body, f"{name}: the QA snapshot must only store EMBEDDED renders")
+    # Only the module-level declaration may be nil; no code path clears it.
+    c.check(re.search(r"^[ \t]+[\w.:]*_lastEmbedded\s*=\s*nil", code, re.MULTILINE) is None,
+            f"{name}: the QA snapshot must survive hide / summary / preview / leaving the dungeon")
+    report = read(ADDON / "modules" / "QA" / "BugReport.lua")
+    c.check('"LAST EMBEDDED RENDER"' in report, "BugReport.lua: the [LAST EMBEDDED RENDER] section is missing")
+    c.check('MT.LAST_EMBEDDED_PREFIX = "lastEmbedded."' in code,
+            f"{name}: lastEmbedded fields must keep their own prefix (current vs last)")
+
+
 # Architecture: only TrackerAdapter talks to Blizzard's Mythic+ APIs. The layers
 # above it (state, pace, prediction, enhancer) consume normalized data only.
 BLIZZARD_API_TOKENS = ["C_ChallengeMode", "C_ScenarioInfo", "C_Scenario", "GetWorldElapsedTime",
@@ -277,7 +330,7 @@ def check_tracker_layers(c):
 
 def main():
     c = Checks(); lua_files = compile_lua(c)
-    check_tracker_layers(c); check_enhancer_safety(c)
+    check_tracker_layers(c); check_enhancer_safety(c); check_qa_snapshot(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
     check_savedvariables_and_media(c); check_icon_textures(c); check_no_emoji(c); check_version_consistency(c)
     if c.failures:
