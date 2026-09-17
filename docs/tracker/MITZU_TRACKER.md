@@ -1,4 +1,4 @@
-# Mitzu Tracker (1.1.0-dev.10)
+# Mitzu Tracker (1.1.0-dev.11)
 
 - **dev.6**: prototipo visual independiente (ventana flotante durante la llave).
 - **dev.7**: arquitectura integrada (**Blizzard Objective Tracker enhancement**).
@@ -14,6 +14,9 @@
 - **dev.10**: localización automática. El tracker (y todo el addon) habla el
   idioma del cliente; ni una cadena visible queda escrita en el código. Sin
   cambios de geometría, predicción, umbrales, fuerzas, enganche ni taint.
+- **dev.11**: pase de tipografía. Una jerarquía de fuentes nativas en vez de la
+  regla plana «todo Small» de dev.9. Sin funciones nuevas, sin cambios de
+  cálculo, de localización, de enganche ni de taint.
 
 ## Capas
 
@@ -111,6 +114,35 @@ el código (`+3` verde, `+2` dorado, `+1` naranja, `OVERTIME` rojo) pero el text
 siempre está. `run_static_checks.py` congela esa jerarquía: ritmo, fuerzas,
 penalización y secundarios tienen que seguir siendo fuentes `*Small`, el
 secundario `GameFontDisable*`, y no puede aparecer ninguna fuente `Huge`.
+
+### Jerarquía tipográfica (dev.11)
+
+dev.9 dejó todo el texto de Mitzu en fuentes `Small` para no competir con el
+reloj de Blizzard. Funcionó demasiado bien: en combate no se leía. dev.11 lo
+sustituye por una escalera explícita, declarada en `E.FONT` y ordenada en
+`E.FONT_ORDER`:
+
+| Nivel | Texto | Plantilla nativa | px |
+|---|---|---|---|
+| 1 | reloj | *(de Blizzard)* `GameFontHighlightHuge` | 20 |
+| 2 | umbral `+3 4:12` | `GameFontHighlightLarge` | 16 |
+| 3 | ritmo `RITMO +2` | `GameFontHighlight` | 12 |
+| 4 | recuento `449 / 551` | `GameFontHighlight` | 12 |
+| 5 | restantes `faltan 102` | `GameFontHighlightSmall` | 10 |
+| 6 | penalización `-0:10` | `GameFontHighlightSmall` | 10 |
+| 7 | confianza `50%` | `GameFontDisableSmall` | 10, atenuada |
+
+Colores: oro `1.00, 0.843, 0.00` para el umbral (un dato, un color), blanco para
+el recuento, plata `0.78, 0.78, 0.812` para todo lo secundario. El código del
+ritmo conserva su color contextual porque ahí sí informa de un cambio.
+
+Ninguna fuente es propia y no se llama nunca a `SetFont`: solo plantillas de
+Blizzard. La escala (`SetScale`) sigue siendo la preferencia del usuario sobre
+los frames de Mitzu, nunca una forma de agrandar texto.
+
+Cada texto se mide con **su** fuente. Hasta dev.10 los restantes se medían con la
+fuente de la confianza y se pintaban con otra; medir pequeño y pintar grande es
+como el texto acaba saliéndose de la barra.
 
 ### Idioma (dev.10)
 

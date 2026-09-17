@@ -532,17 +532,22 @@ function TP.LayoutEmbedded(emb, space, measure)
     end
 
     -- 3. Fuerzas: "329 / 729      faltan 400" -> "329 / 729" -> "329/729".
+    -- dev.11: los restantes se miden con `forcesSecondary`, su propia fuente
+    -- legible, no con la de la confianza. Medir con una fuente mas pequena que
+    -- la que se va a pintar hacia caber texto que luego se salia de la barra.
+    -- El orden de sacrificio no cambia: el recuento principal NUNCA encoge para
+    -- conservar los restantes.
     local fo = out.forces
     local fw = sp.forcesWidth
     if type(fw) == "number" and (e.forcesPrimary or e.forcesSecondary) then
         local p1, p2 = e.forcesPrimary, e.forcesSecondary
-        if p1 and p2 and w(p1, "forces") + TP.SPLIT_GAP + w(p2, "secondary") <= fw then
+        if p1 and p2 and w(p1, "forces") + TP.SPLIT_GAP + w(p2, "forcesSecondary") <= fw then
             fo.mode, fo.primary, fo.secondary = "SPLIT", p1, p2
         elseif p1 and w(p1, "forces") <= fw then
             fo.mode, fo.primary = "PRIMARY", p1
         elseif p1 and e.forcesPrimaryCompact and w(e.forcesPrimaryCompact, "forces") <= fw then
             fo.mode, fo.primary = "PRIMARY_COMPACT", e.forcesPrimaryCompact
-        elseif not p1 and p2 and w(p2, "secondary") <= fw then
+        elseif not p1 and p2 and w(p2, "forcesSecondary") <= fw then
             fo.mode, fo.secondary = "SECONDARY", p2
         else
             fo.mode = "TOO_NARROW"

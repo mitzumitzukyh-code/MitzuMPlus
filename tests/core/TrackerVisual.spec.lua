@@ -336,7 +336,7 @@ test("L: single threshold follows the clock, penalty narrows the line, options r
         env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
         env.WoW.advance(2)
         equal(EN._displayed.penalty, "-0:10")
-        equal(EN._displayed.available, wide - (5 * 6 + 4))
+        equal(EN._displayed.available, wide - (EN:_Measure("-0:10", "penalty") + 4))
         equal(EN.elements.penalty.__points[1][2], BT.block.DeathCount)
         MP.MitzuTracker:SetOption("showUpgradeTimes", false)
         MP.MitzuTracker:SetOption("showDeaths", false)
@@ -751,9 +751,10 @@ test("dev.9: RITMO stays readable and the forces columns share the Blizzard bar 
         for _ = 1, 3 do EN:Render(EN._model, EN._opts, "TEST") end
         EN.elements.pace.SetAlpha = setAlpha
         for _, a in ipairs(alphas) do truthy(a >= 1, "the pace line is never faded: " .. tostring(a)) end
-        equal(EN.FONT.pace, "GameFontHighlightSmall", "RITMO keeps a legible highlight font")
+        -- dev.11 replaces dev.9's "everything stays Small" with a real ladder.
+        equal(EN.FONT.pace, "GameFontHighlight", "RITMO gains weight without reaching the threshold")
         equal(EN.FONT.secondary, "GameFontDisableSmall", "the confidence stays secondary")
-        equal(EN.FONT.forces, "GameFontHighlightSmall")
+        equal(EN.FONT.forces, "GameFontHighlight")
         truthy(EN.COLOR.label ~= "a8a8b0", "dev.9 lifts the RITMO label out of near-grey")
         for _, font in pairs(EN.FONT) do truthy(not font:find("Huge"), "no big font competes with the timer") end
         truthy(EN.elements.pace:GetText():find("RITMO", 1, true), EN.elements.pace:GetText())
@@ -842,6 +843,233 @@ test("dev.9 death penalty: only the published time lost, beside Blizzard's own c
         env.WoW.advance(1.1)
         equal(EN._displayed.penalty, nil, "timeLost=0 is not a penalty")
         equal(#BT.foreign, 0, "Blizzard's DeathCount is never written: " .. table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+-- ---------------------------------------------------------------------------
+-- 1.1.0-dev.11: TIPOGRAFIA
+-- La queja era concreta: "los numeros de Mitzu se ven muy pequenos comparados
+-- con Blizzard, y los de debajo de la barra de tropas apenas se ven". Estas
+-- pruebas fijan la jerarquia que lo arregla, para que nadie la deshaga.
+-- ---------------------------------------------------------------------------
+
+-- Altura real de cada plantilla nativa de Blizzard, en px.
+local FONT_H = {
+    GameFontHighlightLarge = 16, GameFontHighlight = 12,
+    GameFontHighlightSmall = 10, GameFontDisableSmall = 10,
+}
+
+test("dev.11: the font ladder is explicit, native and strictly descending", function()
+    S.isolated(function()
+        S.boot({})
+        local EN = _G.MitzuMPlus.BlizzardTrackerEnhancer
+        -- Cada nivel existe, es una plantilla NATIVA de Blizzard y tiene altura conocida.
+        for _, kind in ipairs(EN.FONT_ORDER) do
+            local font = EN.FONT[kind]
+            truthy(font, "the ladder names a font for " .. kind)
+            truthy(font:find("^GameFont"), kind .. " must use a Blizzard font object: " .. tostring(font))
+            truthy(FONT_H[font], kind .. " uses an unmeasured font: " .. tostring(font))
+        end
+        -- Jerarquia (seccion 5): umbral > ritmo > confianza. Nunca al reves.
+        local th, pace, conf = FONT_H[EN.FONT.threshold], FONT_H[EN.FONT.pace], FONT_H[EN.FONT.secondary]
+        truthy(th > pace, "the threshold outweighs the pace: " .. th .. " vs " .. pace)
+        truthy(pace > conf, "the pace outweighs the confidence: " .. pace .. " vs " .. conf)
+        -- Seccion 3: el umbral sube de verdad, no se queda en una fuente Small.
+        equal(EN.FONT.threshold, "GameFontHighlightLarge", "the threshold matches Angry's weight")
+        truthy(not EN.FONT.threshold:find("Small"), "the threshold is never a Small font")
+        -- Seccion 8: el recuento de fuerzas NO puede ir en la fuente atenuada.
+        truthy(EN.FONT.forces ~= "GameFontDisableSmall", "the forces count is not dimmed text")
+        truthy(EN.FONT.forces:find("Highlight"), "the forces count uses a highlight font")
+        -- Seccion 9: los restantes dejan de compartir la fuente de la confianza
+        -- y se quedan como mucho un escalon por debajo del recuento.
+        truthy(EN.FONT.forcesSecondary ~= EN.FONT.secondary,
+            "the remainder no longer borrows the dimmed confidence font")
+        local p1, p2 = FONT_H[EN.FONT.forces], FONT_H[EN.FONT.forcesSecondary]
+        truthy(p2 <= p1 and p2 >= p1 - 2, "remainder within one step of the count: " .. p1 .. " vs " .. p2)
+        -- Seccion 19/20: ninguna fuente Huge, ningun segundo reloj grande.
+        for kind, font in pairs(EN.FONT) do
+            truthy(not font:find("Huge"), kind .. " must not compete with Blizzard's timer: " .. font)
+        end
+        -- Seccion 21: oro exacto para el umbral, plata exacta para lo secundario.
+        equal(EN.COLOR.threshold[1], 1.00); equal(EN.COLOR.threshold[2], 0.843); equal(EN.COLOR.threshold[3], 0.00)
+        equal(EN.COLOR.secondary[1], 0.78); equal(EN.COLOR.secondary[2], 0.78); equal(EN.COLOR.secondary[3], 0.812)
+        -- El codigo del ritmo conserva su color contextual: informa de un cambio.
+        equal(EN.COLOR.code["+3"], "40ff73"); equal(EN.COLOR.code.OVERTIME, "ff4545")
+    end)
+end)
+
+test("dev.11: the floating preview shows the same ladder as the embedded block", function()
+    S.isolated(function()
+        S.boot({})
+        local MP = _G.MitzuMPlus
+        local EN, TV = MP.BlizzardTrackerEnhancer, MP.TrackerView
+        for _, kind in ipairs({ "threshold", "pace", "secondary", "forces", "forcesSecondary", "penalty" }) do
+            equal(TV.FONT[kind], EN.FONT[kind], "preview and embedded disagree on " .. kind)
+        end
+        equal(TV.COLOR.threshold[2], EN.COLOR.threshold[2], "same gold in both")
+        equal(TV.COLOR.secondary[3], EN.COLOR.secondary[3], "same silver in both")
+    end)
+end)
+
+test("dev.11: the ladder is applied to the real FontStrings, not just declared", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local el = EN.elements
+        -- El mock guarda la plantilla con la que se creo cada FontString.
+        equal(el.threshold.__font, "GameFontHighlightLarge")
+        equal(el.pace.__font, "GameFontHighlight")
+        equal(el.paceExtra.__font, "GameFontDisableSmall")
+        equal(el.forcesPrimary.__font, "GameFontHighlight")
+        equal(el.forcesSecondary.__font, "GameFontHighlightSmall")
+        equal(el.penalty.__font, "GameFontHighlightSmall")
+        -- Y el medidor de cada tipo usa esa misma fuente: se mide lo que se pinta.
+        for kind, font in pairs(EN.FONT) do equal(el.measure[kind].__font, font, "measurer for " .. kind) end
+        -- Y se mide de verdad con ella: cada texto pasa por el medidor de SU
+        -- fuente. Medir con una mas pequena de la que se pinta es exactamente
+        -- como el texto se sale de la barra.
+        local measured = {}
+        local realMeasure = EN._Measure
+        EN._Measure = function(self, text, kind) measured[text] = kind; return realMeasure(self, text, kind) end
+        EN._widths = nil
+        EN:Render(EN._model, EN._opts, "TEST")
+        EN._Measure = realMeasure
+        equal(measured[EN._displayed.forcesSecondary], "forcesSecondary",
+            "the remainder is measured in the font it is painted with")
+        equal(measured[EN._displayed.forcesPrimary], "forces")
+        -- El umbral va en oro plano: un dato, un color, sin codigo en linea.
+        truthy(not (el.threshold:GetText() or ""):find("|cff", 1, true),
+            "the threshold carries no inline colour: " .. tostring(el.threshold:GetText()))
+        truthy((el.threshold:GetText() or ""):find("^%+%d "), el.threshold:GetText())
+        -- Seccion 19: la escala del root no se toca para agrandar texto.
+        equal(el.root:GetScale(), 1, "readability comes from the font object, not from SetScale")
+        equal(#BT.foreign, 0, "Blizzard is still only read: " .. table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("dev.11: the QA snapshot reports which fonts were actually painted", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local MT, EN = MP.MitzuTracker, MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local snap = MT:GetLastEmbedded()
+        equal(snap.thresholdFont, EN.FONT.threshold)
+        equal(snap.paceFont, EN.FONT.pace)
+        equal(snap.forcesPrimaryFont, EN.FONT.forces)
+        equal(snap.forcesSecondaryFont, EN.FONT.forcesSecondary)
+        -- Nombres, nunca objetos: el informe tiene que poder imprimirlo.
+        for _, k in ipairs({ "thresholdFont", "paceFont", "forcesPrimaryFont", "forcesSecondaryFont" }) do
+            equal(type(snap[k]), "string", k .. " must be a plain name")
+        end
+        local report = MP.BugReport:Build()
+        equal(reportValue(report, "lastEmbedded.thresholdFont"), EN.FONT.threshold)
+        equal(reportValue(report, "lastEmbedded.forcesSecondaryFont"), EN.FONT.forcesSecondary)
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("dev.11: forces degrade by real width, in both languages, never shrinking the count", function()
+    local function measured(EN)
+        -- Mide como el juego: cada tipo con la altura de SU plantilla.
+        return function(text, kind)
+            local h = FONT_H[EN.FONT[kind or "pace"]] or 12
+            return #(tostring(text):gsub("[\128-\191]", "")) * (h / 2)
+        end
+    end
+    local function row(locale, width)
+        return S.isolated(function()
+            S.boot({ locale = locale })
+            local MP = _G.MitzuMPlus
+            local TP, EN = MP.TrackerPresenter, MP.BlizzardTrackerEnhancer
+            local state = { keystoneLevel = 9, timeLimit = 1920, forcesCurrent = 449, forcesTotal = 551,
+                            forcesPercent = 449 / 551 * 100 }
+            local model = TP.Build({ enabled = true, status = "RUNNING", state = state, elapsed = 834,
+                prediction = { result = "+2", confidence = 50, plus2Time = 1536, plus3Time = 1152, timeLimit = 1920 },
+                constants = { KEY_UPGRADE_PLUS2_RATIO = 0.8, KEY_UPGRADE_PLUS3_RATIO = 0.6 },
+                settings = { showConfidence = true } })
+            local emb = TP.BuildEmbedded(model, { showConfidence = true })
+            local lay = TP.LayoutEmbedded(emb, { timerWidth = 400, forcesWidth = width }, measured(EN))
+            return { mode = lay.forces.mode, primary = lay.forces.primary, secondary = lay.forces.secondary,
+                     full = emb.forcesPrimary, compact = emb.forcesPrimaryCompact }
+        end)
+    end
+
+    -- La barra real de una llave (bloque de 251 px): las dos columnas caben.
+    local esWide, enWide = row("esES", 191), row("enUS", 191)
+    equal(esWide.mode, "SPLIT"); equal(esWide.primary, "449 / 551"); equal(esWide.secondary, "faltan 102")
+    equal(enWide.mode, "SPLIT"); equal(enWide.primary, "449 / 551"); equal(enWide.secondary, "102 remaining")
+
+    -- Aqui el ingles es mas largo que el espanol, y el layout lo nota SOLO por
+    -- medir: no hay ninguna rama por idioma. A 120 px el ingles ya sacrifica los
+    -- restantes; el espanol, que ocupa menos, todavia los conserva.
+    local esNarrow, enNarrow = row("esES", 120), row("enUS", 120)
+    equal(enNarrow.mode, "PRIMARY", "English drops the remainder first: it is the longer string")
+    equal(enNarrow.primary, "449 / 551", "and the count is NOT shrunk to keep it")
+    equal(enNarrow.secondary, nil)
+    equal(esNarrow.mode, "SPLIT", "Spanish still fits both at the same width")
+
+    -- Mas estrecho todavia: solo el recuento, y por fin la forma compacta.
+    for _, locale in ipairs({ "esES", "enUS" }) do
+        local only = row(locale, 60)
+        equal(only.mode, "PRIMARY", locale .. " keeps the count alone"); equal(only.secondary, nil)
+        equal(only.primary, only.full, locale .. " does not compact while the full count fits")
+        local tiny = row(locale, 45)
+        equal(tiny.mode, "PRIMARY_COMPACT", locale .. " compacts the count last")
+        equal(tiny.primary, tiny.compact); equal(tiny.secondary, nil)
+    end
+end)
+
+test("dev.11: Angry Keystones still owns the threshold, and the ladder does not change that", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        env.WoW.addonsLoaded.AngryKeystones = true
+        local MP = _G.MitzuMPlus
+        local MT, EN = MP.MitzuTracker, MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        -- Con Angry: umbral diferido y VACIO, pase lo que pase con las fuentes.
+        equal(EN._displayed.thresholdMode, "DEFERRED")
+        equal(EN.elements.threshold:GetText(), "", "no second threshold next to Angry's")
+        -- El ritmo sigue siendo de Mitzu, y ahora con la fuente nueva.
+        truthy(EN.elements.pace:GetText():find("RITMO", 1, true), EN.elements.pace:GetText())
+        equal(EN.elements.pace.__font, "GameFontHighlight")
+        -- Ni un porcentaje duplicado en la fila de fuerzas.
+        truthy(not (EN.elements.forcesPrimary:GetText() or ""):find("%%"), "no duplicated percentage")
+        truthy(not (EN.elements.forcesSecondary:GetText() or ""):find("%%"))
+        -- Y la deteccion sigue siendo la de dev.9: solo el nombre del addon.
+        equal(EN._displayed.angryKeystones, true)
+        equal(MT:GetLastEmbedded().angryKeystonesLoaded, true)
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+        equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+-- Sin Angry el umbral vuelve, en la fuente Large y en oro.
+test("dev.11: without Angry the threshold is visible, large and gold", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        equal(EN._displayed.angryKeystones, false)
+        equal(EN._displayed.thresholdMode, "NEXT")
+        truthy((EN.elements.threshold:GetText() or ""):find("^%+%d "), EN.elements.threshold:GetText())
+        equal(EN.elements.threshold.__font, "GameFontHighlightLarge")
+        -- Un solo umbral: nunca +3 y +2 y +1 a la vez.
+        local _, plus = EN.elements.threshold:GetText():gsub("%+%d", "")
+        equal(plus, 1, "exactly one threshold on screen")
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
     end)
 end)

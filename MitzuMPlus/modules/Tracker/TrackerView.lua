@@ -45,15 +45,20 @@ TV.HEADER_H, TV.BOSS_H = 22, 16
 TV.HEIGHT = TV.HEADER_H + TV.BLOCK_H + TV.MAX_BOSSES * TV.BOSS_H + 58
 TV.WHITE = "Interface\\Buttons\\WHITE8X8"
 
+-- dev.11: misma jerarquia que el bloque integrado. La vista previa tiene que
+-- ensenar el tamano REAL que el jugador vera en la llave, no uno de muestra.
 TV.FONT = {
-    threshold = "GameFontHighlight", pace = "GameFontHighlightSmall", secondary = "GameFontDisableSmall",
-    forces = "GameFontHighlightSmall", penalty = "GameFontHighlightSmall", timer = "GameFontHighlightHuge",
+    threshold = "GameFontHighlightLarge", pace = "GameFontHighlight", secondary = "GameFontDisableSmall",
+    forces = "GameFontHighlight", forcesSecondary = "GameFontHighlightSmall",
+    penalty = "GameFontHighlightSmall", timer = "GameFontHighlightHuge",
 }
 TV.COLOR = {
     bg       = { 0, 0, 0, 0.45 },
     title    = { 1.00, 0.82, 0.00 },
     code     = { ["+3"] = "40ff73", ["+2"] = "ffd100", ["+1"] = "ff9933", OVERTIME = "ff4545" },
-    label    = "c8c8d2",       -- dev.9: legible en combate, aun secundaria
+    threshold = { 1.00, 0.843, 0.00 },  -- dev.11: oro, un solo color
+    secondary = { 0.78, 0.78, 0.812 },  -- dev.11: plata para confianza/ETA/restantes
+    label    = "c7c7cf",       -- la misma plata, en hexadecimal, para colorear en linea
     timeBarBg = { 0.10, 0.10, 0.12, 0.9 },
     timeBar  = { 0.95, 0.80, 0.25, 0.9 },
     forcesBg = { 0.08, 0.08, 0.10, 0.9 },
@@ -115,8 +120,10 @@ function TV:Create(parent, name)
     r.timeLeft = fs(block, "GameFontHighlightHuge")
     r.timeLeft:SetPoint("TOPLEFT", r.level, "BOTTOMLEFT", 0, -8)
     r.threshold = fs(block, TV.FONT.threshold)
+    r.threshold:SetTextColor(C.threshold[1], C.threshold[2], C.threshold[3], 1)
     r.pace = fs(block, TV.FONT.pace)
     r.paceExtra = fs(block, TV.FONT.secondary)
+    r.paceExtra:SetTextColor(C.secondary[1], C.secondary[2], C.secondary[3], 1)
     r.paceExtra:SetPoint("LEFT", r.pace, "RIGHT", 6, 0)
     r.death = CreateFrame("Frame", nil, block)
     r.death:SetSize(20, 16)
@@ -163,7 +170,8 @@ function TV:Create(parent, name)
     r.forcesRow:SetPoint("TOPRIGHT", r.forcesBarBg, "BOTTOMRIGHT", 0, TV.FORCES_GAP_Y)
     r.forcesPrimary = fs(r.forcesRow, TV.FONT.forces)
     r.forcesPrimary:SetPoint("BOTTOMLEFT", r.forcesRow, "BOTTOMLEFT", TV.FORCES_INSET, 0)
-    r.forcesSecondary = fs(r.forcesRow, TV.FONT.secondary, "RIGHT")
+    r.forcesSecondary = fs(r.forcesRow, TV.FONT.forcesSecondary, "RIGHT")
+    r.forcesSecondary:SetTextColor(C.secondary[1], C.secondary[2], C.secondary[3], 1)
     r.forcesSecondary:SetPoint("BOTTOMRIGHT", r.forcesRow, "BOTTOMRIGHT", -TV.FORCES_INSET, 0)
 
     r.measure = {}
@@ -275,7 +283,7 @@ function TV:Render(m)
         local lay = TP.LayoutEmbedded(emb, { timerWidth = available, forcesWidth = TV.BAR_W },
             function(text, kind) return self:_Measure(text, kind) end)
         local th, pc, fo = lay.threshold, lay.pace, lay.forces
-        self:_Text("threshold", r.threshold, th.text and (colored(th.upgrade) .. " " .. th.timeText) or "")
+        self:_Text("threshold", r.threshold, th.text or "")
         self:_Text("pace", r.pace, pc.text and ("|cff" .. C.label .. pc.label .. "|r " .. colored(pc.value)) or "")
         local extras = {}
         if pc.confidence then extras[#extras + 1] = pc.confidence end

@@ -13,6 +13,74 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.11 — desarrollo interno (Retail dev, sin publicar)
+
+**Pase final de tipografía del tracker integrado. Sin funciones nuevas.**
+
+La observación era concreta: «los números de Mitzu se ven muy pequeños en
+comparación con Blizzard, y los números debajo de la barra de tropas apenas se
+ven». Tenía razón, y el motivo era una decisión de dev.9: para no competir con
+el reloj de Blizzard, *todo* lo de Mitzu se dejó en fuentes `Small`. El
+resultado fue discreto hasta la ilegibilidad en combate. dev.11 sustituye esa
+regla plana por una jerarquía real, tomando como referencia visual —no de
+código— cómo resuelve esto Angry Keystones.
+
+- **Una escalera explícita de fuentes nativas de Blizzard**, de mayor a menor:
+  reloj de Blizzard (`Huge`, 20) → umbral (`GameFontHighlightLarge`, 16) →
+  ritmo (`GameFontHighlight`, 12) → recuento de fuerzas (`GameFontHighlight`,
+  12) → restantes (`GameFontHighlightSmall`, 10) → penalización y confianza
+  (10, además atenuada). Blizzard sigue siendo lo más grande de la pantalla;
+  Mitzu ya no parece una nota al pie.
+- **El umbral iguala el peso de Angry Keystones**: `+3 4:12` pasa de 12 a 16 px
+  y se pinta en el oro de Blizzard (`1.00, 0.843, 0.00`), en un solo color. El
+  código de color contextual (+3 verde / +2 oro / +1 naranja / OVERTIME rojo) se
+  queda donde informa de algo que cambia: la línea de RITMO.
+- **Las fuerzas, que era el problema principal**: el recuento `449 / 551` sube a
+  12 px y a blanco pleno, y los restantes (`faltan 102` / `102 remaining`) dejan
+  de compartir la fuente atenuada de la confianza —que es exactamente por lo que
+  «apenas se veían»— y pasan a `GameFontHighlightSmall` en plata
+  (`0.78, 0.78, 0.812`).
+- **Y se miden con la fuente con la que se pintan.** Antes el layout medía los
+  restantes con la fuente de la confianza: medir pequeño y pintar grande es como
+  el texto se sale de la barra. El orden de sacrificio no cambia y sigue siendo
+  el correcto: `SPLIT` → `PRIMARY` → `PRIMARY_COMPACT`. El recuento principal
+  **nunca** encoge para conservar los restantes.
+- **Sin nada nuevo que dibujar**: ni fondo, ni panel, ni brillo, ni contorno, ni
+  barra propia, ni segundo reloj, ni HUD. Solo `FontString` propios con
+  plantillas nativas. La legibilidad sale de elegir bien la fuente, no de
+  `SetScale()`: la escala sigue siendo la preferencia del usuario, aplicada a los
+  frames de Mitzu y solo con el valor ya acotado.
+- **Nada de esto depende del idioma.** El ancho se mide sobre el texto ya
+  traducido: a la anchura real de la barra (191 px) caben las dos columnas en
+  español (116 px) y en inglés (131 px); si la barra se estrecha a 120 px el
+  inglés sacrifica los restantes antes que el español, porque su cadena es más
+  larga, no porque exista ninguna rama `if locale ==`.
+- La vista previa flotante usa la misma escalera: lo que se enseña en
+  Configuración es el tamaño que se verá en la llave.
+- `lastEmbedded` gana cuatro campos de texto (`thresholdFont`, `paceFont`,
+  `forcesPrimaryFont`, `forcesSecondaryFont`): nombres de plantilla, nunca
+  objetos de fuente. Responden a «se ve pequeño» sin pedir una captura.
+- Angry Keystones, penalización por muertes, localización, autoridad de
+  finalización y las guardas de taint quedan **igual**: con Angry activo el
+  umbral sigue diferido y vacío, el ritmo sigue siendo de Mitzu y no hay
+  porcentaje duplicado.
+- Tests: 7 pruebas nuevas (204 en total, 7024 aserciones) que fijan la escalera,
+  su aplicación real a los `FontString`, la paridad con la vista previa, el
+  degradado por anchura en los dos idiomas y el comportamiento con y sin Angry.
+  El mock de WoW ahora conoce la altura real de cada plantilla de Blizzard —sin
+  eso, una prueba de jerarquía tipográfica no significaría nada— y el mock del
+  tracker de Blizzard vigila también `SetFont`/`SetFontObject`, que hasta ahora
+  se podían llamar sobre el reloj de Blizzard sin que nadie se quejara.
+- Comprobaciones estáticas nuevas: la escalera es estrictamente descendente y
+  toda ella de plantillas nativas conocidas; el umbral nunca es `Small`; el
+  recuento de fuerzas nunca es la fuente atenuada; ningún `SetFont`,
+  `SetFontObject` ni `CreateFont` propios; `SetScale` solo sobre frames de Mitzu
+  y solo con el ajuste acotado; oro y plata exactos; la vista previa no puede
+  divergir del bloque integrado; y ninguna capa visual puede ramificar por
+  idioma.
+- Mutación: 12 mutantes nuevos (52/52 detectados). Diez de ellos los caza una
+  prueba de comportamiento, no solo el filtro de texto.
+
 ### 1.1.0-dev.10 — desarrollo interno (Retail dev, sin publicar)
 
 **Bloqueo de release resuelto: el addon habla el idioma del cliente.**

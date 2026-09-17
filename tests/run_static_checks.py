@@ -220,10 +220,54 @@ ENHANCER_NO_BACKGROUND = ["SetBackdrop", "SetBackdropColor", "CreateTexture", "S
 # Blizzard already owns the death counter and the forces bar: Mitzu never
 # writes their text, their visibility or their anchors.
 ENHANCER_READ_ONLY_REGIONS = ["DeathCount", "StatusBar", "TimeLeft", "Label"]
-# Font hierarchy: Blizzard's TimeLeft stays the only large text. Pace, forces,
-# penalty and the secondary parts stay Small, and the secondary stays dimmed.
-ENHANCER_SMALL_FONTS = ["pace", "secondary", "forces", "penalty"]
+# 1.1.0-dev.11 font ladder. Blizzard's TimeLeft (Huge) stays the biggest text on
+# screen; below it Mitzu has one strictly descending ladder of NATIVE Blizzard
+# font objects. The heights are Blizzard's own, so the gate reasons in pixels
+# instead of in string suffixes and cannot be fooled by renaming a template.
+BLIZZARD_FONT_HEIGHT = {
+    "GameFontNormalSmall": 10, "GameFontHighlightSmall": 10, "GameFontDisableSmall": 10,
+    "GameFontNormal": 12, "GameFontHighlight": 12, "GameFontDisable": 12,
+    "GameFontHighlightMedium": 12, "GameFontNormalMed1": 12, "GameFontNormalMed2": 14,
+    "GameFontNormalLarge": 16, "GameFontHighlightLarge": 16, "GameFontDisableLarge": 16,
+    "GameFontNormalHuge": 20, "GameFontHighlightHuge": 20,
+}
+# Strictly descending, top first. Equal heights are allowed only where the list
+# says so (penalty and the confidence share the smallest step).
+ENHANCER_FONT_LADDER = ["threshold", "pace", "forces", "forcesSecondary"]
+# The player reads these two at a glance; a dimmed font is what broke dev.10.
+ENHANCER_LEGIBLE_KINDS = ["threshold", "pace", "forces", "forcesSecondary"]
+# Nothing in the visual layer may branch on the client language: the width is
+# measured from the translated string, never assumed per locale.
+VISUAL_LOCALE_TOKENS = ["GetLocale", "esES", "esMX", "enGB", "SpanishWidth", "EnglishWidth"]
 RUN_MODES = ["PENDING", "RUNNING", "COMPLETING"]
+
+
+def check_font_ladder(c, name, fonts, allow_huge=frozenset()):
+    """Every font is a known native Blizzard template and the ladder descends."""
+    for kind, font in fonts.items():
+        c.check(font in BLIZZARD_FONT_HEIGHT,
+                f"{name}: {kind} uses an unknown font object: {font!r}")
+        if kind not in allow_huge:
+            c.check("Huge" not in font, f"{name}: {kind} must not use a Huge font: {font!r}")
+    for kind in ENHANCER_LEGIBLE_KINDS:
+        font = fonts.get(kind, "")
+        c.check(font != "GameFontDisableSmall",
+                f"{name}: {kind} is read at a glance and must not use the dimmed font")
+    # The threshold carries the run's headline number: never a Small font.
+    threshold = fonts.get("threshold", "")
+    c.check("Small" not in threshold,
+            f"{name}: the threshold must not use a Small font, got {threshold!r}")
+    heights = [(k, BLIZZARD_FONT_HEIGHT.get(fonts.get(k, ""), 0)) for k in ENHANCER_FONT_LADDER if k in fonts]
+    for (upper, hi), (lower, lo) in zip(heights, heights[1:]):
+        c.check(hi >= lo, f"{name}: {lower} ({lo}px) must not outweigh {upper} ({hi}px)")
+    # The confidence must stay strictly below the pace: it is the least important
+    # number on the line and must never read as loud as the pace.
+    pace = BLIZZARD_FONT_HEIGHT.get(fonts.get("pace", ""), 0)
+    conf = BLIZZARD_FONT_HEIGHT.get(fonts.get("secondary", ""), 0)
+    c.check(pace > conf, f"{name}: the confidence ({conf}px) must stay under the pace ({pace}px)")
+    # The threshold must actually outweigh the pace, or the hierarchy is flat.
+    c.check(BLIZZARD_FONT_HEIGHT.get(threshold, 0) > pace,
+            f"{name}: the threshold must outweigh the pace")
 
 
 def check_enhancer_safety(c):
@@ -263,15 +307,69 @@ def check_enhancer_safety(c):
     for region in ENHANCER_READ_ONLY_REGIONS:
         c.check(re.search(rf"\w*{region}\w*\s*:\s*(Set|Show|Hide|Clear)\w*\s*\(", code) is None,
                 f"{name}: writes into Blizzard's {region}")
-    # dev.9: font hierarchy. RITMO gets a readable colour, never a bigger font.
+    # dev.11: the font ladder. Readability comes from picking the right native
+    # font object, never from scaling the root or inventing a font.
     fonts_block = re.search(r"E\.FONT\s*=\s*\{(.*?)\}", code, re.DOTALL)
     c.check(fonts_block is not None, f"{name}: E.FONT table missing")
     fonts = dict(re.findall(r"(\w+)\s*=\s*\"(\w+)\"", fonts_block.group(1))) if fonts_block else {}
-    for kind in ENHANCER_SMALL_FONTS:
-        c.check(fonts.get(kind, "").endswith("Small"),
-                f"{name}: {kind} must keep a Small font, not {fonts.get(kind)!r}")
+    check_font_ladder(c, name, fonts)
     c.check(fonts.get("secondary", "").startswith("GameFontDisable"),
             f"{name}: confidence/ETA must stay a disabled (grey) font, not {fonts.get('secondary')!r}")
+    # The declared ladder is what the tests and this gate walk; keep it in sync.
+    order = re.search(r"E\.FONT_ORDER\s*=\s*\{(.*?)\}", code, re.DOTALL)
+    c.check(order is not None, f"{name}: E.FONT_ORDER missing")
+    if order:
+        declared = re.findall(r"\"(\w+)\"", order.group(1))
+        c.check(set(declared) == set(fonts),
+                f"{name}: FONT_ORDER and FONT disagree: {sorted(set(declared) ^ set(fonts))}")
+    # Readability is never bought with SetScale or a hand-built font.
+    for token in ["SetFont(", "SetFontObject(", "CreateFont("]:
+        c.check(token not in code, f"{name}: fonts come from Blizzard templates only: {token}")
+    # Scale stays the user's preference applied to Mitzu's own roots, and only
+    # ever with the clamped setting: never a constant used to fake a bigger font.
+    scaled = re.findall(r"(\S+?):SetScale\(([^)]*)\)", code)
+    for receiver, value in scaled:
+        c.check(receiver in ENHANCER_OWN_PARENTED,
+                f"{name}: SetScale on a frame Mitzu does not own: {receiver}")
+        c.check(value.strip() == "s",
+                f"{name}: scale must come from the clamped user setting, not {value.strip()!r}")
+    c.check(len(scaled) == 2, f"{name}: unexpected SetScale calls: {scaled}")
+    # dev.11: exact colours, so "it looks grey" stays a testable claim.
+    c.check(re.search(r"threshold\s*=\s*\{\s*1\.00,\s*0\.843,\s*0\.00\s*\}", code) is not None,
+            f"{name}: the threshold must use the agreed gold 1.00/0.843/0.00")
+    c.check(re.search(r"secondary\s*=\s*\{\s*0\.78,\s*0\.78,\s*0\.812\s*\}", code) is not None,
+            f"{name}: secondary text must use the agreed silver 0.78/0.78/0.812")
+
+    # dev.11: the preview must promise what the key delivers. Same ladder.
+    view_src = read(ADDON / "modules" / "Tracker" / "TrackerView.lua")
+    view_fonts_block = re.search(r"TV\.FONT\s*=\s*\{(.*?)\}", view_src, re.DOTALL)
+    c.check(view_fonts_block is not None, "TrackerView.lua: TV.FONT table missing")
+    view_fonts = dict(re.findall(r"(\w+)\s*=\s*\"(\w+)\"", view_fonts_block.group(1))) if view_fonts_block else {}
+    for kind, font in fonts.items():
+        c.check(view_fonts.get(kind) == font,
+                f"TrackerView.lua: preview {kind} is {view_fonts.get(kind)!r}, embedded is {font!r}")
+    check_font_ladder(c, "TrackerView.lua", view_fonts, allow_huge={"timer"})
+
+    # dev.11: the layout decides by measured width, never by the client language.
+    for visual in ["BlizzardTrackerEnhancer.lua", "TrackerView.lua", "TrackerPresenter.lua"]:
+        src = re.sub(r"--[^\n]*", "", read(ADDON / "modules" / "Tracker" / visual))
+        for token in VISUAL_LOCALE_TOKENS:
+            c.check(token not in src, f"{visual}: visual layout must not branch on locale: {token}")
+    # The remainder is measured in the font it is painted with, not in a smaller
+    # one: measuring small and painting big is how text overflows the bar.
+    layout = re.search(r"function TP\.LayoutEmbedded\(.*?\nend\n",
+                       read(ADDON / "modules" / "Tracker" / "TrackerPresenter.lua"), re.DOTALL)
+    c.check(layout is not None, "TrackerPresenter.lua: LayoutEmbedded missing")
+    if layout:
+        forces = layout.group(0)[layout.group(0).find("local fo = out.forces"):]
+        c.check('"secondary"' not in forces,
+                "TrackerPresenter.lua: the forces remainder must be measured with forcesSecondary")
+        c.check(forces.count('"forcesSecondary"') >= 2,
+                "TrackerPresenter.lua: every remainder measurement uses its own font")
+        # Sacrifice order: the count is never compacted while the full one fits.
+        order_seen = [m for m in re.findall(r'"(SPLIT|PRIMARY|PRIMARY_COMPACT|SECONDARY|TOO_NARROW)"', forces)]
+        c.check(order_seen[:3] == ["SPLIT", "PRIMARY", "PRIMARY_COMPACT"],
+                f"TrackerPresenter.lua: forces must degrade SPLIT -> PRIMARY -> PRIMARY_COMPACT, got {order_seen}")
 
     # The floating view never knows about Blizzard's tracker; the presenter has no frames.
     view = re.sub(r"--[^\n]*", "", read(ADDON / "modules" / "Tracker" / "TrackerView.lua"))

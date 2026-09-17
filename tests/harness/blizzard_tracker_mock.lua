@@ -22,10 +22,14 @@
 
 local BT = { foreign = {}, internal = 0, layouts = 0 }
 
+-- dev.11: SetFont/SetFontObject entran en la lista. Toda la iteracion va de
+-- tipografia, y hasta ahora se podia reescribir la fuente del reloj de Blizzard
+-- sin que este guardia dijera nada.
 local MUTATORS = { "SetPoint", "ClearAllPoints", "SetAllPoints", "SetParent", "SetScale", "SetAlpha",
     "SetHeight", "SetWidth", "SetSize", "Show", "Hide", "SetShown", "SetText", "SetFormattedText",
-    "SetTextColor", "SetScript", "HookScript", "SetValue", "SetMinMaxValues", "EnableMouse",
-    "RegisterEvent", "UnregisterEvent", "SetFrameStrata", "SetFrameLevel" }
+    "SetTextColor", "SetFont", "SetFontObject", "SetScript", "HookScript", "SetValue",
+    "SetMinMaxValues", "EnableMouse", "RegisterEvent", "UnregisterEvent",
+    "SetFrameStrata", "SetFrameLevel" }
 
 local function internal(fn, ...)
     BT.internal = BT.internal + 1

@@ -91,21 +91,39 @@ E.LAYOUT = {
 -- El codigo va siempre como texto (+3/+2/+1/OVERTIME); el color solo refuerza.
 E.COLOR = {
     code    = { ["+3"] = "40ff73", ["+2"] = "ffd100", ["+1"] = "ff9933", OVERTIME = "ff4545" },
-    -- dev.9: la etiqueta RITMO sube de a8a8b0 a c8c8d2. Sigue siendo secundaria
-    -- frente al reloj de Blizzard, pero se lee sobre fondos con mucho combate.
-    label   = "c8c8d2",
-    forces  = { 0.86, 0.86, 0.86 },
+    -- dev.11: el umbral es UN dato, con UN color. El oro de Blizzard (el mismo
+    -- de los titulos de mision) lo separa del ritmo sin pedir un panel ni un
+    -- brillo. El codigo contextual (+3 verde / +2 oro / +1 naranja) se queda
+    -- donde de verdad informa de algo que cambia: la linea de RITMO.
+    threshold = { 1.00, 0.843, 0.00 },
+    -- dev.11: plata unica para todo lo secundario (confianza, ETA, restantes).
+    -- `label` es ese mismo color en hexadecimal, para colorear en linea.
+    secondary = { 0.78, 0.78, 0.812 },
+    label   = "c7c7cf",
+    -- El recuento de fuerzas es el dato principal de su fila: blanco pleno,
+    -- como el texto de objetivo de Blizzard justo encima.
+    forces  = { 1.00, 1.00, 1.00 },
     penalty = { 1.00, 0.40, 0.40, 0.9 },
 }
 
 -- Objetos de fuente de Blizzard por tipo de texto (solo se usan como plantilla).
+-- dev.11: jerarquia explicita, en px de altura de la fuente nativa:
+--   Blizzard TimeLeft (Huge, 20)  >  threshold (Large, 16)  >  pace (12)
+--   >  forcesPrimary (12)  >  forcesSecondary (10)  =  penalty (10)
+--   >  secondary/confianza (10, ademas atenuada).
+-- Nunca se crea una fuente propia ni se llama a SetFont: solo plantillas nativas.
 E.FONT = {
-    threshold = "GameFontHighlight",
-    pace      = "GameFontHighlightSmall",
-    secondary = "GameFontDisableSmall",
-    forces    = "GameFontHighlightSmall",
-    penalty   = "GameFontHighlightSmall",
+    threshold       = "GameFontHighlightLarge",
+    pace            = "GameFontHighlight",
+    secondary       = "GameFontDisableSmall",
+    forces          = "GameFontHighlight",
+    forcesSecondary = "GameFontHighlightSmall",
+    penalty         = "GameFontHighlightSmall",
 }
+
+-- Orden de la jerarquia, de mayor a menor. Lo consumen las pruebas y las
+-- comprobaciones estaticas: ningun nivel puede adelantar al anterior.
+E.FONT_ORDER = { "threshold", "pace", "forces", "forcesSecondary", "penalty", "secondary" }
 
 E._hookedBlock, E._hookedTracker = nil, nil
 E._blizzBlock = nil
@@ -195,13 +213,18 @@ function E:_CreateElements()
     end
     local el = { root = root, forcesRoot = forcesRoot }
     el.threshold = fs(root, "threshold")
+    el.threshold:SetTextColor(E.COLOR.threshold[1], E.COLOR.threshold[2], E.COLOR.threshold[3], 1)
     el.pace = fs(root, "pace")
     el.paceExtra = fs(root, "secondary")
+    el.paceExtra:SetTextColor(E.COLOR.secondary[1], E.COLOR.secondary[2], E.COLOR.secondary[3], 1)
     el.penalty = fs(root, "penalty", "RIGHT")
     el.penalty:SetTextColor(E.COLOR.penalty[1], E.COLOR.penalty[2], E.COLOR.penalty[3], E.COLOR.penalty[4])
     el.forcesPrimary = fs(forcesRoot, "forces")
     el.forcesPrimary:SetTextColor(E.COLOR.forces[1], E.COLOR.forces[2], E.COLOR.forces[3], 1)
-    el.forcesSecondary = fs(forcesRoot, "secondary", "RIGHT")
+    -- dev.11: los restantes tienen fuente propia (legible), no la atenuada de
+    -- la confianza. Antes compartian `secondary` y por eso casi no se veian.
+    el.forcesSecondary = fs(forcesRoot, "forcesSecondary", "RIGHT")
+    el.forcesSecondary:SetTextColor(E.COLOR.secondary[1], E.COLOR.secondary[2], E.COLOR.secondary[3], 1)
     -- Medidores ocultos, uno por fuente: deciden que cabe.
     el.measure = {}
     for kind in pairs(E.FONT) do
@@ -407,9 +430,11 @@ function E:_Render(model, opts, reason)
         forcesWidth = blizzInner and read(blizzInner, "GetWidth") or nil,
     }, measure)
 
-    -- 1. Umbral: "+2 8:18" junto al reloj.
+    -- 1. Umbral: "+2 8:18" junto al reloj. dev.11: en oro y en la fuente Large,
+    -- sin codigo de color en linea. Es el dato que el jugador busca de un
+    -- vistazo y ahora pesa lo mismo que en Angry Keystones.
     local th = lay.threshold
-    setText(self, "threshold", el.threshold, th.text and (colored(th.upgrade) .. " " .. th.timeText) or "")
+    setText(self, "threshold", el.threshold, th.text or "")
     place(self, "thresholdAt", el.threshold, "time:" .. offsetX, function()
         el.threshold:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, -1)
     end)
@@ -483,6 +508,10 @@ function E:_Render(model, opts, reason)
         forces = forcesLine,
         forcesBar = blizzBar ~= nil, forcesBarReason = barWhy,
         penalty = penalty ~= "" and penalty or nil,
+        -- dev.11: solo el NOMBRE de la plantilla, nunca el objeto de fuente.
+        -- Responde a "se te ve pequeno" sin pedir una captura de pantalla.
+        thresholdFont = E.FONT.threshold, paceFont = E.FONT.pace,
+        forcesPrimaryFont = E.FONT.forces, forcesSecondaryFont = E.FONT.forcesSecondary,
         available = math.floor(available + 0.5),
         angryKeystones = defer,
         reason = reason,

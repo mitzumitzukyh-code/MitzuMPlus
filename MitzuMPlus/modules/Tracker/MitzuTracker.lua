@@ -403,6 +403,12 @@ MT.LAST_EMBEDDED_FIELDS = {
     { "forcesLayoutMode", "forcesLayoutMode" },
     { "penaltyDisplayed", "penalty" },
     { "availableWidth", "available" },
+    -- dev.11: nombres de plantilla de fuente, solo texto. Dicen si el
+    -- jugador tenia de verdad la jerarquia nueva cuando le parecio pequeno.
+    { "thresholdFont", "thresholdFont" },
+    { "paceFont", "paceFont" },
+    { "forcesPrimaryFont", "forcesPrimaryFont" },
+    { "forcesSecondaryFont", "forcesSecondaryFont" },
     { "angryKeystonesLoaded", "angryKeystones" },
     { "attachGeneration", "attachGeneration" },
     { "attachmentHealthy", "attachmentHealthy" },

@@ -13,7 +13,8 @@ is restored whatever happens, including on Ctrl+C.
 
 Mutants introduced by a release are kept forever: dev.6/dev.7/dev.8 promises
 (no floating HUD during a key, one threshold, no invented data, no duplicated
-percentage) are re-checked on every run alongside the dev.9 polish.
+percentage) are re-checked on every run alongside the dev.9 polish, the dev.10
+localization rules and the dev.11 typography ladder.
 """
 
 from __future__ import annotations
@@ -105,14 +106,14 @@ MUTANTS: list[Mutant] = [
     ),
     Mutant(
         "dev.9", "RITMO grows into a second main timer", ENHANCER,
-        '    pace      = "GameFontHighlightSmall",',
-        '    pace      = "GameFontHighlightHuge",',
+        '    pace            = "GameFontHighlight",',
+        '    pace            = "GameFontHighlightHuge",',
         specs=[VISUAL], static=True,
     ),
     Mutant(
         "dev.9", "the confidence stops being a secondary (grey) font", ENHANCER,
-        '    secondary = "GameFontDisableSmall",',
-        '    secondary = "GameFontHighlightSmall",',
+        '    secondary       = "GameFontDisableSmall",',
+        '    secondary       = "GameFontHighlightSmall",',
         static=True,
     ),
     Mutant(
@@ -310,6 +311,87 @@ MUTANTS: list[Mutant] = [
         'L["POPUP_DELETE_RUN"]        = "\u00bfEliminar run #%d? Esta acci\u00f3n no se puede deshacer."',
         'L["POPUP_DELETE_RUN"]        = "\u00bfEliminar run #%s? Esta acci\u00f3n no se puede deshacer."',
         specs=[LOCALE_SPEC],
+    ),
+    # -- dev.11: the numbers must stay readable next to Blizzard's ------------
+    Mutant(
+        "dev.11", "the threshold falls back to a Small font", ENHANCER,
+        '    threshold       = "GameFontHighlightLarge",',
+        '    threshold       = "GameFontHighlightSmall",',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the forces count goes back to the dimmed font", ENHANCER,
+        '    forces          = "GameFontHighlight",',
+        '    forces          = "GameFontDisableSmall",',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the remainder goes back to borrowing the confidence font", ENHANCER,
+        '    forcesSecondary = "GameFontHighlightSmall",',
+        '    forcesSecondary = "GameFontDisableSmall",',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the confidence grows until it competes with the pace", ENHANCER,
+        '    secondary       = "GameFontDisableSmall",',
+        '    secondary       = "GameFontHighlightLarge",',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the pace outgrows the threshold and breaks the hierarchy", ENHANCER,
+        '    pace            = "GameFontHighlight",',
+        '    pace            = "GameFontHighlightHuge",',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the remainder is measured smaller than it is painted", PRESENTER,
+        'if p1 and p2 and w(p1, "forces") + TP.SPLIT_GAP + w(p2, "forcesSecondary") <= fw then',
+        'if p1 and p2 and w(p1, "forces") + TP.SPLIT_GAP + w(p2, "secondary") <= fw then',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the count is compacted to make room for the remainder", PRESENTER,
+        '        elseif p1 and w(p1, "forces") <= fw then' + NL
+        + '            fo.mode, fo.primary = "PRIMARY", p1',
+        '        elseif p1 and e.forcesPrimaryCompact and p2' + NL
+        + '               and w(e.forcesPrimaryCompact, "forces") + TP.SPLIT_GAP + w(p2, "forcesSecondary") <= fw then' + NL
+        + '            fo.mode, fo.primary, fo.secondary = "PRIMARY", e.forcesPrimaryCompact, p2' + NL
+        + '        elseif p1 and w(p1, "forces") <= fw then' + NL
+        + '            fo.mode, fo.primary = "PRIMARY", p1',
+        specs=[VISUAL],
+    ),
+    Mutant(
+        "dev.11", "text is enlarged with SetScale instead of a font object", ENHANCER,
+        '    el.root:SetScale(s); el.forcesRoot:SetScale(s)',
+        '    el.root:SetScale(s * 1.4); el.forcesRoot:SetScale(s * 1.4)',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "Mitzu rewrites a Blizzard font instead of creating its own", ENHANCER,
+        '    local th = lay.threshold',
+        '    local th = lay.threshold' + NL
+        + '    blizzTimeLeft:SetFont("Fonts' + chr(92) + chr(92) + 'FRIZQT__.TTF", 30, "")',
+        specs=[VISUAL], static=True,
+    ),
+    Mutant(
+        "dev.11", "the threshold is painted even when Angry Keystones owns it", PRESENTER,
+        '    elseif sp.deferThreshold then' + NL
+        + '        th.mode = "DEFERRED"',
+        '    elseif sp.deferThreshold and false then' + NL
+        + '        th.mode = "DEFERRED"',
+        specs=[VISUAL, PRESENTER_SPEC],
+    ),
+    Mutant(
+        "dev.11", "the forces row paints a second percentage under the bar", PRESENTER,
+        '            e.forcesPrimary = f.countText',
+        '            e.forcesPrimary = f.countText .. " " .. tostring(math.floor(f.percent or 0)) .. "%"',
+        specs=[VISUAL, PRESENTER_SPEC],
+    ),
+    Mutant(
+        "dev.11", "the threshold loses its gold and goes back to inline codes", ENHANCER,
+        '    threshold = { 1.00, 0.843, 0.00 },',
+        '    threshold = { 0.50, 0.50, 0.50 },',
+        specs=[VISUAL], static=True,
     ),
     Mutant(
         "dev.6", "bosses are inferred without the official completion event", PRESENTER,
