@@ -76,6 +76,31 @@ Nunca se escribe `bossesCompleted = bossesTotal` sin leerlo. Un final no
 convergido no es un aviso ni un error: puede ser una limitación de tiempos del
 cliente tras completar.
 
+## Autoridad del final (1.1.0-dev.6)
+
+Motivo: Retail dev.5 (Reposo de los Reyes 249 +12): evento con `3/4` y 100 %,
+primera relectura `active=false forces=nil bosses=nil criteria=nil`; la ventana
+terminó con `completionConverged=false completionCriteriaIncomplete=true` en una
+llave terminada correctamente.
+
+`CHALLENGE_MODE_COMPLETED` es la autoridad terminal (una Mítica+ solo se
+completa con todos sus criterios). La ventana de convergencia sigue igual; al
+congelar se añaden, sin tocar lo observado:
+
+| Campo | Significado |
+|---|---|
+| `completionConverged` | convergencia de API: alguna lectura mostró 100 % y N/N |
+| `terminalStateConfirmed` | la llave terminó (hoy siempre `true`: la ventana solo la abre el evento) |
+| `completionSource` | `CHALLENGE_MODE_COMPLETED` |
+| `criteriaUnavailableAfterCompletion` | ninguna lectura de la ventana trajo fuerzas ni bosses |
+| `completionCriteriaIncomplete` | `not (converged or terminal)`; por compatibilidad, ya nunca `true` tras el evento |
+| `bossesCompletedObserved` | = `bossesCompleted` (lo leído) |
+| `bossesCompletedFinal`, `bossCountSource` | `OBSERVED` si se leyó N/N; `INFERRED_FROM_COMPLETION_EVENT` → `bossesTotal`; `UNAVAILABLE` sin total |
+| `forcesPercentFinal`, `forcesCompletionSource` | igual para fuerzas (100 % inferido si no se leyó) |
+
+`STATE_RUN_COMPLETED` anota `terminal`, `source`, `bossSource`,
+`criteriaUnavailable`. Un `RESET`/abandono sin evento no es terminal.
+
 El historial 1.0 (`Core:OnChallengeCompleted` + `RunSession`) es independiente
 y sigue finalizando una vez; `tests/core/TrackerIntegration.spec.lua` lo
 comprueba con el addon completo durante la ventana.
@@ -87,7 +112,10 @@ forcesSource, bossesCompleted, bossesTotal, bosses[{index,name,completed}],
 elapsedBase, elapsedAt, timerSource, timerStale, forcesStale, bossesStale,
 recovered, firstSeenAt, completedAt, finalElapsed, completionConverged,
 completionAttempts, completionConvergenceMs, completionCriteriaIncomplete,
-completionRegressionsIgnored, warnings, runWarnings, transient, revision,
+completionRegressionsIgnored, completionSource, terminalStateConfirmed,
+criteriaUnavailableAfterCompletion, bossesCompletedObserved, bossesCompletedFinal,
+bossCountSource, forcesPercentFinal, forcesCompletionSource, warnings, runWarnings,
+transient, revision,
 timestamp, reason` y reservados `pace, prediction, eta, confidence`
 (nil hasta las fases de pace/predicción).
 
@@ -115,7 +143,10 @@ congelar, no al recibir el evento), `MITZU_TRACKER_RUN_ENDED`.
 `/emp dev state` [DEV] y sección `[TRACKER STATE]` del Bug Report:
 `status`, `finalElapsed`, `completionConverged`, `completionAttempts`,
 `completionConvergenceMs`, `completionCriteriaIncomplete`,
-`completionRegressionsIgnored`, `completionWindowOpen`, `duplicateCompletions`.
+`completionRegressionsIgnored`, `completionWindowOpen`, `duplicateCompletions`,
+`completionSource`, `terminalStateConfirmed`, `criteriaUnavailableAfterCompletion`,
+`bossesCompletedObserved`, `bossesCompletedFinal`, `bossCountSource`,
+`forcesPercentFinal`, `forcesCompletionSource`.
 
 FlightRecorder: `STATE_RUN_STARTED`, `STATE_STATUS`, `STATE_RUN_RECOVERED`,
 `STATE_WARN`, `STATE_SYNC`, `STATE_COMPLETION_BEGIN`, `STATE_COMPLETION_READ`

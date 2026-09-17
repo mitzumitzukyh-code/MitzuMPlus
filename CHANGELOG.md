@@ -13,6 +13,38 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.6 — desarrollo interno (Retail dev, sin publicar)
+
+- TrackerState: `CHALLENGE_MODE_COMPLETED` es la autoridad terminal del final.
+  Retail dev.5 (Reposo de los Reyes +12) terminó con `3/4` observado porque
+  Blizzard retiró los criterios antes de la relectura. Ahora se separan
+  convergencia de API (`completionConverged`) y final oficial
+  (`terminalStateConfirmed=true`, `completionSource=CHALLENGE_MODE_COMPLETED`,
+  `criteriaUnavailableAfterCompletion`). Lo observado no se reescribe
+  (`bossesCompleted=3`); el valor terminal va aparte con su origen
+  (`bossesCompletedFinal=4`, `bossCountSource=INFERRED_FROM_COMPLETION_EVENT`;
+  igual para fuerzas). `completionCriteriaIncomplete` ya no marca como incompleta
+  una llave terminada.
+- Bug Report `[PARTY]`: leía `member.class`/`member.role`, campos que
+  PartyProfiler nunca escribe (`classFile`/`effectiveRole`), y mostraba
+  `class=nil role=nil`. Añade `assigned` y `specRole`.
+- PartyProfiler: el rol de la spec se resuelve también para el resto del grupo
+  cuando su specID es conocido (grupos premade sin rol asignado). Consulta por
+  ID con la función global de Retail como respaldo; classFile con respaldo a
+  `UnitClass` y filtro de valores secretos.
+- Nuevo **Mitzu Tracker** (V1): `TrackerPresenter` (modelo puro) →
+  `TrackerView` (frames creados una vez) ← `MitzuTracker` (controlador). Timer
+  restante dominante, umbrales +3/+2/+1 por reloj, ritmo de PredictionEngine con
+  confianza y ETA, fuerzas (%, recuento, restantes), jefes, muertes y
+  penalización publicada. Estados PENDING/RUNNING/COMPLETING/SUMMARY y vista
+  previa aislada. Mismos ajustes (`settings.hud`), comandos y opciones.
+- Retirado `KeyPredictionHUD.lua` (1.0): sin dependencias tras la migración;
+  rollback en git (`v1.0.0-beta.1`). Sección `[TRACKER]` del Bug Report pasa a
+  `[TRACKER VISUAL]`.
+- Umbrales +2/+3 centralizados en `Constants` (`KEY_UPGRADE_PLUS2/3_RATIO`).
+- Tests: fixture de la llave real (+12, reload, final sin criterios),
+  PartyProfiler, Presenter y tracker visual con el addon completo; 14 mutantes.
+
 ### 1.1.0-dev.5 — desarrollo interno (Retail dev, sin publicar)
 
 - TrackerState: convergencia del final de llave. Tras

@@ -40,7 +40,8 @@ Reglas:
 | Capacidades explícitas (dev.4): `requiredMissing=none optionalMissing=none legacyFallbacksAbsent=1` | Retail validado | No probado en PTR |
 | Arranque transitorio (dev.4): `ACTIVE_WITHOUT_FORCES` resuelto en ~1.0 s, `ACTIVE_WITHOUT_TIMER` en ~8.6 s, sin avisos persistentes | Retail validado | No probado en PTR |
 | TrackerState RUNNING → COMPLETED (dev.4, Altar de Colmillos 588 +12, 29:43/30:00, 9 muertes, 135 s): llega a COMPLETED, pero congela `bosses=2/3` con `forces stale=true bosses stale=true` | **Fallo encontrado** → corregido en dev.5 | No probado en PTR |
-| Convergencia del final (dev.5): `completionConverged=true` y `bosses=N/N`, o `completionCriteriaIncomplete=true` sin inventar valores; historial una vez | **Pendiente (Retail)** | No probado en PTR |
+| Convergencia del final (dev.5, Reposo de los Reyes 249 +12, 27:57/33:00, 14 muertes): historial una vez (`runs` 46→47, `duplicateSessionIDs=0`), `/reload` recuperado con la misma sesión; **pero** Blizzard retiró los criterios antes de leer `4/4` (`completionConverged=false`, `3/4`) | **Fallo encontrado** → autoridad terminal en dev.6 | No probado en PTR |
+| Autoridad del final (dev.6): `terminalStateConfirmed=true`, `bossCountSource` correcto, sin avisos; Bug Report `[PARTY]` con clase/rol; Mitzu Tracker visible y sin errores | **Pendiente (Retail)** | No probado en PTR |
 | Sonda del tracker de Blizzard: `enhanceable=true tainted=none` | Retail validado (dev.4, sesión normal) | No probado en PTR |
 | Taint baseline tras `/reload` con llave activa (`/emp dev blizzard`) | Pendiente (Retail) | No probado en PTR |
 
@@ -62,9 +63,10 @@ las compuertas 3 y 4 en Retail. El diseño está listo para revisión en
 
 ## Fuera de alcance
 - Rutas, pulls, MDT, navegación, placas, tácticas (→ MitzuRouteArrows).
-- **Retirado por decisión de diseño (2026-09-15):** HUD V2 independiente, modos
-  Compacto/Normal/Avanzado, opción "Ocultar tracker Blizzard", reemplazo del
-  Objective Tracker, timer duplicado, ventana M+ separada.
+- Modos Compacto/Normal/Avanzado y reemplazo del Objective Tracker.
+- ~~HUD V2 independiente (retirado 2026-09-15)~~: **revertido por decisión del
+  usuario el 2026-09-16** (ver "Decisión: Mitzu Tracker"). Ocultar el bloque M+
+  de Blizzard sigue fuera hasta poder hacerlo sin taint.
 
 ## Fases
 
@@ -96,7 +98,25 @@ Tabla original (referencia):
 | 11 | Hardening / regresión / taint | |
 | 12 | 1.1.0-beta.1 candidata | |
 
-## Decisión: KeyPredictionHUD (2026-09-15)
+## Decisión: Mitzu Tracker (2026-09-16, sustituye a la de 2026-09-15)
+
+El usuario decide construir un tracker propio (Mitzu Tracker) como interfaz de
+Mythic+ de 1.1, en lugar de centrar 1.1 en decorar el bloque de Blizzard.
+
+- `KeyPredictionHUD.lua` **retirado en 1.1.0-dev.6**. Se migraron todos sus
+  consumidores (comandos, configuración, atajo, popups, invariantes, Bug Report)
+  a `MitzuTracker` y se comprobó que no queda ninguna dependencia. Rollback:
+  git (`v1.0.0-beta.1`). El hash congelado de `run_static_checks.py` se
+  sustituye por el contrato de capas del tracker visual.
+- Ajustes: los mismos `profile.settings.hud` (sin migración; no cambia ningún
+  default, así AceDB no pierde nada).
+- Tracker de Blizzard: coexiste. Ocultar solo el bloque M+ queda pendiente de
+  una implementación sin taint validada en Retail.
+- `BlizzardTrackerEnhancer` / `PHASE3_ENHANCER_DESIGN.md`: en pausa; su
+  capa de estado (TrackerState) es la misma que usa Mitzu Tracker.
+- Arquitectura y datos: `docs/tracker/MITZU_TRACKER.md`.
+
+## Decisión histórica: KeyPredictionHUD (2026-09-15, sustituida)
 
 **KEEP FOR ROLLBACK, DO NOT DEVELOP FURTHER.**
 
