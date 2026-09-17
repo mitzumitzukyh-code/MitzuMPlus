@@ -259,7 +259,7 @@ function LootTracker:GetDebugDump()
         total = total + #items
     end
     if total == 0 then
-        lines[#lines + 1] = "  (sin loot registrado)"
+        lines[#lines + 1] = "  (no loot recorded)"
     end
     return table.concat(lines, "\n")
 end

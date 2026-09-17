@@ -25,6 +25,7 @@ from pathlib import Path
 
 from lupa import LuaRuntime
 
+NL = chr(10)
 ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "MitzuMPlus" / "modules" / "Tracker"
 QA = ROOT / "MitzuMPlus" / "modules" / "QA"
@@ -36,6 +37,17 @@ CONTROLLER = ADDON / "MitzuTracker.lua"
 VISUAL = "tests/core/TrackerVisual.spec.lua"
 PRESENTER_SPEC = "tests/core/TrackerPresenter.spec.lua"
 STATE_SPEC = "tests/core/TrackerState.spec.lua"
+LOCALE_SPEC = "tests/core/Localization.spec.lua"
+HISTORY_SPEC = "tests/core/HistoryModel.spec.lua"
+
+LOCALES = ROOT / "MitzuMPlus" / "Locales"
+EN = LOCALES / "enUS.lua"
+ES = LOCALES / "esES.lua"
+BOOTSTRAP = ROOT / "MitzuMPlus" / "Bootstrap.lua"
+TABS = ROOT / "MitzuMPlus" / "UI" / "Tabs.lua"
+HISTORY = ROOT / "MitzuMPlus" / "UI" / "Panels" / "Historial.lua"
+DATABASE = ROOT / "MitzuMPlus" / "modules" / "Database.lua"
+PLAYERS = ROOT / "MitzuMPlus" / "UI" / "Panels" / "Players.lua"
 
 
 @dataclass
@@ -203,6 +215,101 @@ MUTANTS: list[Mutant] = [
         'local code = type(result) == "string" and TP.RESULT_CODE[result] or nil',
         'local code = type(result) == "string" and TP.RESULT_CODE[result] or "+1"',
         specs=[PRESENTER_SPEC],
+    ),
+    # -- dev.10: the addon must speak the client's language, always ----------
+    Mutant(
+        "dev.10", "RITMO comes back hardcoded instead of a locale key", PRESENTER,
+        '    PACE         = "TRACKER_PACE",',
+        '    PACE         = "RITMO_HARDCODED",',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "the tab bar writes Spanish straight into the UI", TABS,
+        'text = L["TABBAR_HISTORY"],',
+        'text = "HISTORIAL",',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "English stops being the default locale (deDE would get nothing)", EN,
+        'NewLocale("MitzuMPlus", "enUS", true)',
+        'NewLocale("MitzuMPlus", "enUS")',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "enGB stops being served by the English fallback", BOOTSTRAP,
+        'MitzuMPlus.L = LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME)',
+        'MitzuMPlus.L = LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME)'
+        + NL + 'if GetLocale() == "enGB" then MitzuMPlus.L = setmetatable({}, { __index = function(_, k) return k end }) end',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "a Spanish translation goes missing", ES,
+        'L["TRACKER_FORCES"]        = "Fuerzas enemigas"',
+        '-- L["TRACKER_FORCES"] = "Fuerzas enemigas"',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "a key goes missing from the canonical English file", EN,
+        'L["TRACKER_REMAINING"]     = "%s remaining"',
+        '-- L["TRACKER_REMAINING"] = "%s remaining"',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", 'the English UI shows "faltan" through a mistranslated key', EN,
+        'L["TRACKER_REMAINING"]     = "%s remaining"',
+        'L["TRACKER_REMAINING"]     = "faltan %s"',
+        specs=[LOCALE_SPEC],
+    ),
+    Mutant(
+        "dev.10", "a manual language selector appears", BOOTSTRAP,
+        'MitzuMPlus.FALLBACK_LOCALE = "enUS"',
+        'MitzuMPlus.FALLBACK_LOCALE = "enUS"' + NL
+        + 'MitzuMPlus.settings = { locale = "esES" }' + NL
+        + 'function MitzuMPlus:SetLocale(v) self.settings.locale = v end',
+        static=True,
+    ),
+    Mutant(
+        "dev.10", "the runtime stores translated text instead of an ID", DATABASE,
+        '        seasonKey = string.format("exp%d_s%d", expansionLevel, seasonID),',
+        '        seasonKey = string.format("exp%d_s%d", expansionLevel, seasonID),' + NL
+        + '        seasonName = string.format("%s - Temporada %d", "Expansion", seasonID),',
+        static=True,
+    ),
+    Mutant(
+        "dev.10", "a run result becomes a translated word again, so filters break", HISTORY,
+        'local code = run.inTime and (levels >= 3 and "+3" or (levels == 2 and "+2" or "+1")) or "OUT"',
+        'local code = run.inTime and (levels >= 3 and "+3" or (levels == 2 and "+2" or "+1")) or L["RESULT_OUT"]',
+        specs=[HISTORY_SPEC, LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "the preview title stops going through the translator", PRESENTER,
+        '    PREVIEW      = "TRACKER_PREVIEW",',
+        '    PREVIEW      = "VISTA PREVIA",',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "the summary title stops going through the translator", PRESENTER,
+        '    KEY_COMPLETE = "TRACKER_KEY_COMPLETE",',
+        '    KEY_COMPLETE = "LLAVE COMPLETADA",',
+        specs=[LOCALE_SPEC], static=True,
+    ),
+    Mutant(
+        "dev.10", "a settings row shows a raw locale key to the player", ES,
+        'L["CFG_SHOW_PACE"]         = "Mostrar ritmo"',
+        'L["CFG_SHOW_PACE"]         = "CFG_SHOW_PACE"',
+        specs=[LOCALE_SPEC],
+    ),
+    Mutant(
+        "dev.10", "class names are translated by hand instead of read from Blizzard", PLAYERS,
+        'local male = rawget(_G, "LOCALIZED_CLASS_NAMES_MALE")',
+        'local male = { PALADIN = "Paladin de la Luz" }',
+        static=True,
+    ),
+    Mutant(
+        "dev.10", "a format specifier changes between languages (%d -> %s)", ES,
+        'L["POPUP_DELETE_RUN"]        = "\u00bfEliminar run #%d? Esta acci\u00f3n no se puede deshacer."',
+        'L["POPUP_DELETE_RUN"]        = "\u00bfEliminar run #%s? Esta acci\u00f3n no se puede deshacer."',
+        specs=[LOCALE_SPEC],
     ),
     Mutant(
         "dev.6", "bosses are inferred without the official completion event", PRESENTER,

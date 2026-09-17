@@ -16,10 +16,16 @@ test("retired systems are not loaded",function()
         truthy(not toc:find(word,1,true),word.." remains in TOC")
     end
 end)
-test("only four product tabs remain",function()
+test("only four product tabs remain, and their labels are localized",function()
     local tabs=read("MitzuMPlus/UI/Tabs.lua")
-    for _,label in ipairs({"HISTORIAL","ESTADÍSTICAS","JUGADORES","CONFIGURACIÓN"})do truthy(tabs:find(label,1,true),label)end
+    -- 1.1.0-dev.10: la barra ya no escribe texto; nombra claves de AceLocale.
+    for _,key in ipairs({"TABBAR_HISTORY","TABBAR_STATS","TABBAR_PLAYERS","TABBAR_SETTINGS"})do
+        truthy(tabs:find('L["'..key..'"]',1,true),key)
+    end
     truthy(not tabs:find("M+ COACH",1,true))
+    for _,label in ipairs({"HISTORIAL","ESTADÍSTICAS","JUGADORES","CONFIGURACIÓN"})do
+        truthy(not tabs:find('"'..label..'"',1,true),label.." must not be hardcoded")
+    end
 end)
 test("release commands are intentionally small",function()
     for _,cmd in ipairs({'RegisterChatCommand("emp"','cmd == "tracker"','cmd == "bugreport"','cmd == "historial"'})do truthy(init:find(cmd,1,true),cmd)end

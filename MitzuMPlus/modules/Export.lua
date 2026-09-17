@@ -15,6 +15,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local Export = {}
 MitzuMPlus.Export = Export
@@ -111,7 +112,7 @@ Export.JSONEncode = jsonEncode
 -- -----------------------------------------------------------------------------
 
 -- opts (opcional, v7.14.0; sin opts el comportamiento es el de siempre):
---   title       titulo de la ventana          (por defecto "EXPORTAR DATOS")
+--   title       titulo de la ventana          (por defecto L["EXPORT_TITLE"])
 --   hint        texto de ayuda bajo el titulo
 --   autoClose   false para no cerrar sola a los 60 s (un informe largo se lee)
 --   mono        true para fuente monoespaciada
@@ -149,7 +150,7 @@ function Export:CopyToClipboard(text, opts)
         f.title = title
         if Theme and Theme.ApplyFont then Theme:ApplyFont(title,"title",16) end
         title:SetPoint("TOP", 0, -10)
-        title:SetText("EXPORTAR DATOS")
+        title:SetText(L["EXPORT_TITLE"])
         if Theme and Theme.GOLD and Theme.GOLD.title then
             title:SetTextColor(Theme.GOLD.title.r, Theme.GOLD.title.g, Theme.GOLD.title.b)
         else
@@ -160,7 +161,7 @@ function Export:CopyToClipboard(text, opts)
         f.hint = hint
         if Theme and Theme.ApplyFont then Theme:ApplyFont(hint,"normal",12) end
         hint:SetPoint("TOP", 0, -28)
-        hint:SetText("Pulsa Ctrl+A para seleccionar todo, luego Ctrl+C para copiar.")
+        hint:SetText(L["EXPORT_HINT"])
         hint:SetTextColor(0.5, 0.5, 0.5)
 
         local sf = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
@@ -181,7 +182,7 @@ function Export:CopyToClipboard(text, opts)
         f.scrollFrame = sf
         f.editBox = eb
 
-        local closeBtn = MitzuMPlus:CreateButton(f, "Cerrar", "primary", function() f:Hide() end)
+        local closeBtn = MitzuMPlus:CreateButton(f, L["EXPORT_CLOSE"], "primary", function() f:Hide() end)
         closeBtn:SetPoint("BOTTOM", 0, 8)
         closeBtn:SetWidth(100)
         f.closeBtn = closeBtn
@@ -202,9 +203,9 @@ function Export:CopyToClipboard(text, opts)
 
     local cf = MitzuMPlus._clipboardFrame
     local Theme = MitzuMPlus.Theme
-    if cf.title then cf.title:SetText(opts.title or "EXPORTAR DATOS") end
+    if cf.title then cf.title:SetText(opts.title or L["EXPORT_TITLE"]) end
     if cf.hint then
-        cf.hint:SetText(opts.hint or "Pulsa Ctrl+A para seleccionar todo, luego Ctrl+C para copiar.")
+        cf.hint:SetText(opts.hint or L["EXPORT_HINT"])
     end
     if Theme and Theme.ApplyFont then
         pcall(Theme.ApplyFont, Theme, cf.editBox, opts.mono and "mono" or "normal", opts.mono and 12 or 13)
@@ -263,7 +264,7 @@ function Export:ExportToCode()
     local runs = MitzuMPlus:GetAllRuns() or {}
 
     if #runs == 0 then
-        MitzuMPlus:Print("No hay runs para exportar.")
+        MitzuMPlus:Print(L["EXPORT_EMPTY"])
         return
     end
 
@@ -337,8 +338,8 @@ function Export:ExportToCode()
 
     self:CopyToClipboard(code)
     MitzuMPlus:Print(string.format(
-        "Código de exportación generado: |cFFe8b84a%d runs|r. " ..
-        "Pulsa |cFF21de66Ctrl+A -> Ctrl+C|r para copiar y pégalo en el dashboard web.",
+        L["EXPORT_CODE_DONE"] ..
+        L["EXPORT_CODE_HINT"],
         #runs
     ))
 end
@@ -354,7 +355,7 @@ function MitzuMPlus:ExportToDiscord(run)
     local lines = {}
     local function add(s) lines[#lines + 1] = s end
 
-    local dName = run.dungeonName or "Mazmorra"
+    local dName = run.dungeonName or L["HIST_UNKNOWN_DUNGEON"]
     local kLvl  = tonumber(run.keyLevel) or 0
     local ct    = tonumber(run.completionTime) or 0
     local tl    = tonumber(run.timeLimit) or 0
@@ -372,13 +373,13 @@ function MitzuMPlus:ExportToDiscord(run)
         s = tonumber(s) or 0
         return string.format("%02d:%02d", math.floor(s / 60), s % 60)
     end
-    add(string.format("Tiempo: %s / %s", fmtT(ct), tl > 0 and fmtT(tl) or "--:--"))
+    add(string.format(L["EXPORT_TIME"], fmtT(ct), tl > 0 and fmtT(tl) or "--:--"))
 
     -- Fecha
     local ts = tonumber(run.startTime) or 0
     if ts > 0 then
         local ok, d = pcall(date, "%Y-%m-%d %H:%M", ts)
-        if ok and d then add(string.format("Fecha:  %s", d)) end
+        if ok and d then add(string.format(L["EXPORT_DATE"], d)) end
     end
     add("")
 
@@ -390,32 +391,32 @@ function MitzuMPlus:ExportToDiscord(run)
     local kicks  = tonumber(st.kicks)   or 0
     local dispels= tonumber(st.dispels) or 0
 
-    add("Estadísticas")
+    add(L["EXPORT_STATS"])
     add("---------------------------------------")
-    add(string.format("  DPS promedio:  %s", self:FormatNumber(dps)))
-    add(string.format("  Daño total:    %s", self:FormatNumber(dmg)))
-    add(string.format("  Muertes:       %d", deaths))
-    add(string.format("  Kicks:         %d", kicks))
-    add(string.format("  Dispels:       %d", dispels))
+    add(string.format(L["EXPORT_AVG_DPS"], self:FormatNumber(dps)))
+    add(string.format(L["EXPORT_DAMAGE"], self:FormatNumber(dmg)))
+    add(string.format(L["EXPORT_DEATHS"], deaths))
+    add(string.format(L["EXPORT_KICKS"], kicks))
+    add(string.format(L["EXPORT_DISPELS"], dispels))
 
     -- Role-specific
     local role = run.playerRole or "DAMAGER"
     if role == "HEALER" then
         local hps = ct > 0 and math.floor((tonumber(st.healingTotal) or 0) / ct) or 0
-        add(string.format("  HPS promedio:  %s", self:FormatNumber(hps)))
+        add(string.format(L["EXPORT_AVG_HPS"], self:FormatNumber(hps)))
     elseif role == "TANK" then
         local dtps = ct > 0 and math.floor((tonumber(st.damageTaken) or 0) / ct) or 0
-        add(string.format("  DTPS promedio: %s", self:FormatNumber(dtps)))
+        add(string.format(L["EXPORT_AVG_DTPS"], self:FormatNumber(dtps)))
         local avoidable = tonumber(st.avoidableDmg) or 0
-        if avoidable > 0 then add(string.format("  Daño evitable: %s", self:FormatNumber(avoidable))) end
+        if avoidable > 0 then add(string.format(L["EXPORT_AVOIDABLE"], self:FormatNumber(avoidable))) end
     end
     add("")
 
     -- Jugador
-    local pName = run.playerName or "Jugador"
+    local pName = run.playerName or L["COL_PLAYER"]
     local pSpec = run.playerSpec or ""
     local pIlvl = tonumber(run.playerIlvl) or 0
-    add(string.format("Jugador: %s  |  %s  |  iLvl %d", pName, pSpec ~= "" and pSpec or role, pIlvl))
+    add(string.format(L["EXPORT_PLAYER"], pName, pSpec ~= "" and pSpec or role, pIlvl))
     add("")
 
     -- Grupo
@@ -443,12 +444,12 @@ function MitzuMPlus:ExportToDiscord(run)
             end
         end
         if #affNames > 0 then
-            add("Afijos: " .. table.concat(affNames, ", "))
+            add(L["EXPORT_AFFIXES"] .. table.concat(affNames, ", "))
             add("")
         end
     end
 
-    add("- Generado por MitzuMPlus M+ Historial")
+    add(L["EXPORT_FOOTER"])
     add("```")
 
     return table.concat(lines, "\n")
@@ -462,12 +463,12 @@ function Export:ExportToCSV(runList)
     local runs = type(runList)=="table" and runList or (MitzuMPlus:GetAllRuns() or {})
 
     if #runs == 0 then
-        MitzuMPlus:Print("No hay runs para exportar.")
+        MitzuMPlus:Print(L["EXPORT_EMPTY"])
         return
     end
 
     local csv = {}
-    csv[#csv + 1] = "Fecha,Mazmorra,Nivel,En Tiempo,Tiempo Completado,Metrica Rol,Valor,Muertes Grupo,Kicks Propios,Dispels Propios,ilvl,Rol,Nota,Etiquetas"
+    csv[#csv + 1] = L["EXPORT_CSV_HEADER"]
 
     for _, run in ipairs(runs) do
         local dungeonName = run.dungeonName or ""
@@ -521,7 +522,7 @@ function Export:ExportToCSV(runList)
     local csvText = table.concat(csv, "\n")
     self:CopyToClipboard(csvText)
     MitzuMPlus:Print(string.format(
-        "Exportadas %d runs al portapapeles. Usa Ctrl+A -> Ctrl+C para copiar.",
+        L["EXPORT_DONE"],
         #runs
     ))
 end

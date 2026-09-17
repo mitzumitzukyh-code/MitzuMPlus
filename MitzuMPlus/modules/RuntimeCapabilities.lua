@@ -26,7 +26,7 @@ function RC:Probe()
     set(self, "challengeClock",
         type(GetWorldElapsedTimers) == "function" and type(GetWorldElapsedTime) == "function"
             and AVAILABLE or UNAVAILABLE,
-        "temporizador de Challenge Mode del servidor")
+        "server Challenge Mode timer")
     set(self, "partyIdentity", type(UnitName) == "function" and AVAILABLE or UNAVAILABLE, "UnitName")
     set(self, "partyRoles", type(UnitGroupRolesAssigned) == "function" and AVAILABLE or UNAVAILABLE,
         "UnitGroupRolesAssigned")
@@ -36,13 +36,13 @@ function RC:Probe()
     set(self, "playerSpec", hasPlayerSpec and AVAILABLE or UNAVAILABLE,
         "PlayerUtil/GetSpecializationInfo")
     set(self, "partySpecs", type(NotifyInspect) == "function" and AVAILABLE_ASYNC or UNAVAILABLE,
-        "NotifyInspect, sujeto a rango y caché")
+        "NotifyInspect, subject to range and cache")
     set(self, "damageMeter",
         C_DamageMeter and AVAILABLE or UNAVAILABLE,
         "C_DamageMeter")
     set(self, "enemyForcesAggregate",
         C_Scenario and type(C_Scenario.GetCriteriaInfo) == "function" and AVAILABLE or LIMITED,
-        "criterios oficiales del escenario; solo total agregado")
+        "official scenario criteria; aggregate total only")
     self._lastProbe = (GetTime and GetTime()) or 0
     return self._caps
 end
@@ -53,7 +53,7 @@ function RC:Get(key)
 end
 function RC:Why(key)
     if not self._lastProbe then self:Probe() end
-    return self._why[key] or "sin sondeo"
+    return self._why[key] or "not probed"
 end
 
 local ORDER = {
@@ -70,7 +70,7 @@ end
 
 function RC:StatusLines(verbose)
     if not self._lastProbe then self:Probe() end
-    local out = { "=== CAPACIDADES ===" }
+    local out = { "=== CAPABILITIES ===" }
     for _, key in ipairs(ORDER) do
         out[#out + 1] = key .. "=" .. self:Get(key)
         if verbose then out[#out + 1] = "  " .. self:Why(key) end

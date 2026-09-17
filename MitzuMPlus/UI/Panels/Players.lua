@@ -2,16 +2,28 @@
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 local Theme, Widgets = MitzuMPlus.Theme, MitzuMPlus.Widgets
+local L = MitzuMPlus.L
 local wipe = wipe
 
 local PanelPlayers = {}
 MitzuMPlus.PanelPlayers = PanelPlayers
 
-local CLASS_ES = {
-    DEATHKNIGHT="Caballero de la Muerte", DEMONHUNTER="Cazador de Demonios",
-    DRUID="Druida", EVOKER="Evocador", HUNTER="Cazador", MAGE="Mago",
-    MONK="Monje", PALADIN="Paladín", PRIEST="Sacerdote", ROGUE="Pícaro",
-    SHAMAN="Chamán", WARLOCK="Brujo", WARRIOR="Guerrero",
+-- 1.1.0-dev.10: los nombres de clase los da Blizzard ya traducidos al idioma
+-- del cliente (LOCALIZED_CLASS_NAMES_*). Mitzu no mantiene su propia lista:
+-- un cliente ingles veria "Paladin" y uno espanol "Paladin de la Luz" sin que
+-- este fichero sepa nada de idiomas.
+local function ClassName(classFile)
+    if type(classFile) ~= "string" or classFile == "" then return nil end
+    local male = rawget(_G, "LOCALIZED_CLASS_NAMES_MALE")
+    local female = rawget(_G, "LOCALIZED_CLASS_NAMES_FEMALE")
+    return (type(male) == "table" and male[classFile])
+        or (type(female) == "table" and female[classFile])
+        or classFile
+end
+
+local CLASS_TOKENS = {
+    "DEATHKNIGHT", "DEMONHUNTER", "DRUID", "EVOKER", "HUNTER", "MAGE", "MONK",
+    "PALADIN", "PRIEST", "ROGUE", "SHAMAN", "WARLOCK", "WARRIOR",
 }
 local CLASS_COLOR = {
     DEATHKNIGHT={r=.77,g=.12,b=.23}, DEMONHUNTER={r=.64,g=.19,b=.79},
@@ -29,16 +41,16 @@ local QUALITY_COLOR = {
 }
 
 local LIST_COLS = {
-    {key="identity",text="JUGADOR",w=.27}, {key="role",text="ROL",w=.08},
-    {key="rio",text="PUNTAJE MÍTICO",w=.12,numeric=true}, {key="runs",text="RUNS",w=.07,numeric=true},
-    {key="success",text="ÉXITO",w=.09,numeric=true}, {key="best",text="MEJOR",w=.08,numeric=true},
-    {key="deaths",text="MUERTES",w=.12,numeric=true}, {key="last",text="ÚLTIMA",w=.17,numeric=true},
+    {key="identity",text=L["COL_PLAYER"],w=.27}, {key="role",text=L["COL_ROLE"],w=.08},
+    {key="rio",text=L["PLR_SCORE"],w=.12,numeric=true}, {key="runs",text=L["COL_RUNS"],w=.07,numeric=true},
+    {key="success",text=L["COL_SUCCESS"],w=.09,numeric=true}, {key="best",text=L["COL_BEST"],w=.08,numeric=true},
+    {key="deaths",text=L["COL_DEATHS"],w=.12,numeric=true}, {key="last",text=L["PLR_LAST"],w=.17,numeric=true},
 }
 local RUN_COLS = {
-    {key="dungeon",text="MAZMORRA",w=.28}, {key="level",text="NIVEL",w=.08,numeric=true},
-    {key="result",text="RESULTADO",w=.13}, {key="duration",text="TIEMPO",w=.11,numeric=true},
-    {key="metric",text="DPS/HPS/DTPS",w=.18,numeric=true}, {key="deaths",text="MUERTES",w=.10,numeric=true},
-    {key="date",text="FECHA",w=.12,numeric=true},
+    {key="dungeon",text=L["COL_DUNGEON"],w=.28}, {key="level",text=L["COL_LEVEL"],w=.08,numeric=true},
+    {key="result",text=L["COL_RESULT"],w=.13}, {key="duration",text=L["COL_TIME"],w=.11,numeric=true},
+    {key="metric",text="DPS/HPS/DTPS",w=.18,numeric=true}, {key="deaths",text=L["COL_DEATHS"],w=.10,numeric=true},
+    {key="date",text=L["COL_DATE"],w=.12,numeric=true},
 }
 local ROW_H, RUN_ROW_H = 40, 34
 
@@ -264,7 +276,7 @@ function PanelPlayers:CreateListView(parent)
     search:SetBackdrop(Theme.BACKDROPS.simple); Theme:SetBackdropColor(search,Theme.BG.input); Theme:SetBackdropBorderColor(search,Theme.BORDER.panel)
     Theme:ApplyFont(search,"mono",12); Theme:SetTextColor(search,Theme.TEXT.primary); ToolbarLabel(bar,"BUSCAR",search)
     local ph=search:CreateFontString(nil,"OVERLAY"); ph:SetPoint("LEFT",9,0)
-    Theme:ApplyFont(ph,"mono",11); Theme:SetTextColor(ph,Theme.TEXT.dim); ph:SetText("Buscar nombre, reino o clase...")
+    Theme:ApplyFont(ph,"mono",11); Theme:SetTextColor(ph,Theme.TEXT.dim); ph:SetText(L["PLR_SEARCH"])
     local clear=CreateFrame("Button",nil,search); clear:SetPoint("RIGHT",-3,0); clear:SetSize(18,18); clear:Hide()
     local x=clear:CreateFontString(nil,"OVERLAY"); x:SetAllPoints(); Theme:ApplyFont(x,"mono",11); Theme:SetTextColor(x,Theme.TEXT.dim); x:SetText("x")
     clear:SetScript("OnClick",function() search:SetText(""); search:ClearFocus() end)
@@ -289,19 +301,19 @@ function PanelPlayers:CreateListView(parent)
         Theme:SetBackdropBorderColor(e,Theme.BORDER.panel);Theme:SetBackdropColor(e,Theme.BG.input)
     end)
     search:SetScript("OnEnter",function(e)
-        GameTooltip:SetOwner(e,"ANCHOR_TOP");GameTooltip:SetText("Buscar compañeros",1,.82,.35)
-        GameTooltip:AddLine("Escribe un nombre, reino o clase. Pulsa Enter o haz clic fuera para terminar.",1,1,1,true);GameTooltip:Show()
+        GameTooltip:SetOwner(e,"ANCHOR_TOP");GameTooltip:SetText(L["PLR_SEARCH_MATES"],1,.82,.35)
+        GameTooltip:AddLine(L["PLR_SEARCH_HINT"],1,1,1,true);GameTooltip:Show()
     end)
     search:SetScript("OnLeave",function()GameTooltip:Hide()end)
     search:SetScript("OnEscapePressed",function(e)e:ClearFocus()end); search:SetScript("OnEnterPressed",function(e)e:ClearFocus()end)
     self.searchBox=search
-    local roleItems={{text="Todos los roles",value="ALL"},{text="Tank",value="TANK"},{text="Healer",value="HEALER"},{text="DPS",value="DAMAGER"}}
+    local roleItems={{text=L["PLR_ALL_ROLES"],value="ALL"},{text="Tank",value="TANK"},{text="Healer",value="HEALER"},{text="DPS",value="DAMAGER"}}
     local role=MitzuMPlus:CreateSimpleDropdown(bar,145,roleItems,function(v)self.roleFilter=v or "ALL";self:RenderList()end)
-    role:SetPoint("BOTTOMLEFT",search,"BOTTOMRIGHT",12,0); role:SetSelectedValue("ALL"); ToolbarLabel(bar,"ROL",role)
-    local classItems, keys = {{text="Todas las clases",value="ALL"}}, {}
-    for token in pairs(CLASS_ES) do keys[#keys+1]=token end
-    table.sort(keys,function(a,b)return CLASS_ES[a]<CLASS_ES[b]end)
-    for _,token in ipairs(keys) do classItems[#classItems+1]={text=CLASS_ES[token],value=token} end
+    role:SetPoint("BOTTOMLEFT",search,"BOTTOMRIGHT",12,0); role:SetSelectedValue("ALL"); ToolbarLabel(bar,L["COL_ROLE"],role)
+    local classItems, keys = {{text=L["PLR_ALL_CLASSES"],value="ALL"}}, {}
+    for _,token in ipairs(CLASS_TOKENS) do keys[#keys+1]=token end
+    table.sort(keys,function(a,b)return (ClassName(a) or a)<(ClassName(b) or b) end)
+    for _,token in ipairs(keys) do classItems[#classItems+1]={text=ClassName(token) or token,value=token} end
     local class=MitzuMPlus:CreateSimpleDropdown(bar,190,classItems,function(v)self.classFilter=v or "ALL";self:RenderList()end)
     class:SetPoint("BOTTOMLEFT",role,"BOTTOMRIGHT",12,0); class:SetSelectedValue("ALL"); ToolbarLabel(bar,"CLASE",class)
     local function AddFilterHover(dropdown,title)
@@ -310,11 +322,11 @@ function PanelPlayers:CreateListView(parent)
         target:HookScript("OnEnter",function()
             local selected=dropdown._text and dropdown._text:GetText() or ""
             GameTooltip:SetOwner(dropdown,"ANCHOR_TOP");GameTooltip:SetText(title,1,.82,.35)
-            GameTooltip:AddLine("Seleccionado: "..selected,1,1,1);GameTooltip:AddLine("Clic para cambiar el filtro.",.72,.72,.72);GameTooltip:Show()
+            GameTooltip:AddLine(L["PLR_SELECTED"]..selected,1,1,1);GameTooltip:AddLine(L["PLR_CLICK_FILTER"],.72,.72,.72);GameTooltip:Show()
         end)
         target:HookScript("OnLeave",function()GameTooltip:Hide()end)
     end
-    AddFilterHover(role,"Filtro de rol");AddFilterHover(class,"Filtro de clase")
+    AddFilterHover(role,L["PLR_ROLE_FILTER"]);AddFilterHover(class,L["PLR_CLASS_FILTER"])
     view:SetScript("OnMouseDown",function()search:ClearFocus()end)
     local summary=view:CreateFontString(nil,"OVERLAY"); summary:SetPoint("TOPLEFT",bar,"BOTTOMLEFT",2,-8)
     Theme:ApplyFont(summary,"mono",11); Theme:SetTextColor(summary,Theme.TEXT.secondary); self.listSummary=summary
@@ -343,12 +355,12 @@ function PanelPlayers:CreateProfileView(parent)
     local bg=top:CreateTexture(nil,"BACKGROUND"); bg:SetAllPoints(); bg:SetAlpha(.18); self.profileBg=bg
     local back=CreateFrame("Button",nil,top,BackdropTemplateMixin and "BackdropTemplate"); back:SetPoint("TOPLEFT",9,-9); back:SetSize(88,24)
     back:SetBackdrop(Theme.BACKDROPS.simple); Theme:SetBackdropColor(back,Theme.BG.button); Theme:SetBackdropBorderColor(back,Theme.BORDER.panel)
-    local bt=back:CreateFontString(nil,"OVERLAY"); bt:SetAllPoints(); Theme:ApplyFont(bt,"mono",11); Theme:SetTextColor(bt,Theme.GOLD.gold4); bt:SetText("< Jugadores")
+    local bt=back:CreateFontString(nil,"OVERLAY"); bt:SetAllPoints(); Theme:ApplyFont(bt,"mono",11); Theme:SetTextColor(bt,Theme.GOLD.gold4); bt:SetText(L["PLR_BACK"])
     back:SetScript("OnClick",function()self:ShowList()end)
     local title=top:CreateFontString(nil,"OVERLAY"); title:SetPoint("TOPLEFT",112,-11); Theme:ApplyFont(title,"title",18); self.profileTitle=title
     local sub=top:CreateFontString(nil,"OVERLAY"); sub:SetPoint("TOPLEFT",title,"BOTTOMLEFT",0,-5); Theme:ApplyFont(sub,"mono",11)
     Theme:SetTextColor(sub,Theme.TEXT.secondary); self.profileSubtitle=sub
-    self.cards={}; local labels={"RUNS JUNTOS","EXITO","MEJOR LLAVE","ULTIMA VEZ"}
+    self.cards={}; local labels={L["PLR_RUNS_TOGETHER"],"EXITO",L["PLR_BEST_KEY"],L["PLR_LAST_TIME"]}
     for i,labelText in ipairs(labels) do
         local card=CreateFrame("Frame",nil,top,BackdropTemplateMixin and "BackdropTemplate"); card:SetSize(126,49)
         card:SetPoint("TOPRIGHT",-10-((4-i)*134),-21); card:SetBackdrop(Theme.BACKDROPS.simple)
@@ -358,7 +370,7 @@ function PanelPlayers:CreateProfileView(parent)
         card.value=value; self.cards[i]=card
     end
     local hint=view:CreateFontString(nil,"OVERLAY"); hint:SetPoint("TOPLEFT",top,"BOTTOMLEFT",12,-8)
-    Theme:ApplyFont(hint,"mono",10); Theme:SetTextColor(hint,Theme.TEXT.dim); hint:SetText("Encabezados ordenables · Puntaje mítico opcional")
+    Theme:ApplyFont(hint,"mono",10); Theme:SetTextColor(hint,Theme.TEXT.dim); hint:SetText(L["PLR_HINT"])
     local header=SortHeader(view,RUN_COLS,function(key)
         if self.runSortKey==key then self.runSortDesc=not self.runSortDesc else self.runSortKey=key;self.runSortDesc=key~="dungeon" and key~="result" end
         self:RenderProfile()
@@ -429,7 +441,7 @@ function PanelPlayers:Matches(p)
     if self.roleFilter~="ALL" and p.role~=self.roleFilter then return false end
     if self.classFilter~="ALL" and p.class~=self.classFilter then return false end
     if self.searchText~="" then
-        local hay=string.lower(table.concat({p.name,p.realm,CLASS_ES[p.class] or p.class}," "))
+        local hay=string.lower(table.concat({p.name,p.realm,ClassName(p.class) or p.class}," "))
         if not string.find(hay,self.searchText,1,true) then return false end
     end
     return true
@@ -462,7 +474,7 @@ function PanelPlayers:CreateListRow(p,index)
     if not iconSet then icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark") end
     row.identityInset=38
     local color=GetClassColor(p.class);local display=p.name..(p.realm~="" and ("  |cFF777777- "..p.realm.."|r") or "")
-    local detail=CLASS_ES[p.class] or p.class;if p.spec~="" then detail=detail.." · "..p.spec end
+    local detail=ClassName(p.class) or p.class;if p.spec~="" then detail=detail.." · "..p.spec end
     cells.identity:SetText(display.."\n|cFF888888"..(detail~="" and detail or "Datos parciales").."|r");cells.identity:SetTextColor(color.r,color.g,color.b,1)
     local rc=ROLE_COLOR[p.role] or Theme.TEXT.secondary;cells.role:SetText(ROLE_LABEL[p.role] or "DPS");cells.role:SetTextColor(rc.r,rc.g,rc.b,1)
     cells.runs:SetText(p.runs);Theme:SetTextColor(cells.runs,Theme.TEXT.primary)
@@ -475,20 +487,20 @@ function PanelPlayers:CreateListRow(p,index)
     row:SetScript("OnEnter",function(f)
         Theme:SetBackdropColor(f,Theme.BG.rowHover);accent:Show()
         GameTooltip:SetOwner(f,"ANCHOR_RIGHT");GameTooltip:SetText(p.name..(p.realm~="" and (" - "..p.realm) or ""), color.r,color.g,color.b)
-        GameTooltip:AddLine(string.format("%d runs juntos · %.0f%% en tiempo",p.runs,p.success),1,1,1)
+        GameTooltip:AddLine(string.format(L["PLR_TOGETHER_LINE"],p.runs,p.success),1,1,1)
         local rioScore,rioState=RaiderIOScore(p)
         if rioScore then
             local rc=RaiderIOColor(rioScore)
-            local suffix=rioState=="SAVED" and " (guardado)" or ""
-            GameTooltip:AddLine("Puntaje mítico: "..string.format("%.0f",rioScore)..suffix,rc.r,rc.g,rc.b)
+            local suffix=rioState=="SAVED" and L["PLR_SAVED"] or ""
+            GameTooltip:AddLine(L["PLR_SCORE_PREFIX"]..string.format("%.0f",rioScore)..suffix,rc.r,rc.g,rc.b)
         elseif rioState=="NO_ADDON" then
-            GameTooltip:AddLine("Puntaje mítico: no disponible.",.65,.65,.65,true)
+            GameTooltip:AddLine(L["PLR_SCORE_NA"],.65,.65,.65,true)
         else
-            GameTooltip:AddLine("Puntaje mítico: sin datos disponibles.",.65,.65,.65,true)
+            GameTooltip:AddLine(L["PLR_SCORE_NO_DATA"],.65,.65,.65,true)
         end
-        GameTooltip:AddLine("Éxito = porcentaje de runs terminadas en tiempo con este jugador.",.75,.75,.75,true)
-        if p.measured<p.runs then GameTooltip:AddLine(string.format("Métricas disponibles en %d de %d runs.",p.measured,p.runs),.7,.7,.7,true) end
-        GameTooltip:AddLine("Clic para abrir el perfil.",.9,.75,.3);GameTooltip:Show()
+        GameTooltip:AddLine(L["PLR_SUCCESS_HINT"],.75,.75,.75,true)
+        if p.measured<p.runs then GameTooltip:AddLine(string.format(L["PLR_METRICS_IN"],p.measured,p.runs),.7,.7,.7,true) end
+        GameTooltip:AddLine(L["PLR_CLICK_PROFILE"],.9,.75,.3);GameTooltip:Show()
     end)
     row:SetScript("OnLeave",function(f)Theme:SetBackdropColor(f,f._normalBG);accent:Hide();GameTooltip:Hide()end)
     row:SetScript("OnMouseDown",function()if self.searchBox then self.searchBox:ClearFocus()end end)
@@ -499,15 +511,15 @@ function PanelPlayers:RenderList()
     Destroy(self.listRows);Destroy(self.listExtras)
     local visible={};for _,p in ipairs(self.players or {})do if self:Matches(p)then visible[#visible+1]=p end end
     table.sort(visible,function(a,b)return self:ComparePlayers(a,b)end);self.listHeader:SetSort(self.listSortKey,self.listSortDesc)
-    self.listSummary:SetText(string.format("%d compañeros visibles de %d  ·  %d runs guardadas",#visible,#(self.players or {}),self.totalRuns or 0))
+    self.listSummary:SetText(string.format(L["PLR_VISIBLE"],#visible,#(self.players or {}),self.totalRuns or 0))
     local y=0
     for i,p in ipairs(visible)do local row=self:CreateListRow(p,i);row:SetPoint("TOPLEFT",self.listContent,"TOPLEFT",0,y);row:SetPoint("TOPRIGHT",self.listContent,"TOPRIGHT",0,y);self.listRows[#self.listRows+1]=row;y=y-ROW_H end
     if #visible==0 then
         local noRuns=(self.totalRuns or 0)==0
         local noPlayers=not noRuns and #(self.players or {})==0
-        local empty=Widgets:CreateEmptyState(self.listContent,"?",noRuns and "Sin runs registradas" or (noPlayers and "Sin compañeros registrados" or "Sin coincidencias"),
-            noRuns and "Completa una Mythic+ para construir tu historial de compañeros."
-                or (noPlayers and "Las runs guardadas no contienen una composición de grupo utilizable." or "Prueba otro nombre o cambia los filtros."))
+        local empty=Widgets:CreateEmptyState(self.listContent,"?",noRuns and L["PLR_NO_RUNS"] or (noPlayers and L["PLR_EMPTY"] or L["PLR_NO_MATCH"]),
+            noRuns and L["PLR_EMPTY_DESC"]
+                or (noPlayers and L["PLR_EMPTY_UNUSABLE"] or L["PLR_NO_MATCH_DESC"]))
         empty:SetPoint("TOP",self.listContent,"TOP",0,-48);self.listExtras[#self.listExtras+1]=empty;y=-240
     end
     self.listContent:SetHeight(math.max(60,math.abs(y)+8));self:LayoutRows(self.listRows,LIST_COLS,self.listOffsets)
@@ -522,10 +534,10 @@ end
 function PanelPlayers:ShowProfile(p)
     self.currentPlayer=p;self.listView:Hide();self.profileView:Show();self.lootExpanded=false
     local cc=GetClassColor(p.class);self.profileTitle:SetText(p.name..(p.realm~="" and (" - "..p.realm) or ""));self.profileTitle:SetTextColor(cc.r,cc.g,cc.b,1)
-    local identity=CLASS_ES[p.class] or p.class or "Clase desconocida";if p.spec~="" then identity=identity.." · "..p.spec end
+    local identity=ClassName(p.class) or p.class or L["PLR_UNKNOWN_CLASS"];if p.spec~="" then identity=identity.." · "..p.spec end
     identity=identity.." · "..(ROLE_LABEL[p.role] or "DPS")
     local rioScore=RaiderIOScore(p)
-    if rioScore then identity=identity.." · Puntaje mítico "..string.format("%.0f",rioScore) end
+    if rioScore then identity=identity..L["PLR_SCORE_INLINE"]..string.format("%.0f",rioScore) end
     self.profileSubtitle:SetText(identity);self.cards[1].value:SetText(p.runs);self.cards[2].value:SetText(string.format("%.0f%%",p.success));self.cards[3].value:SetText(p.best>0 and ("+"..p.best) or "-");self.cards[4].value:SetText(ShortDate(p.last))
     local latest
     for _,e in ipairs(p.entries)do if not latest or (tonumber(e.run.startTime)or 0)>(tonumber(latest.startTime)or 0)then latest=e.run end end
@@ -551,7 +563,7 @@ end
 function PanelPlayers:CreateRunRow(entry,index)
     local row=CreateFrame("Frame",nil,self.profileContent,BackdropTemplateMixin and "BackdropTemplate");row:SetHeight(RUN_ROW_H);StyleRow(row,index)
     local cells={};for _,col in ipairs(RUN_COLS)do cells[col.key]=NewCell(row,col,(self.runOffsets or {})[col.key]or{x=0,w=100})end
-    local run,m=entry.run,entry.member;cells.dungeon:SetText(run.dungeonName or "Mazmorra desconocida");Theme:SetTextColor(cells.dungeon,Theme.TEXT.primary)
+    local run,m=entry.run,entry.member;cells.dungeon:SetText(run.dungeonName or L["HIST_UNKNOWN_DUNGEON"]);Theme:SetTextColor(cells.dungeon,Theme.TEXT.primary)
     local level=tonumber(run.keyLevel)or 0;cells.level:SetText(level>0 and ("+"..level)or"-");Theme:SetTextColor(cells.level,Theme.GOLD.gold4)
     if run.inTime then cells.result:SetText("EN TIEMPO");Theme:SetTextColor(cells.result,Theme.STATUS.ok)
     elseif (tonumber(run.completionTime)or 0)>0 then cells.result:SetText("FUERA");Theme:SetTextColor(cells.result,Theme.STATUS.bad)
@@ -568,7 +580,7 @@ function PanelPlayers:AddLoot(entries,y)
     button:SetPoint("TOPLEFT",self.profileContent,"TOPLEFT",0,y-8);button:SetPoint("TOPRIGHT",self.profileContent,"TOPRIGHT",0,y-8);button:SetHeight(28)
     button:SetBackdrop(Theme.BACKDROPS.simple);Theme:SetBackdropColor(button,Theme.BG.panel);Theme:SetBackdropBorderColor(button,Theme.BORDER.panel)
     local label=button:CreateFontString(nil,"OVERLAY");label:SetPoint("LEFT",10,0);Theme:ApplyFont(label,"mono",11);Theme:SetTextColor(label,Theme.GOLD.gold3)
-    label:SetText(string.format("BOTÍN REGISTRADO (%d)  %s",p.loot,self.lootExpanded and "^" or "v"))
+    label:SetText(string.format(L["PLR_LOOT"],p.loot,self.lootExpanded and "^" or "v"))
     button:SetScript("OnClick",function()self.lootExpanded=not self.lootExpanded;self:RenderProfile()end);self.profileExtras[#self.profileExtras+1]=button;y=y-36
     if not self.lootExpanded then return y end
     for _,entry in ipairs(entries)do for _,item in ipairs(entry.loot)do

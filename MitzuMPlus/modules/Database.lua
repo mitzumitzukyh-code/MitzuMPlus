@@ -12,6 +12,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 -- NOTA: MitzuMPlusDB_Defaults está definido en MitzuMPlus_main.lua
 -- para evitar conflictos y tener una sola fuente de verdad.
@@ -41,11 +42,11 @@ function MitzuMPlus:GetRuntimeSeasonDescriptor()
         if ok then expansionLevel = tonumber(value) end
     end
     expansionLevel = expansionLevel or 0
-    local names = self.Constants and self.Constants.EXPANSION_NAMES or {}
-    local expansionName = names[expansionLevel] or ("Expansión " .. expansionLevel)
+    -- Solo identidad: la etiqueta visible la construye RunMetrics:GetSeason en
+     -- el idioma del cliente. Guardar texto traducido haria que un historial
+     -- creado en espanol se leyera en espanol en un cliente ingles.
     return {
         seasonKey = string.format("exp%d_s%d", expansionLevel, seasonID),
-        seasonName = string.format("%s - Temporada %d", expansionName, seasonID),
         seasonNumber = seasonID,
         expansionLevel = expansionLevel,
     }
@@ -108,7 +109,7 @@ function MitzuMPlus:SaveRun(runData)
     end
     if not runData then
         if self.Print then
-            self:Print("|cFFFF4444[MitzuMPlus] SaveRun: datos inválidos, run descartada.|r")
+            self:Print(L["MSG_SAVE_INVALID"])
         end
         return nil
     end
@@ -117,7 +118,7 @@ function MitzuMPlus:SaveRun(runData)
         if not ok then
             if self.Print then
                 self:Print(string.format(
-                    "|cFFFF4444[MitzuMPlus] SaveRun: validación fallida (%s), run descartada.|r",
+                    L["MSG_SAVE_FAILED"],
                     tostring(reason)))
             end
             return nil

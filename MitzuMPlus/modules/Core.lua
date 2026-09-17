@@ -13,6 +13,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 _G.MitzuMPlusCurrentRun = nil
 
@@ -180,7 +181,7 @@ MitzuMPlus.GetPlayerRoleAndSpec = GetPlayerRoleAndSpec
 
 function MitzuMPlus:RegisterCoreEvents()
     if self._eventsRegistered then
-        if self.Print then self:Print("Eventos ya registrados.") end
+        if self.Print then self:Print("Events already registered.") end
         return
     end
 
@@ -221,7 +222,7 @@ function MitzuMPlus:RegisterCoreEvents()
         for ev in pairs(MitzuMPlus._eventHandlers) do
             if InCombatLockdown and InCombatLockdown() then
                 if MitzuMPlus.Print then
-                    MitzuMPlus:Print("No se pueden registrar eventos en combate. Reintentando al salir.")
+                    MitzuMPlus:Print("Cannot register events in combat. Retrying when it ends.")
                 end
                 return false
             end
@@ -233,7 +234,7 @@ function MitzuMPlus:RegisterCoreEvents()
                 -- COMPLETO y el addon se quedaba sin tracking. Ahora se avisa y
                 -- se continua con el resto.
                 if MitzuMPlus.Print then
-                    MitzuMPlus:Print("|cFFFF9922Evento no registrado:|r " .. tostring(ev) .. " (" .. tostring(err) .. ")")
+                    MitzuMPlus:Print("|cFFFF9922Event not registered:|r " .. tostring(ev) .. " (" .. tostring(err) .. ")")
                 end
             end
         end
@@ -449,11 +450,11 @@ function MitzuMPlus:OnGroupRosterUpdate()
                 run.timeline[#run.timeline + 1] = {
                     timestamp = Now(),
                     type      = "abandon",
-                    note      = name .. " salió del grupo",
+                    note      = name .. L["MSG_LEFT_GROUP"],
                 }
                 if self.Print then
                     self:Print(string.format(
-                        "|cFFFF6B6B[Abandono]|r %s salió a los %d:%02d.",
+                        L["MSG_LEAVER"],
                         name, math.floor(elapsed / 60), elapsed % 60
                     ))
                 end
@@ -485,7 +486,7 @@ function MitzuMPlus:OnChallengeStart()
     -- FIX DEDUP-2: Si ya tenemos una run activa para este dungeon, no crear otra
     if _G.MitzuMPlusCurrentRun then
         if self.Print then
-            self:Print("|cFFFF9922Ya hay una run activa. Ignorando inicio duplicado.|r")
+            self:Print(L["MSG_RUN_ACTIVE"])
         end
         return
     end
@@ -500,7 +501,7 @@ function MitzuMPlus:OnChallengeStart()
                   C_ChallengeMode.GetActiveChallengeMapID()
     if not mapID or mapID == 0 then
         if self.Print then
-            self:Print("|cFFFF4444Error:|r No se pudo obtener el mapa activo.")
+            self:Print(L["MSG_NO_MAP"])
         end
         return
     end
@@ -510,7 +511,7 @@ function MitzuMPlus:OnChallengeStart()
         if not self:IsDungeonInActiveSeason(mapID) then
             if self.Print then
                 self:Print(string.format(
-                    "|cFFFF9922Advertencia:|r La mazmorra (ID %d) no es parte de la temporada activa.", mapID))
+                    L["MSG_OFF_SEASON"], mapID))
             end
         end
         local season = self:GetActiveSeason()
@@ -598,7 +599,7 @@ function MitzuMPlus:OnChallengeStart()
         local session, sessionState = self.RunSession:StartOrRestore(run.dungeonID, run.keyLevel)
         if not session then
             if self.Print then
-                self:Print("|cFFFF9922Inicio ignorado:|r el cliente aún expone la llave ya completada.")
+                self:Print(L["MSG_START_IGNORED"])
             end
             return
         end
@@ -724,7 +725,7 @@ function MitzuMPlus:OnChallengeStart()
             meterKeys = #keys > 0 and table.concat(keys, ", ") or "(empty table)"
         end
 
-        self.ErrorLogger:LogEvent("RUN_START", "M+ iniciada", {
+        self.ErrorLogger:LogEvent("RUN_START", "M+ started", {
             dungeon     = run.dungeonName or "?",
             keyLevel    = run.keyLevel or 0,
             role        = run.playerRole or "?",
@@ -745,7 +746,7 @@ function MitzuMPlus:OnChallengeStart()
 
     if self.Print then
         self:Print(string.format(
-            "|cFF21de66M+ Iniciada:|r %s +%d | Rol: %s (%s)",
+            L["MSG_M_STARTED"],
             run.dungeonName, run.keyLevel,
             run.playerRole, run.playerSpec))
     end
@@ -796,7 +797,7 @@ function MitzuMPlus:OnChallengeCompleted()
     local runKey = tostring(run.dungeonID) .. "_" .. tostring(run.startTime)
     if self._lastCompletedRunKey == runKey then
         if self.Print then
-            self:Print("|cFFFF9922Duplicado ignorado:|r Esta run ya fue registrada.")
+            self:Print(L["MSG_DUPLICATE"])
         end
         return
     end
@@ -867,7 +868,7 @@ function MitzuMPlus:OnChallengeCompleted()
     end
 
     if isPractice then
-        if self.Print then self:Print("Run de práctica detectada, no se guardará.") end
+        if self.Print then self:Print(L["MSG_PRACTICE"]) end
         self:_TeardownRun("practice")
         return
     end
@@ -881,7 +882,7 @@ function MitzuMPlus:OnChallengeCompleted()
     -- Si completionTime sigue en 0, la run probablemente no se completó realmente
     if completionTime == 0 then
         if self.Print then
-            self:Print("|cFFFF9922Advertencia:|r No se pudo determinar el tiempo de completado. Run descartada.")
+            self:Print(L["MSG_NO_TIME"])
         end
         self:_TeardownRun("no-completion-time")
         return
@@ -892,7 +893,7 @@ function MitzuMPlus:OnChallengeCompleted()
         if duplicate then
             if self.Print then
                 self:Print(string.format(
-                    "|cFFFF9922Finalización duplicada ignorada:|r %s (run %s).",
+                    L["MSG_DUPLICATE_END"],
                     tostring(why), tostring(priorID or "?")))
             end
             self:_TeardownRun("duplicate-completion")
@@ -942,7 +943,7 @@ function MitzuMPlus:OnChallengeCompleted()
     run.timeline[#run.timeline + 1] = {
         timestamp = Now(),
         type      = "finish",
-        note      = inTime and "Finalizada en tiempo" or "Finalizada fuera de tiempo",
+        note      = inTime and L["MSG_FINISHED_IN"] or L["MSG_FINISHED_OUT"],
     }
 
     -- Party combat events are intentionally not reconstructed in Midnight.
@@ -1040,7 +1041,7 @@ function MitzuMPlus:OnChallengeCompleted()
                 "%s +%d - %s",
                 run.dungeonName or "Run",
                 run.keyLevel or 0,
-                inTime and "EN TIEMPO" or "FUERA DE TIEMPO"
+                inTime and L["STATE_IN_TIME"] or L["STATE_OUT_OF_TIME"]
             )
             self:ShowToast(msg, inTime and "ok" or "bad", 4, true)
         end
@@ -1056,9 +1057,9 @@ function MitzuMPlus:OnChallengeCompleted()
             local secs = run.completionTime or 0
             local t = (self.FormatTime and self:FormatTime(secs)) or tostring(secs)
             self:Print(string.format(
-                "%s |cFFe8b84a+%d|r  %s   -   %s   -   %d muertes",
+                L["MSG_CHAT_SUMMARY"],
                 run.dungeonName or "Mythic+", run.keyLevel or 0, t,
-                inTime and "|cFF21de66en tiempo|r" or "|cFFff5555fuera de tiempo|r",
+                inTime and L["MSG_IN_TIME_LC"] or L["MSG_OUT_TIME_LC"],
                 (run.stats and run.stats.deaths) or 0))
         end
     end
@@ -1155,7 +1156,7 @@ function MitzuMPlus:OnBossKill(event, encounterID, encounterName, difficultyID, 
         run.timeline[#run.timeline + 1] = {
             timestamp = Now(),
             type      = "boss_kill",
-            note      = encounterName or "Jefe derrotado",
+            note      = encounterName or "Boss defeated",
         }
         -- En Midnight, forzar lectura de C_DamageMeter tras cada boss
         if IS_MIDNIGHT then

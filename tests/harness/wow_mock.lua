@@ -77,7 +77,16 @@ function GetTime() return WoW.now end
 function time() return WoW.epoch + math.floor(WoW.now - 1000) end
 function date(fmt, t) return os.date(fmt or "%Y-%m-%d %H:%M:%S", t or time()) end
 function GetServerTime() return time() end
-function GetLocale() return "esES" end
+-- El locale del cliente es un dato del escenario: S.boot({ locale = "enUS" }).
+WoW.locale = WoW.locale or "esES"
+function GetLocale() return WoW.locale end
+-- Nombres de clase localizados por Blizzard (el addon nunca los traduce).
+LOCALIZED_CLASS_NAMES_MALE = setmetatable({}, { __index = function(_, token)
+    if type(token) ~= "string" then return nil end
+    if WoW.locale == "esES" or WoW.locale == "esMX" then return "clase:" .. token end
+    return token:sub(1, 1) .. token:sub(2):lower()
+end })
+LOCALIZED_CLASS_NAMES_FEMALE = LOCALIZED_CLASS_NAMES_MALE
 function GetGameTime() return 12, 30, 0 end
 function GetFramerate() return 60 end
 function UIFrameFadeIn(f) if f and f.Show then f:Show() end end

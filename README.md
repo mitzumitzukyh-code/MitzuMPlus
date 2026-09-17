@@ -6,6 +6,21 @@ MitzuMPlus keeps a local history of Mythic+ runs, turns that history into clear
 statistics and player profiles, and displays a discreet live prediction of the
 likely key result: **+3, +2, +1 or OVERTIME**.
 
+## Idiomas
+
+El addon usa el idioma del cliente de WoW. No hay ajuste de idioma ni comando:
+AceLocale-3.0 elige al cargar y ya está.
+
+| Cliente | Idioma del addon |
+|---|---|
+| `enUS`, `enGB` | inglés |
+| `esES`, `esMX` | español |
+| cualquier otro (`deDE`, `frFR`, `ptBR`, `ruRU`, `koKR`, `zhCN`, `zhTW`, …) | inglés (locale por defecto) |
+
+El inglés es el locale canónico: si una traducción no cubre una cadena, se ve en
+inglés, nunca vacía ni con el nombre interno de la clave. Los nombres de mazmorra,
+jefe y criterio los da el propio cliente, así que salen ya en su idioma.
+
 ## Product areas
 
 - **History:** searchable, filterable run list with selection, detail, notes,

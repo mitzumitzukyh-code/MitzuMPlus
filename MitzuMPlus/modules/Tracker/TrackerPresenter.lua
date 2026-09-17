@@ -45,28 +45,48 @@ TP.MODES = { HIDDEN = "HIDDEN", PREVIEW = "PREVIEW", PENDING = "PENDING", RUNNIN
 TP.RESULT_CODE = { ["+3"] = "+3", ["+2"] = "+2", ["+1"] = "+1", ["FUERA"] = "OVERTIME" }
 TP.NONE = "NONE"
 
-TP.TEXT = {
-    NO_VALUE     = "--",
-    NO_TIMER     = "--:--",
-    DUNGEON      = "Mitica+",
-    PENDING      = "Esperando temporizador",
-    FORCES       = "Fuerzas enemigas",
-    REMAINING    = "faltan %s",
-    FORCES_DONE  = "completo",
-    BOSSES       = "Jefes",
-    DEATHS       = "Muertes",
-    PACE         = "RITMO",
-    RESULT       = "RESULTADO",
-    CONFIDENCE   = "%d%%",
-    ETA          = "final ~%s",
-    OF_LIMIT     = "%s / %s",
-    KEY_COMPLETE = "LLAVE COMPLETADA",
-    KEY_OVERTIME = "LLAVE FUERA DE TIEMPO",
-    KEY_DONE     = "LLAVE TERMINADA",
-    OFFICIAL     = "oficial",
-    LAST_PACE    = "ultimo ritmo",
-    PREVIEW      = "VISTA PREVIA",
+-- Textos visibles. NINGUNO se escribe aqui en un idioma concreto: cada uno es
+-- una clave de AceLocale que se resuelve al leerse (MitzuMPlus.L), asi que el
+-- tracker habla el idioma del cliente sin que este fichero sepa cual es.
+-- Ingles por defecto; espanol solo en clientes espanoles (ver Bootstrap.lua).
+TP.TEXT_KEYS = {
+    DUNGEON      = "TRACKER_DUNGEON",
+    PENDING      = "TRACKER_PENDING",
+    FORCES       = "TRACKER_FORCES",
+    REMAINING    = "TRACKER_REMAINING",
+    FORCES_DONE  = "TRACKER_FORCES_DONE",
+    BOSSES       = "TRACKER_BOSSES",
+    DEATHS       = "TRACKER_DEATHS",
+    PACE         = "TRACKER_PACE",
+    RESULT       = "TRACKER_RESULT",
+    ETA          = "TRACKER_ETA",
+    KEY_COMPLETE = "TRACKER_KEY_COMPLETE",
+    KEY_OVERTIME = "TRACKER_KEY_OVERTIME",
+    KEY_DONE     = "TRACKER_KEY_DONE",
+    OFFICIAL     = "TRACKER_OFFICIAL",
+    LAST_PACE    = "TRACKER_LAST_PACE",
+    PREVIEW      = "TRACKER_PREVIEW",
+    LEVEL        = "TRACKER_LEVEL",
+    BOSS_N       = "TRACKER_BOSS_N",
 }
+
+-- Los que no llevan palabras son universales: un reloj y un porcentaje se leen
+-- igual en cualquier cliente, asi que no pasan por el traductor.
+TP.TEXT = setmetatable({
+    NO_VALUE   = "--",
+    NO_TIMER   = "--:--",
+    CONFIDENCE = "%d%%",
+    OF_LIMIT   = "%s / %s",
+}, {
+    __index = function(_, name)
+        local key = TP.TEXT_KEYS[name]
+        if not key then return nil end
+        local L = MitzuMPlus.L
+        -- Sin AceLocale (modulo cargado suelto en un banco) devuelve la clave:
+        -- nunca un idioma escrito a mano, y el fallo se ve en el acto.
+        return L and L[key] or key
+    end,
+})
 
 -- ---------------------------------------------------------------------------
 -- FORMATO
@@ -538,7 +558,7 @@ function TP.PreviewInput(settings)
         preview = true, enabled = true, status = "RUNNING", settings = settings,
         constants = { KEY_UPGRADE_PLUS2_RATIO = 0.8, KEY_UPGRADE_PLUS3_RATIO = 0.6 },
         state = {
-            mapName = "Reposo de los Reyes", keystoneLevel = 12, timeLimit = 1980, elapsed = 803,
+            mapName = TP.TEXT.DUNGEON, keystoneLevel = 12, timeLimit = 1980, elapsed = 803,
             forcesCurrent = 449, forcesTotal = 608, forcesPercent = 449 / 608 * 100,
             bossesCompleted = 2, bossesTotal = 4, deaths = 3, deathTimeLost = 15,
         },

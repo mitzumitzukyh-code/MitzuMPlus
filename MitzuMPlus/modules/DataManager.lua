@@ -5,6 +5,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local DataManager = {}
 MitzuMPlus.DataManager = DataManager
@@ -118,7 +119,7 @@ function DataManager:RemoveCorruptRuns()
 
     if MitzuMPlus.Print then
         MitzuMPlus:Print(string.format(
-            "|cFFe8b84a[DataManager]|r Eliminadas %d runs corruptas. %d runs válidas.",
+            L["MSG_PURGE_CORRUPT"],
             invalid, valid))
     end
 
@@ -149,7 +150,7 @@ function DataManager:EnforceRunLimit()
 
     if purged > 0 and MitzuMPlus.Print then
         MitzuMPlus:Print(string.format(
-            "|cFFe8b84a[DataManager]|r Purgadas %d runs antiguas (límite: %d).",
+            L["MSG_PURGE_OLD"],
             purged, maxRuns))
     end
 

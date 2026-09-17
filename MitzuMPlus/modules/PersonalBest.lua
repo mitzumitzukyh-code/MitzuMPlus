@@ -12,6 +12,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local PersonalBest = {}
 MitzuMPlus.PersonalBest = PersonalBest
@@ -331,15 +332,15 @@ function PersonalBest:AnnounceResults(results)
         local msg = ""
         if pb.type == "highest_key" then
             msg = string.format(
-                "|cFF21de66NUEVO RECORD!|r Mejor llave en %s: |cFFe8b84a+%d|r",
+                L["PB_NEW_RECORD"],
                 pb.dungeon, pb.newValue)
             if pb.oldValue then
-                msg = msg .. string.format(" (anterior: +%d)", pb.oldValue)
+                msg = msg .. string.format(L["PB_RECORD_PREV"], pb.oldValue)
             end
         elseif pb.type == "best_time" then
             local newT = MitzuMPlus.FormatTime and MitzuMPlus:FormatTime(pb.newValue) or tostring(pb.newValue)
             msg = string.format(
-                "|cFF21de66NUEVO PB!|r Mejor tiempo en %s: |cFFe8b84a%s|r",
+                L["PB_BEST_TIME"],
                 pb.dungeon, newT)
             if pb.oldValue then
                 local diff = pb.oldValue - pb.newValue
@@ -351,7 +352,7 @@ function PersonalBest:AnnounceResults(results)
             -- anuncio y por tanto podia quedar completamente silencioso.
             local newT = MitzuMPlus.FormatTime and MitzuMPlus:FormatTime(pb.newValue) or tostring(pb.newValue)
             msg = string.format(
-                "|cFF21de66NUEVO PB!|r Mejor tiempo en %s +%d: |cFFe8b84a%s|r",
+                L["PB_NEW_TIME"],
                 pb.dungeon, pb.keyLevel or 0, newT)
             if pb.oldValue then
                 local diff = pb.oldValue - pb.newValue
@@ -361,16 +362,16 @@ function PersonalBest:AnnounceResults(results)
         elseif pb.type == "best_dps" then
             local fn = MitzuMPlus.FormatNumber and function(v) return MitzuMPlus:FormatNumber(v) end or tostring
             msg = string.format(
-                "|cFF21de66NUEVO PB DPS!|r %s: |cFFe8b84a%s|r DPS",
+                L["PB_NEW_DPS"],
                 pb.dungeon, fn(math.floor(pb.newValue)))
         elseif pb.type == "best_hps" then
             local fn = MitzuMPlus.FormatNumber and function(v) return MitzuMPlus:FormatNumber(v) end or tostring
             msg = string.format(
-                "|cFF21de66NUEVO PB HPS!|r %s: |cFFe8b84a%s|r HPS",
+                L["PB_NEW_HPS"],
                 pb.dungeon, fn(math.floor(pb.newValue)))
         elseif pb.type == "flawless" then
             msg = string.format(
-                "|cFF21de66FLAWLESS!|r %s +%d completada sin muertes",
+                L["PB_FLAWLESS_N"],
                 pb.dungeon, pb.keyLevel)
         end
 

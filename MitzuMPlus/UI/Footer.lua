@@ -1,6 +1,7 @@
 -- MitzuMPlus compact product footer.
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon("MitzuMPlus")
 local Theme = MitzuMPlus.Theme
+local L = MitzuMPlus.L
 local Footer = {}
 MitzuMPlus.Footer = Footer
 
@@ -47,7 +48,7 @@ function Footer:UpdateStats()
             best = math.max(best, tonumber(run.keyLevel) or 0)
         end
     end
-    local bestText = best > 0 and ("Best +" .. best) or "Sin runs"
+    local bestText = best > 0 and string.format(L["FOOTER_BEST"], best) or L["FOOTER_NO_RUNS"]
     self.container.summary:SetText(string.format("%d runs · %s · v%s",
         total, bestText, tostring(MitzuMPlus.VERSION or "?")))
 end

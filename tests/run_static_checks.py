@@ -76,8 +76,9 @@ def check_product_boundary(c):
 
 def check_ui_and_commands(c):
     tabs = read(ADDON / "UI" / "Tabs.lua")
-    for label in ["HISTORIAL", "ESTADÍSTICAS", "JUGADORES", "CONFIGURACIÓN"]:
-        c.check(label in tabs, f"missing final tab {label}")
+    # 1.1.0-dev.10: the bar names locale keys; the words live in Locales/.
+    for key in ["TABBAR_HISTORY", "TABBAR_STATS", "TABBAR_PLAYERS", "TABBAR_SETTINGS"]:
+        c.check(f'L["{key}"]' in tabs, f"missing final tab {key}")
     c.check("M+ COACH" not in tabs, "retired M+ Coach tab remains")
     init = read(ADDON / "Init.lua")
     c.check('RegisterChatCommand("emp"' in init, "/emp is not registered")
@@ -89,8 +90,9 @@ def check_ui_and_commands(c):
     arrow = re.search(r'arrow:SetText\("([^"]*)"\)', dropdown)
     c.check(arrow is not None and arrow.group(1) == "v", "dropdown does not use the ASCII down indicator")
     history = read(ADDON / "UI" / "Panels" / "Historial.lua")
-    for label in ["MAZMORRA", "NIVEL", "RESULTADO", "DURACIÓN", "PERSONAJE", "ROL", "FECHA"]:
-        c.check(label in history, f"History V2 column missing: {label}")
+    for key in ["COL_DUNGEON", "COL_LEVEL", "COL_RESULT", "HIST_COL_DURATION", "COL_CHARACTER",
+                "COL_ROLE", "COL_DATE"]:
+        c.check(f'L["{key}"]' in history, f"History V2 column missing: {key}")
     c.check("Panel.FilterRuns" in history and "Panel.Paginate" in history, "History V2 model helpers missing")
 
 def check_savedvariables_and_media(c):
@@ -328,9 +330,147 @@ def check_tracker_layers(c):
         for token in BLIZZARD_API_TOKENS:
             c.check(token not in code, f"{relative(path)} bypasses TrackerAdapter: {token}")
 
+# ===========================================================================
+# 1.1.0-dev.10 -- LOCALIZATION_COMPLETE
+#
+# The addon speaks the client's language. AceLocale-3.0 is the only layer that
+# chooses one, English (enUS) is the default so every untranslated client falls
+# back to it, and no runtime file may carry a user-visible sentence of its own.
+# ===========================================================================
+LOCALE_DIR = ADDON / "Locales"
+LOCALE_FILES = {"enUS": LOCALE_DIR / "enUS.lua", "esES": LOCALE_DIR / "esES.lua"}
+
+# Files that legitimately hold text a player never reads: developer dumps
+# (/emp dev ...), the sanitized bug report and the flight recorder. Section 8
+# of the brief allows those to stay technical -- but they are English-only.
+QA_ONLY_FILES = {
+    "modules/QA/BugReport.lua", "modules/QA/Invariants.lua", "modules/QA/FlightRecorder.lua",
+    "modules/QA/SafeValue.lua", "modules/QA/Localization.lua", "modules/ErrorLogger.lua",
+    "modules/RuntimeCapabilities.lua", "modules/KeystoneTracker.lua",
+    "modules/Tracker/TrackerAdapter.lua", "modules/Tracker/TrackerState.lua",
+    "modules/Tracker/BlizzardTrackerProbe.lua", "modules/DungeonRegistry.lua",
+    "modules/DungeonContext.lua", "modules/ChallengeClock.lua", "modules/LootTracker.lua",
+    "modules/MidnightSafeTracking.lua", "modules/PartyProfiler.lua", "modules/RunSession.lua",
+    "modules/Validation.lua", "modules/EventBus.lua", "modules/RuntimeVersion.lua",
+}
+
+# Words that only exist in Spanish. A runtime file outside Locales/ must not
+# contain them in a string literal: that string would reach an English player.
+SPANISH_WORDS = [
+    "Historial", "Estadística", "Estadistica", "Configuración", "Configuracion",
+    "Fuerzas", "faltan", "RITMO", "Muertes", "Jefes", "Llave", "LLAVE",
+    "Esperando", "Vista previa", "VISTA PREVIA", "Cerrar", "Eliminar", "Jugador",
+    "Mazmorra", "MAZMORRA", "Temporada", "Todas", "Todos", "Buscar", "Guardar",
+    "Personaje", "Mítica", "Mitica", "Duración", "Duracion", "Añadir", "Añade",
+    "Restablecer", "ÉXITO", "RESULTADO", "Borrar", "Nivel de", "Expansión",
+    "Puntaje", "Compañer", "Calidad", "Registrar", "Mostrar", "Bloquear",
+    "Ventana", "ultimo ritmo", "último ritmo", "oficial", "completo",
+]
+# A language setting would defeat the whole design: WoW already chose.
+LOCALE_SETTING_TOKENS = ["settings.locale", "settings.language", "SetLocale", "selectedLocale",
+                         "languageOverride", "localeOverride", "GAME_LOCALE"]
+
+
+def locale_keys(path):
+    """{key: value} exactly as the locale file declares them."""
+    out = {}
+    for match in re.finditer(r'^L\["([A-Z][A-Z0-9_]*)"\]\s*=\s*(.+)$', read(path), re.MULTILINE):
+        out[match.group(1)] = match.group(2).strip().rstrip(",")
+    return out
+
+
+def lua_string_literals(code):
+    """Double-quoted literals, ignoring comments."""
+    for line in code.splitlines():
+        line = re.sub(r'^\s*--.*$', "", line)
+        for match in re.finditer(r'"((?:[^"\\]|\\.)*)"', line):
+            yield match.group(1)
+
+
+def check_localization(c):
+    en = locale_keys(LOCALE_FILES["enUS"])
+    es = locale_keys(LOCALE_FILES["esES"])
+    c.check(len(en) > 300, f"the canonical enUS locale looks too small: {len(en)} keys")
+    c.check(set(en) == set(es),
+            f"enUS/esES key mismatch: only-enUS={sorted(set(en) - set(es))[:5]} "
+            f"only-esES={sorted(set(es) - set(en))[:5]}")
+
+    # enUS is the DEFAULT locale: that is what makes deDE/frFR/... get English.
+    en_src = read(LOCALE_FILES["enUS"])
+    c.check('NewLocale("MitzuMPlus", "enUS", true)' in en_src,
+            "enUS must be registered as the default locale (third argument true)")
+    es_src = read(LOCALE_FILES["esES"])
+    c.check('NewLocale("MitzuMPlus", "esES")' in es_src and 'NewLocale("MitzuMPlus", "esMX")' in es_src,
+            "the Spanish file must serve esES and esMX")
+    c.check("true)" not in es_src.split("NewLocale")[1].split(chr(10))[0],
+            "the Spanish file must never be the default locale")
+    # No duplicated English file just to serve enGB: AceLocale maps it to enUS.
+    c.check(not (LOCALE_DIR / "enGB.lua").exists(),
+            "enGB must be served by the enUS fallback, not by a copied file")
+
+    # AceLocale is the only selection layer, and it is wired once, in Bootstrap.
+    bootstrap = read(ADDON / "Bootstrap.lua")
+    c.check('LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME)' in bootstrap,
+            "Bootstrap.lua must expose MitzuMPlus.L from AceLocale")
+    toc_lines = [l.strip() for l in read(TOC).splitlines() if l.strip().lower().endswith(".lua")]
+    locales = [i for i, l in enumerate(toc_lines) if l.startswith("Locales")]
+    c.check(len(locales) == 2, f"expected exactly two locale files in the TOC: {len(locales)}")
+    bootstrap_at = toc_lines.index("Bootstrap.lua")
+    c.check(max(locales) < bootstrap_at,
+            "Locales must load before Bootstrap.lua, and therefore before every module")
+
+    # Every L["KEY"] the runtime asks for has to exist in BOTH files.
+    used = set()
+    for path in sorted(ADDON.rglob("*.lua")):
+        parts = set(path.relative_to(ADDON).parts)
+        if "libs" in parts or "Locales" in parts:
+            continue
+        used |= set(re.findall(r'L\[\s*"([A-Z][A-Z0-9_]*)"\s*\]', read(path)))
+    c.check(len(used) > 150, f"the runtime barely uses the locale table: {len(used)} keys")
+    for key in sorted(used):
+        c.check(key in en, f'enUS has no entry for L["{key}"]')
+        c.check(key in es, f'esES has no entry for L["{key}"]')
+
+    # No Spanish sentence may live outside Locales/, and no module may decide
+    # the language by itself.
+    for path in sorted(ADDON.rglob("*.lua")):
+        rel = path.relative_to(ADDON).as_posix()
+        parts = set(path.relative_to(ADDON).parts)
+        if "libs" in parts or "Locales" in parts:
+            continue
+        code = read(path)
+        if rel not in QA_ONLY_FILES:
+            for literal in lua_string_literals(code):
+                for word in SPANISH_WORDS:
+                    c.check(word not in literal,
+                            f"{rel}: Spanish text outside Locales/: {literal[:60]!r} ({word})")
+        # GetLocale() belongs to the localization bootstrap, nowhere else.
+        if rel not in {"Locales/enUS.lua", "Locales/esES.lua", "modules/QA/Localization.lua"}:
+            c.check("GetLocale()" not in re.sub(r"--[^\n]*", "", code),
+                    f"{rel}: only the localization bootstrap may branch on GetLocale()")
+        for token in LOCALE_SETTING_TOKENS:
+            c.check(token not in code, f"{rel}: the addon must not offer a language setting ({token})")
+
+    # Identity is never translated text (section 31).
+    history = read(ADDON / "UI" / "Panels" / "Historial.lua")
+    c.check('return "INCOMPLETE", nil' in history and 'or "OUT"' in history,
+            "History result codes must stay neutral IDs, not translated words")
+    c.check("Panel.ResultLabel" in history, "the localized result label must be a separate function")
+    database = read(ADDON / "modules" / "Database.lua")
+    c.check("seasonName = string.format" not in database,
+            "Database must not persist a translated season name (store the key instead)")
+    # Class names come from the client, not from a table of our own.
+    players = read(ADDON / "UI" / "Panels" / "Players.lua")
+    c.check("CLASS_ES" not in players, "class names must come from Blizzard, not from a Spanish table")
+    c.check("LOCALIZED_CLASS_NAMES_MALE" in players, "class names must read Blizzard's localized table")
+    # The bug report has to say which language the player is seeing.
+    c.check('"LOCALIZATION"' in read(ADDON / "modules" / "QA" / "BugReport.lua"),
+            "BugReport.lua: the [LOCALIZATION] section is missing")
+
+
 def main():
     c = Checks(); lua_files = compile_lua(c)
-    check_tracker_layers(c); check_enhancer_safety(c); check_qa_snapshot(c)
+    check_tracker_layers(c); check_enhancer_safety(c); check_qa_snapshot(c); check_localization(c)
     check_manifest(c, lua_files); check_product_boundary(c); check_ui_and_commands(c)
     check_savedvariables_and_media(c); check_icon_textures(c); check_no_emoji(c); check_version_consistency(c)
     if c.failures:

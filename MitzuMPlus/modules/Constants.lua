@@ -10,6 +10,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus    = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 MitzuMPlus.Constants = {
 
@@ -131,16 +132,14 @@ MitzuMPlus.Constants = {
         -- Ara-Kara, City of Threads, Mists of Tirna Scithe, The Necrotic Wake
         -- Siege of Boralus, Grim Batol, The Dawnbreaker, The Stonevault
         ["507_1001_1002_1003_1004_1005_1006_1007"] = {
-            name = "The War Within - Temporada 1",
             key  = "tww_s1",
         },
 
         -- The War Within - Temporada 2 (actualizar cuando se anuncie)
-        -- ["XXX_XXX_XXX..."] = { name = "The War Within - Temporada 2", key = "tww_s2" },
+        -- ["XXX_XXX_XXX..."] = { key = "tww_s2" },
 
         -- Dragonflight - Temporada 4 (referencia)
         ["12092_12095_12096_12097_12098_12099_12100_12101"] = {
-            name = "Dragonflight - Temporada 4",
             key  = "df_s4",
         },
 
@@ -229,13 +228,13 @@ function MitzuMPlus:InstallFingerprintDebugListener()
         if MitzuMPlus.SEASON_FINGERPRINTS[fp] then return end
 
         local seasonNum = scanData.seasonNumber or scanData.seasonNum or "?"
-        local expName   = scanData.expansionName or "Expansión desconocida"
+        local expName   = scanData.expansionName or L["SEASON_UNKNOWN_EXP"]
 
         MitzuMPlus:Print(string.format(
-            "|cFFe8b84a[Debug] Fingerprint nueva temporada detectado:|r\n" ..
-            "  Expansión: %s  |  Temporada: %s\n" ..
-            "  Copia esto en Constants.lua -> SEASON_FINGERPRINTS:\n" ..
-            '  ["%s"] = { name = "%s - Temporada %s", key = "exp%s_s%s" },',
+            "|cFFe8b84a[Debug] New season fingerprint detected:|r\n" ..
+            "  Expansion: %s  |  Season: %s\n" ..
+            "  Copy this into Constants.lua -> SEASON_FINGERPRINTS:\n" ..
+            '  ["%s"] = { key = "exp%s_s%s" },  -- %s / season %s',
             expName, tostring(seasonNum),
             fp,
             expName, tostring(seasonNum),

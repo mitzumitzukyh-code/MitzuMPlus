@@ -3,7 +3,7 @@
 ## Notes: Mythic+ history, statistics, player analysis and live key prediction.
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzuki Mizt
-## Version: 1.1.0-dev.9
+## Version: 1.1.0-dev.10
 ## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO
@@ -42,6 +42,8 @@ modules\EventBus.lua
 # QA: saneado de valores y caja negra. Antes que DungeonContext, para oir
 # desde la primera transicion.
 modules\QA\SafeValue.lua
+# Localizacion: observabilidad del idioma (AceLocale ya eligio en Bootstrap).
+modules\QA\Localization.lua
 modules\QA\FlightRecorder.lua
 # RuntimeCapabilities: que se puede leer de verdad en este cliente.
 # Sin dependencias; se sondea bajo demanda, no al cargar.

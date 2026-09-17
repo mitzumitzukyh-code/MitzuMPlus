@@ -239,7 +239,7 @@ function TV:Render(m)
     -- Bloque: nivel y reloj como los pinta Blizzard (restante; al terminar, final).
     local t = m.timer or {}
     local clock = summary and TP.FormatClock(t.elapsed) or (t.remaining and TP.FormatClock(math.max(0, t.remaining))) or TP.TEXT.NO_TIMER
-    self:_Text("level", r.level, summary and summary.title or (m.keyLevel and ("Nivel " .. m.keyLevel) or ""))
+    self:_Text("level", r.level, summary and summary.title or (m.keyLevel and string.format(TP.TEXT.LEVEL, m.keyLevel)) or "")
     self:_Text("timeLeft", r.timeLeft, clock)
     local red = t.overtime and not summary
     if self._cache.timeRed ~= red then
@@ -303,7 +303,7 @@ function TV:Render(m)
         local total = b.available and b.total or 0
         if i <= total then
             local done = info and info.completed or ((b.completed or 0) >= i)
-            local name = info and info.name or ("Jefe " .. i)
+            local name = info and info.name or string.format(TP.TEXT.BOSS_N, i)
             self:_Text("boss" .. i, row.line, name)
             if self._cache["bossDone" .. i] ~= done then
                 self._cache["bossDone" .. i] = done

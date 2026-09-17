@@ -342,10 +342,10 @@ function KeystoneTracker:Update(force)
                         if MitzuMPlus.Print then
                             MitzuMPlus:Print(string.format(
                                 "|cFFFF9922Enemy Forces:|r discrepancia (calculado %.2f%% vs quantity %d%%). "
-                                .. "Usa /emp forces y pasame la salida.", pct, pctFromQuantity))
+                                .. "Run /emp forces and send me the output.", pct, pctFromQuantity))
                         end
                         if MitzuMPlus.ErrorLogger and MitzuMPlus.ErrorLogger.LogEvent then
-                            MitzuMPlus.ErrorLogger:LogEvent("ENEMY_FORCES_MISMATCH", "Formato inesperado", {
+                            MitzuMPlus.ErrorLogger:LogEvent("ENEMY_FORCES_MISMATCH", "Unexpected format", {
                                 quantityString = quantityString,
                                 quantity = pctFromQuantity,
                                 totalQuantity = totalQuantity,
@@ -571,17 +571,17 @@ function KeystoneTracker:DumpCriteria()
 
     local n = GetStepNumCriteria()
     if n == 0 then
-        add("|cFFFF9922Sin escenario activo.|r Ejecuta /emp forces DENTRO de una")
-        add("Mitica+, con el temporizador de Blizzard en pantalla.")
+        add("|cFFFF9922No active scenario.|r Run /emp forces INSIDE")
+        add("a Mythic+, with Blizzard timer on screen.")
         return out
     end
-    add(string.format("|cFFd9b33eCriterios del escenario:|r %d  ponderados: %s",
+    add(string.format("|cFFd9b33eScenario criteria:|r %d  weighted: %s",
         n, tostring(self._weightedCriteria or "?")))
 
     for i = 1, n do
         local info = GetCriteriaData(i)
         if not info then
-            add(string.format("  [%d] (sin datos)", i))
+            add(string.format("  [%d] (no data)", i))
         else
             local desc = isSecret(info.description) or tostring(info.description or "?")
             local qs   = isSecret(info.quantityString) or ("'" .. tostring(safeStr(info.quantityString)) .. "'")
@@ -595,14 +595,14 @@ function KeystoneTracker:DumpCriteria()
     end
 
     local ef = self._enemyForces or {}
-    add(string.format("|cFFd9b33eMitzuMPlus calcula:|r pct=%.2f%%  current=%s  total=%s",
+    add(string.format("|cFFd9b33eMitzuMPlus computes:|r pct=%.2f%%  current=%s  total=%s",
         tonumber(ef.pct) or 0, tostring(ef.current), tostring(ef.total)))
     add(string.format("      via=%s  str='%s'",
         tostring(self._efPctSource), tostring(ef.quantityString)))
-    add("Con progreso > 0: si `quantity` se parece al pct calculado, quantity es")
-    add("el porcentaje; si se parece a `current`, es el recuento.")
-    add("Regla: pct = recuento(quantityString) / totalQuantity * 100.")
-    add("`quantity` ya es el porcentaje entero: NO se divide entre totalQuantity.")
-    add("Compara ese pct con el 'Fuerzas enemigas' del tracker de Blizzard.")
+    add("With progress > 0: if `quantity` looks like the computed pct, quantity is")
+    add("the percentage; if it looks like `current`, it is the count.")
+    add("Rule: pct = count(quantityString) / totalQuantity * 100.")
+    add("`quantity` is already the integer percentage: do NOT divide by totalQuantity.")
+    add("Compare that pct with the Enemy Forces bar of the Blizzard tracker.")
     return out
 end

@@ -13,6 +13,76 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.10 — desarrollo interno (Retail dev, sin publicar)
+
+**Bloqueo de release resuelto: el addon habla el idioma del cliente.**
+
+Antes de 1.1.0 se detectó que, aunque `Locales/enUS.lua` y `Locales/esES.lua`
+existían desde 1.0, **ningún módulo los usaba**: toda la interfaz estaba escrita
+en español dentro del código. Un jugador con cliente inglés habría visto
+«Historial», «RITMO» o «faltan 227». Eso no se puede publicar.
+
+- **AceLocale-3.0 es ahora la única capa que elige idioma**, y elige el del
+  cliente. `Bootstrap.lua` expone `MitzuMPlus.L` y todos los módulos consumen esa
+  tabla. No hay selector, ni opción, ni SavedVariable, ni `/reload`, ni detección
+  de región: lo decide `GetLocale()` del cliente y nada más.
+- **Inglés (enUS) es el locale por defecto** (`NewLocale(..., "enUS", true)`), así
+  que cualquier cliente sin traducción recibe inglés automáticamente. `enGB` lo
+  resuelve el propio AceLocale sin duplicar un fichero. Español solo en `esES` y
+  `esMX`, que comparten un único fichero.
+- **~300 cadenas visibles migradas** a claves de AceLocale: tracker integrado,
+  vista previa y resumen, las cuatro pestañas, Historial, Estadísticas,
+  Jugadores, Configuración, popups, botón de minimapa, exportación, avisos de
+  chat, marcas personales, fechas relativas y ayuda de comandos. `enUS` y `esES`
+  pasan de 156 a 492 claves, con el mismo conjunto exacto en los dos ficheros.
+- **Nada de identidades traducidas** (regla: guardar IDs, mostrar texto):
+  `Panel.FormatResult` devuelve `+3/+2/+1/OUT/INCOMPLETE` y `Panel.ResultLabel`
+  traduce solo al pintar (antes el filtro comparaba con la palabra «Fuera», que
+  se habría roto en inglés); `Database` deja de guardar `seasonName` traducido y
+  guarda solo `seasonKey`, de modo que un historial creado en un cliente español
+  se lee en inglés en uno inglés.
+- **Los nombres de clase los da Blizzard** (`LOCALIZED_CLASS_NAMES_*`): se retira
+  la tabla española propia de `Players.lua`. Mazmorras, jefes y criterios ya
+  venían del cliente y se siguen respetando sin tocarlos.
+- **Diagnóstico técnico en un solo idioma**: los volcados de `/emp dev`, el
+  ErrorLogger y `/emp forces` pasan a inglés. No se traducen (son para el
+  desarrollador), pero ya no devuelven media frase en español a un jugador inglés.
+- **Plurales sin frases rotas**: «hace 1 semana» / «hace N semanas» son claves
+  distintas; nunca «1 semanas».
+- **Bug Report `[LOCALIZATION]`**: `clientLocale`, `activeLocale`,
+  `fallbackLocale=enUS`, `englishDefault`, `translatedClient`, `loadedKeys`,
+  `missingKeys`, `localizationWarnings`. `ReportVersion` pasa a 5. Comando de
+  diagnóstico opcional `/emp dev locale`.
+- **Sin relleno silencioso**: una clave ausente no se sustituye por `?` ni por
+  `UNKNOWN`; AceLocale avisa por el manejador de errores y el informe la cuenta.
+  Los bancos exigen `missingKeys=0`.
+- Tests: nuevo `tests/core/Localization.spec.lua` (21 pruebas, 4925
+  aserciones) que arranca el addon COMPLETO con el cliente en enUS, enGB, esES,
+  esMX, deDE, frFR, ptBR, ruRU, koKR, zhCN, zhTW e itIT; comprueba paridad de
+  claves, especificadores de formato idénticos entre idiomas, cero español en
+  clientes ingleses, cero inglés donde hay traducción, ninguna clave cruda
+  pintada, que el layout mide el texto REAL (en inglés «227 remaining» es más
+  largo que «faltan 227» y el sacrificio de columnas lo refleja) y que un
+  historial guardado en español se lee en inglés. Nuevo
+  `tests/harness/locale_stub.lua`; el escenario acepta `S.boot({ locale = ... })`.
+- Comprobaciones estáticas nuevas: paridad enUS/esES, toda clave `L["..."]` usada
+  por el runtime existe en ambos ficheros, ninguna cadena española fuera de
+  `Locales/`, `GetLocale()` solo en la capa de localización, ningún ajuste de
+  idioma, los `Locales/` cargan antes que `Bootstrap.lua`, y las identidades
+  (resultado de run, temporada, clase) no pueden volver a ser texto traducido.
+- Mutación: 15 mutantes nuevos de localización (RITMO vuelve a estar escrito a
+  mano, la barra de pestañas escribe español, el inglés deja de ser el locale por
+  defecto, enGB pierde el fallback, falta una traducción española, falta una
+  clave inglesa, el inglés muestra «faltan», aparece un selector de idioma, se
+  guarda texto traducido, el resultado vuelve a ser una palabra, vista previa y
+  resumen dejan de traducirse, se pinta una clave cruda, las clases se traducen a
+  mano, un `%d` se convierte en `%s`). Total 40/40 detectados.
+- Sin cambios en backend: `TrackerState`, `TrackerAdapter`, `PredictionEngine`,
+  `RunSession`, `PartyProfiler`, `DungeonContext`, `KeystoneTracker` y el cálculo
+  de estadísticas quedan intactos, igual que todo lo de dev.9 (snapshot
+  `lastEmbedded`, penalización de muertes, Angry Keystones, enhancer integrado,
+  autoridad de finalización, recuperación tras `/reload` y guardas de taint).
+
 ### 1.1.0-dev.9 — desarrollo interno (Retail dev, sin publicar)
 
 Pasada final de pulido y observabilidad. **Sin funciones nuevas** y sin tocar

@@ -219,7 +219,7 @@ function DungeonContext:Refresh(why)
         self._dungeonName    = nil
         self._uiMapID        = nil
         self._identitySource = "UNKNOWN"
-        self:_Transition(OUTSIDE, why or "fuera de instancia")
+        self:_Transition(OUTSIDE, why or "outside instance")
         return self._state
     end
 
@@ -257,7 +257,7 @@ function DungeonContext:Refresh(why)
     end
 
     if not key then
-        self:_Transition(UNSUPPORTED, why or "mazmorra no reconocida")
+        self:_Transition(UNSUPPORTED, why or "dungeon not recognized")
         return self._state
     end
 
@@ -267,7 +267,7 @@ function DungeonContext:Refresh(why)
         -- COMPLETED no se degrada a PRE_KEY: terminar una llave y seguir
         -- dentro de la instancia no es estar esperando a empezarla.
         if self._state ~= COMPLETED then
-            self:_Transition(PRE_KEY, why or "dentro, sin llave activa")
+            self:_Transition(PRE_KEY, why or "inside, no active key")
         end
     end
     return self._state
@@ -295,7 +295,7 @@ function DungeonContext:_ScheduleActivationCheck()
             self._pendingChecks = 0
             return
         end
-        self:Refresh("sondeo tras CHALLENGE_MODE_START")
+        self:Refresh("probe after CHALLENGE_MODE_START")
         if self._state ~= RUNNING and self._pendingChecks > 0 then
             C_Timer.After(1, tick)
         else
@@ -328,7 +328,7 @@ frame:SetScript("OnEvent", function(_, event)
         DungeonContext:_Transition(RESET, event)
         -- Tras el reinicio se vuelve a mirar dónde estamos de verdad.
         if C_Timer and C_Timer.After then
-            C_Timer.After(1, function() DungeonContext:Refresh("tras reset") end)
+            C_Timer.After(1, function() DungeonContext:Refresh("after reset") end)
         end
         return
     end

@@ -1,4 +1,4 @@
-# Mitzu Tracker (1.1.0-dev.9)
+# Mitzu Tracker (1.1.0-dev.10)
 
 - **dev.6**: prototipo visual independiente (ventana flotante durante la llave).
 - **dev.7**: arquitectura integrada (**Blizzard Objective Tracker enhancement**).
@@ -11,6 +11,9 @@
   último render `EMBEDDED`. Sin funciones nuevas ni cambios de backend. dev.8
   validado en Retail (Guarida de Nalorakk +4: `attachmentHealthy=true`,
   `tainted=none`, `enhancerErrors=0`, `/reload` con la misma sesión).
+- **dev.10**: localización automática. El tracker (y todo el addon) habla el
+  idioma del cliente; ni una cadena visible queda escrita en el código. Sin
+  cambios de geometría, predicción, umbrales, fuerzas, enganche ni taint.
 
 ## Capas
 
@@ -108,6 +111,22 @@ el código (`+3` verde, `+2` dorado, `+1` naranja, `OVERTIME` rojo) pero el text
 siempre está. `run_static_checks.py` congela esa jerarquía: ritmo, fuerzas,
 penalización y secundarios tienen que seguir siendo fuentes `*Small`, el
 secundario `GameFontDisable*`, y no puede aparecer ninguna fuente `Huge`.
+
+### Idioma (dev.10)
+
+Ningún texto del tracker está escrito en este código. `TP.TEXT` es una tabla con
+metatabla: cada nombre (`PACE`, `FORCES`, `REMAINING`, `KEY_COMPLETE`, …) se
+resuelve contra `MitzuMPlus.L` (AceLocale) en el momento de leerlo, así que el
+mismo binario pinta `PACE +2 / 227 remaining` en un cliente inglés y
+`RITMO +2 / faltan 227` en uno español, sin ninguna rama por idioma.
+
+Lo que **no** se traduce, porque es universal: el reloj (`5:18`), el recuento
+(`502 / 729`), el porcentaje (`50%`) y los códigos `+3/+2/+1/OVERTIME`.
+
+`LayoutEmbedded` mide el texto **ya traducido** con su fuente real, así que el
+ancho no se codifica por idioma: con la barra a 130 px el inglés
+(`227 remaining`, 78 px) sacrifica los restantes y el español (`faltan 227`,
+60 px) todavía cabe. Es la misma decisión pura, con otra entrada.
 
 ### Legibilidad del ritmo (dev.9)
 
@@ -248,6 +267,12 @@ confundan con el estado ACTUAL. `available`, `age`, `stateRevision`,
 `availableWidth`, `angryKeystonesLoaded`, `attachGeneration`,
 `attachmentHealthy`, `renderReason`. Fuera de la mazmorra el informe dice a la
 vez `renderMode=NONE` / `trackerVisible=false` y `lastEmbedded.available=true`.
+
+Bug Report `[LOCALIZATION]` (dev.10): `clientLocale`, `activeLocale`,
+`fallbackLocale=enUS`, `englishDefault`, `translatedClient`, `loadedKeys`,
+`missingKeys`, `localizationWarnings`. Fuera de un cliente traducido dice
+`activeLocale=enUS` y `localizationWarnings=ENGLISH_FALLBACK`, que es la ruta
+esperada, no un fallo. `/emp dev locale` imprime lo mismo.
 
 Puerta de mutación: `python tests/run_mutation_tests.py` rompe a propósito cada
 promesa visual (borrar el snapshot al ocultar, que el resumen o la vista previa

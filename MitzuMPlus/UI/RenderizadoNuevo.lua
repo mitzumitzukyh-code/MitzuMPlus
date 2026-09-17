@@ -6,6 +6,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local Render = {}
 MitzuMPlus.Renderizado = Render
@@ -77,7 +78,7 @@ local function ResetearVentana(frame, claveDB)
     end
 
     if MitzuMPlus.Print then
-        MitzuMPlus:Print("|cFF21de66Ventana reseteada a valores por defecto.|r")
+        MitzuMPlus:Print(L["WINDOW_RESET"])
     end
 end
 
@@ -133,9 +134,9 @@ function Render:ConfigurarResize(frame, minW, minH, maxW, maxH)
         end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine("Click and drag to resize this window.", 1, 1, 1)
-        GameTooltip:AddLine("Hold SHIFT while dragging to scale the window instead.", 1, 1, 1)
-        GameTooltip:AddLine("Right-Click to reset the window size, scale, and position to their defaults.", 1, 1, 1)
+        GameTooltip:AddLine(L["WINDOW_RESIZE_1"], 1, 1, 1)
+        GameTooltip:AddLine(L["WINDOW_RESIZE_2"], 1, 1, 1)
+        GameTooltip:AddLine(L["WINDOW_RESIZE_3"], 1, 1, 1)
         GameTooltip:Show()
     end)
 

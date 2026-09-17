@@ -40,3 +40,22 @@ _G.MitzuMPlus  = MitzuMPlus
 -- Metadatos de versión — fuente única de verdad.
 MitzuMPlus.VERSION     = ADDON_VERSION
 MitzuMPlus.INITIALIZED = false
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LOCALIZACIÓN  (1.1.0-dev.10)
+--
+-- El idioma del addon ES el idioma del cliente. No hay selector, ni opción,
+-- ni SavedVariable, ni /reload: AceLocale-3.0 es la ÚNICA capa que elige.
+--
+--   Locales/enUS.lua  NewLocale(..., "enUS", true)  -> locale POR DEFECTO
+--   Locales/esES.lua  NewLocale(..., "esES"|"esMX") -> solo clientes españoles
+--
+-- AceLocale mapea enGB a enUS por sí mismo, y cualquier cliente sin traducción
+-- (deDE, frFR, ptBR, ruRU, koKR, zhCN, zhTW...) se queda con el inglés por
+-- defecto. Nunca puede aparecer español en un cliente no español.
+--
+-- Los módulos consumen SIEMPRE esta tabla (`local L = MitzuMPlus.L`), nunca
+-- GetLocale(): la selección ya está hecha aquí.
+-- ═══════════════════════════════════════════════════════════════════════════
+MitzuMPlus.L = LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME)
+MitzuMPlus.FALLBACK_LOCALE = "enUS"

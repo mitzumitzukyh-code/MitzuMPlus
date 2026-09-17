@@ -517,7 +517,7 @@ function MT:SetOption(key, value)
         or key == "showForcesRemaining" or key == "showDeaths" then
         s[key] = value and true or false
     else
-        return false, "opcion desconocida"
+        return false, "unknown option"
     end
     self:ApplySettings()
     self:Refresh("OPTION_" .. key)

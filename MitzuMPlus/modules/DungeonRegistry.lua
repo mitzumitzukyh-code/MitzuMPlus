@@ -182,9 +182,9 @@ function DungeonRegistry:StatusLines()
     for _ in pairs(self.byInstanceMapID) do ni = ni + 1 end
     for _ in pairs(self.byUIMapID) do nu = nu + 1 end
     return {
-        "mazmorras de challenge conocidas: " .. self:Count(),
-        "instanceMapID aprendidos: " .. ni,
-        "uiMapID aprendidos: " .. nu,
+        "known challenge dungeons: " .. self:Count(),
+        "instanceMapID learned: " .. ni,
+        "uiMapID learned: " .. nu,
     }
 end
 

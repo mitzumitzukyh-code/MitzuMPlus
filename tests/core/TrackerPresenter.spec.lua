@@ -7,7 +7,11 @@ end
 local function truthy(v, l) equal(not not v, true, l) end
 local function test(n, f) tests = tests + 1; local ok, e = pcall(f); if not ok then failures[#failures + 1] = n .. ": " .. tostring(e) end end
 
-_G.MitzuMPlus = {}
+-- Este banco es la version ESPANOLA del modelo (seccion 28): fija los textos
+-- que debe ver un cliente esES/esMX. El ingles, el fallback y la ausencia de
+-- contaminacion entre idiomas los cubre core/Localization.spec.
+local newLocale = dofile("tests/harness/locale_stub.lua")
+_G.MitzuMPlus = { L = newLocale("esES") }
 dofile("MitzuMPlus/modules/Tracker/TrackerPresenter.lua")
 local TP = _G.MitzuMPlus.TrackerPresenter
 local RATIOS = { KEY_UPGRADE_PLUS2_RATIO = 0.8, KEY_UPGRADE_PLUS3_RATIO = 0.6 }
@@ -119,7 +123,7 @@ end)
 
 test("missing optional fields never produce fake zeros", function()
     local m = build("RUNNING", { mapID = 9999 }, nil, nil)
-    equal(m.dungeonName, "Mitica+"); equal(m.keyText, nil)
+    equal(m.dungeonName, "Mítica+"); equal(m.keyText, nil)
     equal(m.timer.text, "--:--"); equal(m.timer.remaining, nil); equal(#m.timer.segments, 0)
     equal(m.forces.available, false); equal(m.forces.percentText, "--"); equal(m.forces.countText, nil)
     equal(m.bosses.available, false); equal(m.bosses.text, "--")
@@ -194,7 +198,7 @@ test("summary without official result falls back to the last pace, and overtime 
     local s = reposo(1677, 608, 4)
     s.finalElapsed = 1677
     local m = build("COMPLETED", s, nil, nil, { summary = true, final = TP.FinalFromRun({ completionTime = 1677 }, "+2") })
-    equal(m.prediction.code, "+2"); equal(m.prediction.sourceText, "ultimo ritmo"); equal(m.summary.official, false)
+    equal(m.prediction.code, "+2"); equal(m.prediction.sourceText, "último ritmo"); equal(m.summary.official, false)
     m = build("COMPLETED", s, nil, nil, { summary = true,
         final = TP.FinalFromRun({ inTime = false, completionTime = 2100, completionInfoSource = "API" }) })
     equal(m.summary.title, "LLAVE FUERA DE TIEMPO"); equal(m.prediction.code, "OVERTIME")
@@ -227,7 +231,9 @@ test("preview input is realistic and fully synthetic", function()
     local input = TP.PreviewInput({ showConfidence = true, showETA = true })
     local m = TP.Build(input)
     equal(m.mode, "PREVIEW"); equal(m.preview, true)
-    equal(m.dungeonName, "Reposo de los Reyes"); equal(m.keyText, "+12")
+    -- 1.1.0-dev.10: la vista previa ya no inventa un nombre de mazmorra en un
+    -- idioma; los nombres reales los da Blizzard ya traducidos.
+    equal(m.dungeonName, TP.TEXT.DUNGEON); equal(m.keyText, "+12")
     equal(m.timer.text, "19:37"); equal(m.prediction.code, "+2"); equal(m.prediction.confidenceText, "50%")
     equal(m.forces.countText, "449 / 608"); equal(m.forces.percentText, "73.85%"); equal(m.forces.remainingText, "faltan 159")
     equal(m.bosses.text, "2/4"); equal(m.deaths.text, "3")

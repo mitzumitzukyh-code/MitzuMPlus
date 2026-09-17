@@ -19,6 +19,7 @@ local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 
 local Theme = MitzuMPlus.Theme
+local L = MitzuMPlus.L
 local Tabs = {}
 -- SYNC-2 FIX: UI/MainFrame.lua excluido del TOC. Esta es la única asignación
 -- de MitzuMPlus.Tabs en todo el addon. Sin doble asignación ni race condition.
@@ -46,25 +47,25 @@ local TAB_DEFS = {
     {
         id   = "historial",
         icon = ICON_PATH .. "tab_history_64",
-        text = "HISTORIAL",
+        text = L["TABBAR_HISTORY"],
         badge = nil,
     },
     {
         id   = "stats",
         icon = ICON_PATH .. "tab_statistics_64",
-        text = "ESTADÍSTICAS",
+        text = L["TABBAR_STATS"],
         badge = nil,
     },
     {
         id   = "players",
         icon = ICON_PATH .. "tab_players_64",
-        text = "JUGADORES",
+        text = L["TABBAR_PLAYERS"],
         badge = nil,
     },
     {
         id   = "settings",
         icon = ICON_PATH .. "tab_settings_64",
-        text = "CONFIGURACIÓN",
+        text = L["TABBAR_SETTINGS"],
         badge = nil,
     },
 }

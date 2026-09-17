@@ -2,6 +2,7 @@
 -- Una UI debe pedir los datos aqui en vez de reinterpretar campos por su cuenta.
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local RunMetrics = {}
 MitzuMPlus.RunMetrics = RunMetrics
@@ -105,20 +106,26 @@ end
 
 function RunMetrics:GetSeason(run)
     local key=tostring(run and run.seasonKey or "")
-    if key=="" or key=="NONE" then return "UNASSIGNED","Sin temporada (histórico)" end
-    local label=tostring(run and run.seasonName or "")
-    if label=="" then
-        local exp,season=key:match("^exp(%d+)_s(%d+)$")
-        local names=MitzuMPlus.Constants and MitzuMPlus.Constants.EXPANSION_NAMES or {}
-        if season then label=string.format("%s - Temporada %s",names[tonumber(exp)] or ("Expansión "..exp),season) else label=key end
+    if key=="" or key=="NONE" then return "UNASSIGNED",L["SEASON_NONE"] end
+    -- La clave manda: un historial guardado en un cliente espanol se lee en
+    -- ingles en un cliente ingles. run.seasonName solo sobrevive como resto
+    -- de builds anteriores a 1.1.0-dev.10 y solo si la clave no es legible.
+    local exp,season=key:match("^exp(%d+)_s(%d+)$")
+    local names=MitzuMPlus.Constants and MitzuMPlus.Constants.EXPANSION_NAMES or {}
+    local label
+    if season then
+        label=string.format(L["SEASON_LABEL"],names[tonumber(exp)] or (L["EXPANSION_PREFIX"]..exp),season)
+    else
+        label=tostring(run and run.seasonName or "")
+        if label=="" then label=key end
     end
     return key,label
 end
 
 function RunMetrics:GetQuality(run)
-    if type(run)~="table" then return "INVALID","Inválida" end
+    if type(run)~="table" then return "INVALID",L["QUALITY_INVALID"] end
     local structural=(tostring(run.dungeonName or "")~="" and (Number(run.keyLevel) or 0)>0 and self:GetDuration(run)~=nil)
-    if not structural then return "INVALID","Incompleta" end
+    if not structural then return "INVALID",L["QUALITY_INCOMPLETE"] end
     local metric=self:GetRoleMetric(run)
     local deaths=self:GetOwnDeaths(run)
     local kicks=self:GetOwnKicks(run)

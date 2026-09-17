@@ -4,15 +4,16 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local ADDON_NAME = "MitzuMPlus"
+local L = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME).L
 
 -- Register binding category header
 BINDING_HEADER_MITZUMPLUS = "MitzuMPlus"
 
 -- Binding names (these correspond to Bindings.xml)
-BINDING_NAME_MITZUMPLUS_TOGGLE     = "Toggle MitzuMPlus Window"
-BINDING_NAME_MITZUMPLUS_HISTORIAL  = "Open History Tab"
-BINDING_NAME_MITZUMPLUS_STATS      = "Open Statistics Tab"
-BINDING_NAME_MITZUMPLUS_OVERLAY    = "Toggle Mitzu Tracker"
+BINDING_NAME_MITZUMPLUS_TOGGLE     = L["BIND_TOGGLE"]
+BINDING_NAME_MITZUMPLUS_HISTORIAL  = L["BIND_HISTORY"]
+BINDING_NAME_MITZUMPLUS_STATS      = L["BIND_STATS"]
+BINDING_NAME_MITZUMPLUS_OVERLAY    = L["BIND_TRACKER"]
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- BINDING ACTIONS (called from Bindings.xml)

@@ -1,10 +1,11 @@
 -- MitzuMPlus sanitized diagnostic report.
 local MitzuMPlus = _G.MitzuMPlus
 if not MitzuMPlus then return end
+local L = MitzuMPlus.L
 
 local BR = {}
 MitzuMPlus.BugReport = BR
-BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 4, 80, 10
+BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 5, 80, 10
 
 local function safe()
     return MitzuMPlus.QASafe or {
@@ -136,6 +137,17 @@ SECTIONS[#SECTIONS + 1] = { "HISTORY", function(add)
     add("legacyWithoutSessionID", partial)
     add("duplicateSessionIDs", duplicates)
     add("nextRunID", MitzuMPlus.db and MitzuMPlus.db.global and MitzuMPlus.db.global.nextRunID)
+end }
+
+-- 1.1.0-dev.10: en que idioma esta viendo el addon este jugador. El idioma lo
+-- decide el cliente (AceLocale); aqui solo se comprueba que no falte nada.
+SECTIONS[#SECTIONS + 1] = { "LOCALIZATION", function(add)
+    local Loc = MitzuMPlus.Localization
+    local fields = call(Loc, "DiagnosticFields")
+    if type(fields) ~= "table" then add("status", Loc and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
 end }
 
 -- 1.1.0-dev.6: el tracker visual (Mitzu Tracker). Lo que se PINTO, para
@@ -296,10 +308,10 @@ function BR:Show()
     local EX = MitzuMPlus.Export
     local shown = EX and EX.CopyToClipboard
         and pcall(EX.CopyToClipboard, EX, text, {
-            title = "MITZUMPLUS · BUG REPORT",
-            hint = "Ctrl+A y Ctrl+C para copiar todo.",
+            title = L["BUGREPORT_TITLE"],
+            hint = L["BUGREPORT_COPY"],
             autoClose = false, mono = true,
-            clearLabel = "LIMPIAR LOGS",
+            clearLabel = L["BUGREPORT_CLEAR_BTN"],
             onClear = function() BR:ClearLogs() end,
         })
     return shown == true, text
