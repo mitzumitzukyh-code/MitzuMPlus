@@ -98,7 +98,15 @@ Tabla original (referencia):
 | 11 | Hardening / regresión / taint | |
 | 12 | 1.1.0-beta.1 candidata | |
 
-## Decisión: Mitzu Tracker (2026-09-16, sustituye a la de 2026-09-15)
+## Decisión: Blizzard Tracker Enhancer (1.1.0-dev.7, definitiva)
+
+Durante una Mítica+ real MitzuMPlus **no** muestra ventana propia: mejora el
+bloque M+ de Blizzard (`BlizzardTrackerEnhancer`). La ventana de dev.6 queda
+solo para vista previa y resumen final (Blizzard retira el bloque al terminar).
+Sin bloque de Blizzard no hay fallback flotante. Arquitectura, auditoría de la
+UI 12.1.0 y reglas de taint: `docs/tracker/MITZU_TRACKER.md`.
+
+## Decisión: Mitzu Tracker (2026-09-16, dev.6 — prototipo, superada por dev.7)
 
 El usuario decide construir un tracker propio (Mitzu Tracker) como interfaz de
 Mythic+ de 1.1, en lugar de centrar 1.1 en decorar el bloque de Blizzard.

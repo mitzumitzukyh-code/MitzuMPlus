@@ -1,6 +1,7 @@
 # Fase 3 — BlizzardTrackerEnhancer: diseño para revisión
 
-Estado: **BORRADOR PARA REVISIÓN. No implementado.** Ningún hook, frame ni
+Estado: **HISTÓRICO.** Implementado con cambios en 1.1.0-dev.7; la referencia vigente es `MITZU_TRACKER.md`.
+Estado original: **BORRADOR PARA REVISIÓN. No implementado.** Ningún hook, frame ni
 región existe todavía. Base: `BLIZZARD_TRACKER_ENHANCER.md` (auditoría del
 Objective Tracker 12.1.0/12.1.5), `TRACKER_STATE.md` (fase 2 / 2.1) y
 `ROADMAP.md` (compuertas y política Retail-first).

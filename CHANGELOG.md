@@ -13,6 +13,30 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.7 — desarrollo interno (Retail dev, sin publicar)
+
+- Dirección visual definitiva: **Blizzard Mythic+ Tracker Enhancer**. dev.6 fue
+  un prototipo independiente; durante una llave real ya no hay ventana de Mitzu.
+  `BlizzardTrackerEnhancer` añade al bloque M+ nativo
+  (`ScenarioObjectiveTracker.ChallengeModeBlock`, auditado en 12.1.0.69814):
+  tiempos de mejora `+3/+2/+1` adaptativos junto al temporizador, `RITMO +N` y
+  confianza, recuento/restante (y % preciso sin Angry Keystones) bajo la barra
+  de fuerzas y tiempo perdido junto al contador de muertes.
+- Seguridad: solo post-hooks `ChallengeModeBlock.Activate` y
+  `ScenarioObjectiveTracker.EndLayout`; frames propios hijos del bloque; ninguna
+  escritura sobre frames de Blizzard; discover/attach/detach/reattach por
+  instancia; kill switch a los 3 errores. Sin bloque, sin fallback flotante.
+- `TrackerView` (ventana) queda para vista previa (rechazada con llave en curso)
+  y el resumen de 20 s (Blizzard retira el bloque al terminar).
+- Ajustes nuevos: `showPrediction`, `showUpgradeTimes`, `showForcesCount`,
+  `showForcesRemaining`, `showDeaths`. Posición/bloqueo solo de la ventana.
+- Bug Report `[TRACKER VISUAL]`: `renderMode`, `attached`, `attachGeneration`,
+  `attachReason`, `attachmentHealthy`, estado del bloque y lo pintado.
+  Invariante `NO_FLOATING_HUD_DURING_KEY`.
+- Static checks del enhancer (solo lectura de `blizz*`, hooks permitidos,
+  `SetParent` propio, enrutado sin HUD en llave). Mock fiel del Objective
+  Tracker para los tests; el cliente simulado mide texto por glifo.
+
 ### 1.1.0-dev.6 — desarrollo interno (Retail dev, sin publicar)
 
 - TrackerState: `CHALLENGE_MODE_COMPLETED` es la autoridad terminal del final.
