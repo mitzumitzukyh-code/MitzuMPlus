@@ -1,9 +1,11 @@
-# Mitzu Tracker (1.1.0-dev.7)
+# Mitzu Tracker (1.1.0-dev.8)
 
 - **dev.6**: prototipo visual independiente (ventana flotante durante la llave).
-- **dev.7**: arquitectura de **Blizzard Objective Tracker enhancement**. Durante
-  una Mítica+ real no hay ventana de Mitzu: sus datos se integran en el bloque
-  M+ nativo. La ventana flotante queda solo para vista previa y resumen.
+- **dev.7**: arquitectura integrada (**Blizzard Objective Tracker enhancement**).
+  Durante una Mítica+ real no hay ventana de Mitzu: sus datos se integran en el
+  bloque M+ nativo. Validada en Retail (Guarida de Nalorakk +10).
+- **dev.8**: pasada de densidad y jerarquía visual. Menos texto, un solo umbral,
+  secundarios en gris, fuerzas en dos columnas. Sin cambios de lógica.
 
 ## Capas
 
@@ -48,8 +50,9 @@ Fuente: `Gethe/wow-ui-source`, rama `live`, commit `12.1.0 (69814)`
   liberadas, bloque mostrado/oculto). Cada callback en `pcall`.
 - **Elementos propios** (`BlizzardTrackerEnhancer.elements`): `root` y
   `forcesRoot` son frames de Mitzu **hijos del bloque M+** → siguen su
-  visibilidad, escala y posición de Edit Mode. FontStrings `upgrade`, `pace`,
-  `penalty`, `forces` y un medidor oculto. Se crean una vez y se reutilizan.
+  visibilidad, escala y posición de Edit Mode. FontStrings `threshold`, `pace`,
+  `paceExtra`, `penalty`, `forcesPrimary`, `forcesSecondary` y un medidor oculto
+  por fuente. Se crean una vez y se reutilizan.
 - **Attach**: primer bloque encontrado (`CHALLENGE_BLOCK_FOUND`, generación 1).
   **Reattach**: otro objeto de bloque (`CHALLENGE_BLOCK_REBUILT`, generación +1,
   mismos elementos con `SetParent`). **Detach**: sin tracker/bloque → ocultar,
@@ -73,21 +76,67 @@ Fuente: `Gethe/wow-ui-source`, rama `live`, commit `12.1.0 (69814)`
 - `Bar.Label` no se toca (además lo usa Angry Keystones).
 - `SetParent` solo sobre `el.root` / `el.forcesRoot` (frames de Mitzu).
 
-## Qué se añade (y qué no)
+## Qué se añade (dev.8)
+
+```
+Guarida de Nalorakk            <- Blizzard
+  Nivel 10                     <- Blizzard
+  20:45  +3 7:57               <- TimeLeft Blizzard + UN umbral (código en color)
+         RITMO +1  30%    -0:20 [calavera]4
+  [barra de tiempo]            <- Blizzard
+  Fuerzas enemigas             <- Blizzard
+  [========= 45% =========]    <- barra y % de Blizzard (o de Angry Keystones)
+  329 / 729        faltan 400  <- Mitzu (recuento blanco, restantes en gris)
+```
 
 | Blizzard (se conserva) | Mitzu añade |
 |---|---|
-| Nombre, nivel, afijos | — |
-| Temporizador `TimeLeft` | a su derecha: tiempos de mejora `+3 6:25  +2 13:01  +1 19:37` (los que quepan, del más cercano) y debajo `RITMO +2  50%` |
-| Barra de fuerzas `73%` | debajo: `449 / 608 · 73.85% · faltan 159` (el `%` solo sin Angry Keystones; se acorta a lo que quepa); nada al 100 % |
-| Contador de muertes | a su izquierda: `-0:15` si Blizzard publica tiempo perdido |
-| Lista de jefes | — |
+| Nombre, nivel, afijos, jefes | — |
+| Temporizador `TimeLeft` | el **próximo umbral** que se puede perder y debajo `RITMO +N` (confianza/ETA en gris) |
+| Barra de fuerzas y su % | debajo, en dos columnas: recuento exacto y restantes. Nunca otro % |
+| Contador de muertes | a su izquierda: `-0:20` solo con tiempo perdido publicado |
 
-Adaptativo y determinista: el Presenter da candidatos de más completo a más
-corto (`UpgradeCandidates`, `BuildEmbedded`) y `TrackerPresenter.FitText` elige
-el primero que cabe. Ancho disponible en la fila del temporizador =
-`anchoBloque − 47 − 4 − penalización − (28 + anchoTimeLeft + 8 [+24 fuera de tiempo])`.
-Umbrales del reloj ≠ ritmo del motor: pueden decir `+3 …` y `RITMO +2` a la vez.
+Jerarquía: TimeLeft > umbral (`GameFontHighlight`) > ritmo
+(`GameFontHighlightSmall`) > fuerzas > restantes/penalización > confianza/ETA
+(`GameFontDisableSmall`). Solo objetos de fuente de Blizzard; el color refuerza
+el código (`+3` verde, `+2` dorado, `+1` naranja, `OVERTIME` rojo) pero el texto
+siempre está.
+
+### Umbral único
+
+`TrackerPresenter.GetNextRelevantUpgradeThreshold(model)` recorre los umbrales
+del modelo (los del motor `plus3Time/plus2Time`; sin motor,
+`Constants.KEY_UPGRADE_PLUS3/2_RATIO`; `+1` = límite) y devuelve el primero no
+perdido con su margen: `{ upgrade = "+3", time = 477 }`. En el segundo exacto
+del umbral todavía cuenta (`0:00`); después pasa al siguiente. Fuera de tiempo
+devuelve `nil` y no se pinta nada (Blizzard ya pone el reloj en rojo). Es el
+margen del reloj, no una proyección: el ritmo sigue siendo del motor.
+
+### Layout adaptativo (`TrackerPresenter.LayoutEmbedded`, puro)
+
+Entradas: modelo integrado, `timerWidth`, `forcesWidth`, `deferThreshold` y una
+función `measure(texto, tipo)`. Salida con modos:
+
+| Parte | Modos |
+|---|---|
+| umbral | `NEXT`, `DEFERRED` (Angry Keystones), `OVERTIME`, `DISABLED`, `TOO_NARROW`, `NONE` |
+| ritmo | `WIDE` (+confianza +ETA), `STANDARD` (+uno), `COMPACT` (solo ritmo), `TOO_NARROW`, `NONE` |
+| fuerzas | `SPLIT`, `PRIMARY`, `PRIMARY_COMPACT` (`329/729`), `SECONDARY`, `TOO_NARROW`, `NONE`/`NO_BAR` |
+
+Orden de sacrificio: ETA → confianza → restantes → recuento → ritmo. Si el
+umbral no cabe, el ritmo tampoco se pinta. No se usan abreviaturas (`R +1`,
+`-400`): antes se oculta. Los textos se miden con su fuente real (cacheado),
+así una traducción más larga se adapta sola.
+
+`timerWidth = anchoBloque − 47 − 4 − penalización − (28 + anchoTimeLeft + 8 [+24 fuera de tiempo]) [− 44 con Angry Keystones]`.
+
+### Angry Keystones
+
+Detección robusta y sin internals: `C_AddOns.IsAddOnLoaded("AngryKeystones")`.
+Con AK: el umbral junto al reloj es suyo (`thresholdMode=DEFERRED`), el ritmo se
+alinea a la derecha (junto al contador de muertes) para no pisar su texto.
+Mitzu nunca escribe un porcentaje, así que no se duplica el de AK ni el de
+Blizzard. Pendiente de confirmar a ojo en Retail con AK activo.
 
 ## Estados
 
@@ -98,7 +147,7 @@ Umbrales del reloj ≠ ritmo del motor: pueden decir `+3 …` y `RITMO +2` a la 
 | RUNNING | integrado completo |
 | COMPLETING | integrado, último estado válido, reloj congelado |
 | SUMMARY | **ventana flotante** 20 s. Decisión: Blizzard retira el bloque M+ en cuanto para el timer (`StopTimer`), así que no hay dónde integrarlo |
-| PREVIEW | ventana flotante (datos sintéticos); rechazada con llave en curso |
+| PREVIEW | ventana flotante estrecha que simula el bloque de Blizzard (251 px) con las mismas decisiones de layout; rechazada con llave en curso |
 
 Sin bloque de Blizzard: **no** hay fallback flotante. `attached=false`,
 `attachReason=BLIZZARD_TRACKER_NOT_LOADED|CHALLENGE_BLOCK_NOT_FOUND`,
@@ -125,7 +174,10 @@ Bug Report `[TRACKER VISUAL]`: `implementation=BLIZZARD_TRACKER_ENHANCER`,
 `forcesRemainingDisplayed`, `deathsDisplayed`, `blizzardTrackerLoaded`,
 `challengeBlockFound`, `challengeBlockShown`, `challengeBlockActive`, `attached`,
 `attachGeneration`, `attachReason`, `attachmentHealthy`, `hooksInstalled`,
-`forcesBarFound`, `forcesBarReason`, `availableWidth`, `lastLayoutReason`,
+`forcesBarFound`, `forcesBarReason`, `availableWidth`, `thresholdDisplayed`,
+`thresholdTimeDisplayed`, `thresholdMode`, `paceDisplayed`, `paceMode`,
+`etaDisplayed`, `forcesPrimaryDisplayed`, `forcesSecondaryDisplayed`,
+`forcesLayoutMode`, `angryKeystonesLoaded`, `lastLayoutReason`,
 `enhancerErrors`, `enhancerDisabled`, `lastRenderError`. Sin referencias a frames.
 Invariante `NO_FLOATING_HUD_DURING_KEY`.
 

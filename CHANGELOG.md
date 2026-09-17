@@ -13,6 +13,32 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0-dev.8 — desarrollo interno (Retail dev, sin publicar)
+
+- Pasada de densidad y jerarquía visual del tracker integrado (sin cambios de
+  lógica: adapter, estado, predicción, sesiones e historial intactos). dev.7
+  validado en Retail (Guarida de Nalorakk +10: `attached=true`, `tainted=none`).
+- Un solo umbral junto al reloj de Blizzard: el próximo que se puede perder
+  (`+3 7:57` → `+2 …` → `+1 …`; nada fuera de tiempo).
+  `TrackerPresenter.GetNextRelevantUpgradeThreshold` sobre los umbrales
+  centralizados.
+- `RITMO +1` con la confianza y la ETA en gris y en su propio texto;
+  se sacrifican ETA → confianza → ritmo según el ancho, nunca antes que el umbral.
+- Fuerzas en dos columnas bajo la barra: `329 / 729` … `faltan 400`; sin repetir
+  el porcentaje (Blizzard/Angry Keystones ya lo muestran); se reduce a
+  `329 / 729` y `329/729` si no cabe.
+- Penalización de muertes discreta junto al contador de Blizzard; nada si no
+  hay tiempo perdido publicado.
+- Con Angry Keystones: Mitzu no repite el umbral junto al reloj y alinea el ritmo
+  a la derecha.
+- `TrackerPresenter.LayoutEmbedded`: decisión pura y testeada de qué cabe
+  (modos de umbral, ritmo y fuerzas); anchos medidos cacheados.
+- Vista previa/resumen: simulación estrecha del bloque de Blizzard con las mismas
+  decisiones de layout.
+- Bug Report `[TRACKER VISUAL]`: `thresholdDisplayed`, `thresholdTimeDisplayed`,
+  `thresholdMode`, `paceMode`, `etaDisplayed`, `forcesPrimaryDisplayed`,
+  `forcesSecondaryDisplayed`, `forcesLayoutMode`, `angryKeystonesLoaded`.
+
 ### 1.1.0-dev.7 — desarrollo interno (Retail dev, sin publicar)
 
 - Dirección visual definitiva: **Blizzard Mythic+ Tracker Enhancer**. dev.6 fue

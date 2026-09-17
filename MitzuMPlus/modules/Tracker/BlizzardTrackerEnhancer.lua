@@ -1,5 +1,5 @@
 -- ===========================================================================
--- MitzuMPlus - Tracker/BlizzardTrackerEnhancer  (1.1.0-dev.7)
+-- MitzuMPlus - Tracker/BlizzardTrackerEnhancer  (dev.7 integracion, dev.8 densidad)
 --
 --     TrackerState -> MitzuTracker -> TrackerPresenter -> BlizzardTrackerEnhancer
 --                                                              |  (anclas)
@@ -36,6 +36,16 @@
 --   * Sin OnUpdate: se repinta con el ticker de 1 s de MitzuTracker, con
 --     MITZU_TRACKER_STATE_CHANGED y cuando Blizzard reconstruye el layout.
 --
+-- QUE SE PINTA (dev.8, "Blizzard mejorado", no un panel):
+--   15:06  +2 8:18             <- TimeLeft de Blizzard + UN solo umbral
+--          RITMO +1  37%       <- ritmo; confianza/ETA en gris, secundarias
+--   [barra Blizzard 45%]
+--   329 / 729      faltan 400  <- recuento y restantes, sin repetir el %
+--   [calavera 4] -0:20         <- solo la penalizacion publicada
+-- Que cabe lo decide TrackerPresenter.LayoutEmbedded (puro, testeado).
+-- Con Angry Keystones cargado, el umbral junto al reloj es suyo: Mitzu no lo
+-- repite y alinea el ritmo a la derecha para no pisar su texto.
+--
 -- DATOS: solo el modelo de TrackerPresenter. Este fichero no lee APIs de
 -- Mitica+ (C_ChallengeMode, C_ScenarioInfo, ...) ni el texto de Blizzard.
 -- ===========================================================================
@@ -57,17 +67,28 @@ E.LAYOUT = {
     DEATH_RIGHT    = 47,   -- DeathCount: TOPLEFT en BOTTOMRIGHT -47
     GAP            = 8,    -- separacion tras el temporizador
     LOOT_ICON      = 24,   -- TimesUpLootStatus (19 px + 4) cuando se acaba el tiempo
-    LINE_2_Y       = -13,  -- segunda linea bajo la de umbrales
+    LINE_2_Y       = -14,  -- linea de ritmo bajo la del umbral
+    AK_RESERVE     = 44,   -- px que se dejan al texto de Angry Keystones tras el reloj
+    MEASURE_CACHE  = 256,  -- anchos medidos que se recuerdan
     FALLBACK_TIME_W = 60,
     FALLBACK_BLOCK_W = 251,
 }
 
+-- El codigo va siempre como texto (+3/+2/+1/OVERTIME); el color solo refuerza.
 E.COLOR = {
-    upgrade = { ["+3"] = "40ff73", ["+2"] = "b8f24d", ["+1"] = "ffd100" },
-    pace    = { ["+3"] = "40ff73", ["+2"] = "b8f24d", ["+1"] = "ffd100", OVERTIME = "ff4545" },
-    label   = { 0.72, 0.72, 0.76 },
-    text    = { 0.92, 0.92, 0.92 },
-    penalty = { 1.00, 0.35, 0.35 },
+    code    = { ["+3"] = "40ff73", ["+2"] = "ffd100", ["+1"] = "ff9933", OVERTIME = "ff4545" },
+    label   = "a8a8b0",
+    forces  = { 0.86, 0.86, 0.86 },
+    penalty = { 1.00, 0.40, 0.40, 0.9 },
+}
+
+-- Objetos de fuente de Blizzard por tipo de texto (solo se usan como plantilla).
+E.FONT = {
+    threshold = "GameFontHighlight",
+    pace      = "GameFontHighlightSmall",
+    secondary = "GameFontDisableSmall",
+    forces    = "GameFontHighlightSmall",
+    penalty   = "GameFontHighlightSmall",
 }
 
 E._hookedBlock, E._hookedTracker = nil, nil
@@ -82,6 +103,7 @@ E._disabled = false
 E._model, E._opts = nil, nil
 E._displayed = {}
 E._cache = {}
+E._widths, E._widthCount = nil, 0
 E.elements = nil
 
 local function record(event, data)
@@ -148,21 +170,27 @@ function E:_CreateElements()
     local create = rawget(_G, "CreateFrame")
     local root = create("Frame", "MitzuMPlusTrackerEnhancer")
     local forcesRoot = create("Frame", "MitzuMPlusTrackerEnhancerForces")
-    local function fs(parent)
-        local t = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        t:SetJustifyH("LEFT")
+    local function fs(parent, kind, justify)
+        local t = parent:CreateFontString(nil, "OVERLAY", E.FONT[kind])
+        t:SetJustifyH(justify or "LEFT")
         t:SetWordWrap(false)
         return t
     end
     local el = { root = root, forcesRoot = forcesRoot }
-    el.upgrade, el.pace, el.penalty = fs(root), fs(root), fs(root)
-    el.penalty:SetJustifyH("RIGHT")
-    el.penalty:SetTextColor(E.COLOR.penalty[1], E.COLOR.penalty[2], E.COLOR.penalty[3], 1)
-    el.forces = fs(forcesRoot)
-    el.forces:SetTextColor(E.COLOR.label[1], E.COLOR.label[2], E.COLOR.label[3], 1)
-    -- Medidor oculto con la misma fuente: decide que candidato cabe.
-    el.measure = fs(root)
-    el.measure:Hide()
+    el.threshold = fs(root, "threshold")
+    el.pace = fs(root, "pace")
+    el.paceExtra = fs(root, "secondary")
+    el.penalty = fs(root, "penalty", "RIGHT")
+    el.penalty:SetTextColor(E.COLOR.penalty[1], E.COLOR.penalty[2], E.COLOR.penalty[3], E.COLOR.penalty[4])
+    el.forcesPrimary = fs(forcesRoot, "forces")
+    el.forcesPrimary:SetTextColor(E.COLOR.forces[1], E.COLOR.forces[2], E.COLOR.forces[3], 1)
+    el.forcesSecondary = fs(forcesRoot, "secondary", "RIGHT")
+    -- Medidores ocultos, uno por fuente: deciden que cabe.
+    el.measure = {}
+    for kind in pairs(E.FONT) do
+        el.measure[kind] = fs(root, kind)
+        el.measure[kind]:Hide()
+    end
     root:Hide(); forcesRoot:Hide()
     self.elements = el
     self:ApplySettings(self._scale, self._alpha)
@@ -219,10 +247,24 @@ end
 -- PINTADO
 -- ---------------------------------------------------------------------------
 
-function E:_Measure(text)
-    local m = self.elements.measure
+-- Ancho de un texto en la fuente de su tipo. Cacheado: el mismo texto no se
+-- vuelve a medir (el umbral cambia una vez por segundo, no por frame).
+function E:_Measure(text, kind)
+    kind = E.FONT[kind] and kind or "pace"
+    local key = kind .. "\31" .. text
+    local cache = self._widths
+    if not cache or self._widthCount > E.LAYOUT.MEASURE_CACHE then
+        cache, self._widthCount = {}, 0
+        self._widths = cache
+    end
+    local v = cache[key]
+    if v then return v end
+    local m = self.elements.measure[kind]
     m:SetText(text)
-    return m:GetStringWidth() or (#text * 6)
+    v = m:GetStringWidth() or (#text * 6)
+    cache[key] = v
+    self._widthCount = self._widthCount + 1
+    return v
 end
 
 local function setText(self, key, fs, text)
@@ -241,12 +283,9 @@ local function place(self, key, region, sig, fn)
     fn()
 end
 
-local function colorize(text, code, palette)
-    local hex = code and palette[code]
-    if not hex or text == "" then return text end
-    local s, e = text:find(code, 1, true)
-    if not s then return text end
-    return text:sub(1, s - 1) .. "|cff" .. hex .. code .. "|r" .. text:sub(e + 1)
+local function colored(code)
+    local hex = code and E.COLOR.code[code]
+    return hex and ("|cff" .. hex .. code .. "|r") or code
 end
 
 -- La barra de fuerzas de Blizzard en esta llave: la unica barra de progreso
@@ -322,76 +361,102 @@ function E:_Render(model, opts, reason)
     if not el.root:IsShown() then el.root:Show() end
 
     local L = E.LAYOUT
+    local TPL = TP
     local blizzTimeLeft, blizzDeath = get(blizzBlock, "TimeLeft"), get(blizzBlock, "DeathCount")
     local timeW = read(blizzTimeLeft, "GetStringWidth") or L.FALLBACK_TIME_W
     local blockW = read(blizzBlock, "GetWidth") or L.FALLBACK_BLOCK_W
     local offsetX = L.GAP + (emb.overtime and L.LOOT_ICON or 0)
+    local defer = opts and opts.angryKeystones == true
+    local measure = function(text, kind) return self:_Measure(text, kind) end
 
     -- Penalizacion junto al contador de muertes de Blizzard (a su izquierda).
     local penalty = (emb.penaltyText and blizzDeath and read(blizzDeath, "IsShown")) and emb.penaltyText or ""
     setText(self, "penalty", el.penalty, penalty)
     local penaltyW = 0
     if penalty ~= "" then
-        penaltyW = self:_Measure(penalty) + 4
+        penaltyW = measure(penalty, "penalty") + 4
         place(self, "penaltyAt", el.penalty, "death", function()
             el.penalty:SetPoint("RIGHT", blizzDeath, "LEFT", -2, 0)
         end)
     end
+    local rightEdge = blockW - L.DEATH_RIGHT - 4 - penaltyW
+    local available = rightEdge - (L.LEVEL_X + timeW + offsetX)
+    if defer then available = available - L.AK_RESERVE end
 
-    local available = blockW - L.DEATH_RIGHT - 4 - penaltyW - (L.LEVEL_X + timeW + offsetX)
-    local measure = function(t) return self:_Measure(t) end
+    local blizzBar, barWhy = self:FindForcesBar(blizzTracker)
+    local blizzInner = blizzBar and get(blizzBar, "Bar") or nil
+    local lay = TPL.LayoutEmbedded(emb, {
+        timerWidth = available, deferThreshold = defer,
+        forcesWidth = blizzInner and read(blizzInner, "GetWidth") or nil,
+    }, measure)
 
-    local upgrade = TP.FitText(emb.upgrade, available, measure)
-    setText(self, "upgrade", el.upgrade, colorize(upgrade, emb.bracket, E.COLOR.upgrade))
-    place(self, "upgradeAt", el.upgrade, "time:" .. offsetX, function()
-        el.upgrade:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, -1)
+    -- 1. Umbral: "+2 8:18" junto al reloj.
+    local th = lay.threshold
+    setText(self, "threshold", el.threshold, th.text and (colored(th.upgrade) .. " " .. th.timeText) or "")
+    place(self, "thresholdAt", el.threshold, "time:" .. offsetX, function()
+        el.threshold:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, -1)
     end)
 
-    local pace = TP.FitText(emb.pace, available, measure)
-    local paceText = pace
-    if pace ~= "" then
-        local label = TP.TEXT.PACE .. " "
-        paceText = colorize(pace, emb.paceCode, E.COLOR.pace)
-        if pace:sub(1, #label) == label then paceText = "|cffb8b8c2" .. label .. "|r" .. paceText:sub(#label + 1) end
-    end
+    -- 2. Ritmo: "RITMO +1" y, en gris, confianza / ETA.
+    local pc = lay.pace
+    local paceText = pc.text and ("|cff" .. E.COLOR.label .. pc.label .. "|r " .. colored(pc.value)) or ""
     setText(self, "pace", el.pace, paceText)
-    place(self, "paceAt", el.pace, "time:" .. offsetX, function()
-        el.pace:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, L.LINE_2_Y)
+    local extras = {}
+    if pc.confidence then extras[#extras + 1] = pc.confidence end
+    if pc.eta then extras[#extras + 1] = pc.eta end
+    setText(self, "paceExtra", el.paceExtra, pc.text and table.concat(extras, "  ") or "")
+    local paceSig = (defer and "right:" or "left:") .. offsetX .. ":" .. math.floor(rightEdge + 0.5)
+    place(self, "paceAt", el.pace, paceSig, function()
+        el.paceExtra:ClearAllPoints()
+        if defer then
+            -- Alineado a la derecha: el hueco tras el reloj es de Angry Keystones.
+            -- TimeLeft empieza en x=LEVEL_X del bloque: el borde derecho es rightEdge.
+            el.paceExtra:SetPoint("TOPRIGHT", blizzTimeLeft, "TOPLEFT", rightEdge - L.LEVEL_X, L.LINE_2_Y - 1)
+            el.pace:SetPoint("RIGHT", el.paceExtra, "LEFT", -TPL.GAP, 0)
+        else
+            el.pace:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, L.LINE_2_Y)
+            el.paceExtra:SetPoint("LEFT", el.pace, "RIGHT", TPL.GAP, 0)
+        end
     end)
     el.pace:SetAlpha(emb.provisional and 0.8 or 1)
 
-    -- Fuerzas: debajo de la barra de Blizzard mientras exista.
-    local blizzBar, barWhy = self:FindForcesBar(blizzTracker)
-    local forces = ""
-    if blizzBar and #emb.forces > 0 then
-        local blizzInner = get(blizzBar, "Bar")
-        forces = TP.FitText(emb.forces, read(blizzInner, "GetWidth"), measure)
+    -- 3. Fuerzas: debajo de la barra de Blizzard, en dos columnas.
+    local fo = lay.forces
+    local showForces = blizzInner ~= nil and (fo.primary or fo.secondary) ~= nil
+    if showForces then
         place(self, "forcesAt", el.forcesRoot, tostring(blizzInner), function()
             el.forcesRoot:SetPoint("TOPLEFT", blizzInner, "BOTTOMLEFT", 0, -1)
             el.forcesRoot:SetPoint("TOPRIGHT", blizzInner, "BOTTOMRIGHT", 0, -1)
             el.forcesRoot:SetHeight(12)
-            el.forces:ClearAllPoints()
-            el.forces:SetPoint("TOPLEFT", el.forcesRoot, "TOPLEFT", 0, 0)
-            el.forces:SetPoint("TOPRIGHT", el.forcesRoot, "TOPRIGHT", 0, 0)
+            el.forcesPrimary:ClearAllPoints(); el.forcesSecondary:ClearAllPoints()
+            el.forcesPrimary:SetPoint("TOPLEFT", el.forcesRoot, "TOPLEFT", 1, 0)
+            el.forcesSecondary:SetPoint("TOPRIGHT", el.forcesRoot, "TOPRIGHT", -1, 0)
         end)
-    end
-    setText(self, "forces", el.forces, forces)
-    if forces ~= "" then
-        if not el.forcesRoot:IsShown() then el.forcesRoot:Show() end
     else
-        if el.forcesRoot:IsShown() then el.forcesRoot:Hide() end
         self._cache.forcesAt = nil
     end
+    setText(self, "forcesPrimary", el.forcesPrimary, showForces and fo.primary or "")
+    setText(self, "forcesSecondary", el.forcesSecondary, showForces and fo.secondary or "")
+    if showForces then
+        if not el.forcesRoot:IsShown() then el.forcesRoot:Show() end
+    elseif el.forcesRoot:IsShown() then
+        el.forcesRoot:Hide()
+    end
 
+    local forcesLine = showForces and table.concat({ fo.primary or "", fo.secondary or "" }, fo.primary and fo.secondary and "  " or "") or nil
     self._displayed = {
         active = true,
-        upgrade = upgrade ~= "" and upgrade or nil,
-        pace = emb.paceCode,
-        paceText = pace ~= "" and pace or nil,
-        forces = forces ~= "" and forces or nil,
+        threshold = th.upgrade, thresholdTime = th.timeText, thresholdMode = th.mode,
+        upgrade = th.text,
+        pace = emb.paceCode, paceText = pc.text, paceMode = pc.mode,
+        confidence = pc.confidence, eta = pc.eta,
+        forcesPrimary = showForces and fo.primary or nil, forcesSecondary = showForces and fo.secondary or nil,
+        forcesLayoutMode = blizzInner and fo.mode or "NO_BAR",
+        forces = forcesLine,
         forcesBar = blizzBar ~= nil, forcesBarReason = barWhy,
         penalty = penalty ~= "" and penalty or nil,
         available = math.floor(available + 0.5),
+        angryKeystones = defer,
         reason = reason,
     }
 end
@@ -405,7 +470,7 @@ function E:ApplySettings(scale, alpha)
     local a = tonumber(alpha) or 1
     el.root:SetScale(s); el.forcesRoot:SetScale(s)
     el.root:SetAlpha(a); el.forcesRoot:SetAlpha(a)
-    self._cache = {}
+    self._cache, self._widths = {}, nil
 end
 
 function E:DiagnosticFields()
@@ -425,11 +490,19 @@ function E:DiagnosticFields()
         { "hooksInstalled", self._hookedBlock ~= nil and self._hookedTracker ~= nil },
         { "forcesBarFound", d.forcesBar == true },
         { "forcesBarReason", d.forcesBarReason },
-        { "upgradeTimesDisplayed", d.upgrade },
+        { "thresholdDisplayed", d.threshold },
+        { "thresholdTimeDisplayed", d.thresholdTime },
+        { "thresholdMode", d.thresholdMode },
         { "paceDisplayed", d.paceText },
+        { "paceMode", d.paceMode },
+        { "etaDisplayed", d.eta },
+        { "forcesPrimaryDisplayed", d.forcesPrimary },
+        { "forcesSecondaryDisplayed", d.forcesSecondary },
+        { "forcesLayoutMode", d.forcesLayoutMode },
         { "forcesLineDisplayed", d.forces },
         { "penaltyDisplayed", d.penalty },
         { "availableWidth", d.available },
+        { "angryKeystonesLoaded", d.angryKeystones },
         { "lastLayoutReason", self._lastLayoutReason },
         { "enhancerErrors", self._errors },
         { "enhancerDisabled", self._disabled },

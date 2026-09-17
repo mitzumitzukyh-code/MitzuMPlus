@@ -1,5 +1,5 @@
 -- ===========================================================================
--- MitzuMPlus - Tracker/MitzuTracker  (1.1.0-dev.7)
+-- MitzuMPlus - Tracker/MitzuTracker  (1.1.0-dev.8)
 --
 --     TrackerState ---------\                       /-> BlizzardTrackerEnhancer (llave real)
 --     PredictionEngine ------> MitzuTracker -> Presenter
@@ -137,8 +137,8 @@ end
 
 function MT:IsEnabled() return self:Settings().enabled ~= false end
 
--- Opciones del modelo integrado. Sin Angry Keystones (que ya pinta el % con
--- decimales en la barra) Mitzu anade el porcentaje preciso a su linea.
+-- Opciones del modelo integrado. Con Angry Keystones cargado su texto de
+-- umbral ocupa el hueco tras el reloj: Mitzu no repite el umbral (dev.8).
 function MT:EmbeddedOptions()
     local s = self:Settings()
     local isLoaded = rawget(_G, "C_AddOns") and C_AddOns.IsAddOnLoaded
@@ -147,7 +147,8 @@ function MT:EmbeddedOptions()
         showPrediction = s.showPrediction ~= false, showConfidence = s.showConfidence ~= false,
         showUpgradeTimes = s.showUpgradeTimes ~= false, showForcesCount = s.showForcesCount ~= false,
         showForcesRemaining = s.showForcesRemaining ~= false, showDeaths = s.showDeaths ~= false,
-        preciseForcesPercent = not (ok and ak == true),
+        showETA = s.showETA ~= false,
+        angryKeystones = ok and ak == true,
     }
 end
 
@@ -292,9 +293,10 @@ function MT:Refresh(reason, readPrediction)
             local p = model.prediction or {}
             shown = {
                 prediction = (route == "EMBEDDED" and emb.paceText) and (p.code or "NONE") or "NONE",
-                confidence = (route == "EMBEDDED" and emb.paceText and opts.showConfidence) and p.confidence or nil,
+                confidence = (route == "EMBEDDED" and emb.confidence) and p.confidence or nil,
                 timer = route == "EMBEDDED" and "BLIZZARD" or nil,
                 upgrade = emb.upgrade, forces = emb.forces, deaths = emb.penalty,
+                forcesPrimary = emb.forcesPrimary, forcesSecondary = emb.forcesSecondary,
                 bosses = route == "EMBEDDED" and "BLIZZARD" or nil,
             }
         end
@@ -305,6 +307,7 @@ function MT:Refresh(reason, readPrediction)
             prediction = shown.prediction or "NONE", confidence = shown.confidence,
             timer = shown.timer, forces = shown.forces, bosses = shown.bosses, deaths = shown.deaths,
             upgrade = shown.upgrade,
+            forcesPrimary = shown.forcesPrimary, forcesSecondary = shown.forcesSecondary,
         }
         if model.mode == "RUNNING" or model.mode == "PENDING" then
             self._displayedPace = (shown.prediction ~= "NONE") and shown.prediction or self._displayedPace
@@ -456,8 +459,8 @@ function MT:DiagnosticFields()
         { "timerDisplayed", d.timer },
         { "upgradeTimesDisplayed", d.upgrade ~= nil },
         { "forcesDisplayed", d.forces },
-        { "forcesCountDisplayed", d.forces ~= nil and s.showForcesCount ~= false },
-        { "forcesRemainingDisplayed", d.forces ~= nil and d.forces:find((MitzuMPlus.TrackerPresenter.TEXT.REMAINING:gsub(" ?%%s", "")), 1, true) ~= nil },
+        { "forcesCountDisplayed", d.forcesPrimary ~= nil },
+        { "forcesRemainingDisplayed", d.forcesSecondary ~= nil },
         { "bossesDisplayed", d.bosses },
         { "deathsDisplayed", d.deaths },
         { "lastRenderReason", self._lastReason },

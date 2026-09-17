@@ -237,62 +237,181 @@ test("FitText is deterministic: first candidate that fits, shortest without a wi
     for _ = 1, 3 do equal(TP.FitText(c, 150, glyphs), c[2], "same input, same output") end
 end)
 
-test("upgrade candidates: nearest live threshold first, lost ones dropped", function()
-    local m = build("RUNNING", reposo(803, 449, 2), 803, engine("+2", 50, false))
-    local up = TP.UpgradeCandidates(m.timer)
-    equal(#up, 3); equal(up[1], "+3 6:25  +2 13:01  +1 19:37"); equal(up[2], "+3 6:25  +2 13:01"); equal(up[3], "+3 6:25")
-    m = build("RUNNING", reposo(1300, 500, 3), 1300, nil)
-    up = TP.UpgradeCandidates(m.timer)
-    equal(#up, 2); equal(up[1], "+2 4:44  +1 11:20"); equal(up[2], "+2 4:44", "+3 is gone: +2 is the next relevant one")
-    m = build("RUNNING", reposo(1700, 600, 3), 1700, nil)
-    up = TP.UpgradeCandidates(m.timer)
-    equal(#up, 1); equal(up[1], "+1 4:40")
-    m = build("RUNNING", reposo(2000, 608, 4), 2000, nil)
-    equal(#TP.UpgradeCandidates(m.timer), 0, "overtime: no upgrade left")
+-- Guarida de Nalorakk +10 (Retail dev.7): limit 32:00 -> +3 at 19:12, +2 at 25:36.
+local function nalorakk(elapsed, forces, deaths)
+    return { status = "RUNNING", mapName = "Guarida de Nalorakk", keystoneLevel = 10, timeLimit = 1920,
+             forcesCurrent = forces, forcesTotal = 729, forcesPercent = forces / 729 * 100,
+             forcesRemaining = 729 - forces, bossesCompleted = 1, bossesTotal = 4,
+             deaths = deaths or 0, deathTimeLost = (deaths or 0) * 5, warnings = {}, bosses = {} }
+end
+local function nalorakkModel(elapsed, forces, deaths, prediction, settings)
+    return TP.Build({ enabled = true, status = "RUNNING", state = nalorakk(elapsed, forces, deaths), elapsed = elapsed,
+                      prediction = prediction, constants = RATIOS,
+                      settings = settings or { showConfidence = true, showETA = true } })
+end
+local function pred(result, confidence, confident, projected)
+    return { result = result, confidence = confidence, resultConfident = confident == true,
+             projectedTime = projected, effectiveElapsed = 675, timeLimit = 1920 }
+end
+
+test("next relevant threshold: +3 -> +2 -> +1 -> none, margin from the centralized thresholds", function()
+    local cases = {
+        { 675, "+3", 477 },   -- real run: "+3 7:57"
+        { 1151, "+3", 1 }, { 1152, "+3", 0 }, { 1153, "+2", 383 },
+        { 1200, "+2", 336 }, { 1536, "+2", 0 }, { 1537, "+1", 383 },
+        { 1600, "+1", 320 }, { 1920, "+1", 0 },
+    }
+    for _, c in ipairs(cases) do
+        local n = TP.GetNextRelevantUpgradeThreshold(nalorakkModel(c[1], 329))
+        truthy(n, "threshold at " .. c[1]); equal(n.upgrade, c[2], "upgrade at " .. c[1]); equal(n.time, c[3], "time at " .. c[1])
+    end
+    equal(TP.GetNextRelevantUpgradeThreshold(nalorakkModel(1921, 700)), nil, "overtime: no upgrade left")
+    equal(TP.GetNextRelevantUpgradeThreshold(nalorakkModel(nil, 329)), nil, "no clock yet")
+    equal(TP.GetNextRelevantUpgradeThreshold(TP.Build({ status = "RUNNING", state = {}, elapsed = 60 })), nil, "no limit")
+    equal(TP.GetNextRelevantUpgradeThreshold(nil), nil)
+    -- Engine thresholds win over the ratios (same source the prediction uses).
+    local m = nalorakkModel(675, 329, 0, { result = "+1", plus3Time = 1100, plus2Time = 1500, timeLimit = 1920 })
+    equal(TP.GetNextRelevantUpgradeThreshold(m).time, 425)
 end)
 
-test("embedded model: timer and pace separate, forces enrich Blizzard's bar, penalty only when published", function()
-    local m = build("RUNNING", reposo(804, 449, 2, 3), 804, engine("+2", 50, false))
-    local e = TP.BuildEmbedded(m, { preciseForcesPercent = true, showConfidence = true })
-    equal(e.active, true); equal(e.bracket, "+3", "clock still allows +3"); equal(e.paceCode, "+2", "pace projects +2")
-    equal(e.pace[1], "RITMO +2  50%"); equal(e.pace[2], "RITMO +2"); equal(e.pace[3], "+2")
-    equal(e.forces[1], "449 / 608 · 73.85% · faltan 159"); equal(e.forces[2], "449 / 608 · faltan 159")
-    equal(e.forces[3], "449 / 608"); equal(e.forces[4], "faltan 159")
-    equal(e.penaltyText, "-0:15"); equal(e.provisional, true)
-    -- Angry Keystones already paints a precise % on the bar: not repeated.
-    e = TP.BuildEmbedded(m, { preciseForcesPercent = false })
-    equal(e.forces[1], "449 / 608 · faltan 159")
+test("embedded model: one threshold, pace with secondary parts, forces without %, penalty only when published", function()
+    local m = nalorakkModel(675, 329, 4, pred("+1", 30, true, 1790))
+    local e = TP.BuildEmbedded(m, { showConfidence = true, showETA = true })
+    equal(e.active, true)
+    equal(e.threshold.text, "+3 7:57"); equal(e.threshold.upgrade, "+3"); equal(e.threshold.timeText, "7:57")
+    equal(e.paceText, "RITMO +1"); equal(e.paceValue, "+1"); equal(e.confidenceText, "30%"); equal(e.etaText, "~29:50")
+    equal(e.forcesPrimary, "329 / 729"); equal(e.forcesPrimaryCompact, "329/729"); equal(e.forcesSecondary, "faltan 400")
+    equal(e.penaltyText, "-0:20")
+    for k, v in pairs(e) do
+        if type(v) == "string" then
+            if k:find("^forces") then truthy(not v:find("%%"), "no percentage duplicated in " .. k .. "=" .. v) end
+            truthy(not v:find(TP.TEXT.DEATHS, 1, true), "Blizzard already shows the death count: " .. k)
+        end
+    end
+    -- Disabled confidence (settings) and ETA (options) never leak through.
+    m = nalorakkModel(675, 329, 4, pred("+1", 30, true, 1790), { showConfidence = false, showETA = true })
+    e = TP.BuildEmbedded(m, { showConfidence = false, showETA = false })
+    equal(e.confidenceText, nil); equal(e.etaText, nil); equal(e.paceText, "RITMO +1")
+    -- Missing confidence / ETA (unconfident engine): pace alone.
+    e = TP.BuildEmbedded(nalorakkModel(675, 329, 0, pred("+1", nil, false, 1790)), {})
+    equal(e.confidenceText, nil); equal(e.etaText, nil)
+    -- No deaths / no published time lost: no placeholder.
+    equal(TP.BuildEmbedded(nalorakkModel(675, 329, 0, nil), {}).penaltyText, nil)
+    local d = nalorakk(675, 329, 4); d.deathTimeLost = 0
+    equal(TP.BuildEmbedded(TP.Build({ status = "RUNNING", state = d, elapsed = 675, constants = RATIOS }), {}).penaltyText, nil)
     -- Toggles.
     e = TP.BuildEmbedded(m, { showUpgradeTimes = false, showPrediction = false, showForcesCount = false, showDeaths = false })
-    equal(#e.upgrade, 0); equal(#e.pace, 0); equal(e.forces[1], "faltan 159"); equal(#e.forces, 1); equal(e.penaltyText, nil)
-    e = TP.BuildEmbedded(m, { showForcesCount = false, showForcesRemaining = false })
-    equal(#e.forces, 0)
+    equal(e.threshold, nil); equal(e.paceText, nil); equal(e.forcesPrimary, nil); equal(e.forcesSecondary, "faltan 400")
+    equal(e.penaltyText, nil)
 end)
 
-test("embedded model: missing optional data and non-run modes", function()
+test("embedded model: pending, completing, overtime, complete forces and non-run modes", function()
     for _, mode in ipairs({ "HIDDEN", "PREVIEW", "SUMMARY" }) do
         equal(TP.BuildEmbedded({ mode = mode }).active, false, mode)
     end
-    -- Pending: nothing invented (no times, no pace), known criteria still enrich the bar.
+    equal(TP.BuildEmbedded({ mode = "PREVIEW" }, { simulate = true }).active, true, "preview simulation")
     local s = reposo(nil, 136, 0); s.status = "PENDING"
     local e = TP.BuildEmbedded(build("PENDING", s, nil, engine("+1", 10, false)))
-    equal(e.active, true); equal(#e.upgrade, 0); equal(#e.pace, 0); equal(e.forces[1], "136 / 608 · faltan 472")
-    -- Running without engine basis: "RITMO --" only, no bare "--", no confidence.
+    equal(e.threshold, nil); equal(e.paceText, nil, "nothing invented before the timer"); equal(e.forcesPrimary, "136 / 608")
     e = TP.BuildEmbedded(build("RUNNING", reposo(60, 10, 0), 60, nil))
-    equal(#e.pace, 1); equal(e.pace[1], "RITMO --")
-    -- Forces complete (Blizzard removes the bar) or unknown: no line.
-    equal(#TP.BuildEmbedded(build("RUNNING", reposo(900, 608, 2), 900, nil)).forces, 0)
-    equal(#TP.BuildEmbedded(build("RUNNING", { timeLimit = 1980 }, 900, nil)).forces, 0)
-    -- Deaths without published time lost: no penalty.
-    local d = reposo(900, 300, 2, 2); d.deathTimeLost = nil
-    equal(TP.BuildEmbedded(build("RUNNING", d, 900, nil)).penaltyText, nil)
-    -- Completing: frozen clock, last pace kept.
+    equal(e.paceText, "RITMO --"); equal(e.confidenceText, nil)
     local c = reposo(1677, 600, 3, 14); c.finalElapsed = 1677
     e = TP.BuildEmbedded(build("COMPLETING", c, 1677, engine("+1", 70, true)))
-    equal(e.active, true); equal(e.paceCode, "+1"); equal(e.upgrade[1], "+1 5:03")
-    -- Overtime flag moves the lines past Blizzard's loot icon.
-    e = TP.BuildEmbedded(build("RUNNING", reposo(2045, 608, 3), 2045, engine("FUERA", 99, true)))
-    equal(e.overtime, true); equal(e.pace[1], "RITMO OVERTIME  99%")
+    equal(e.threshold.text, "+1 5:03"); equal(e.paceValue, "+1")
+    e = TP.BuildEmbedded(build("RUNNING", reposo(2045, 600, 3), 2045, engine("FUERA", 99, true)))
+    equal(e.overtime, true); equal(e.threshold, nil); equal(e.paceValue, "OVERTIME")
+    for _, full in ipairs({ { 608, 608 }, { 729, 729 } }) do
+        local st = { timeLimit = 1920, forcesCurrent = full[1], forcesTotal = full[2], forcesPercent = 100 }
+        e = TP.BuildEmbedded(TP.Build({ status = "RUNNING", state = st, elapsed = 900, constants = RATIOS }), {})
+        equal(e.forcesPrimary, nil, "complete forces: Blizzard's check is enough"); equal(e.forcesSecondary, nil)
+    end
+end)
+
+local function layoutOf(model, opts, space)
+    return TP.LayoutEmbedded(TP.BuildEmbedded(model, opts), space, glyphs)
+end
+
+test("adaptive layout: real Nalorakk space (114 px) is wide enough for threshold, pace and split forces", function()
+    local m = nalorakkModel(675, 329, 4, pred("+1", 30, false))
+    local lay = layoutOf(m, { showConfidence = true }, { timerWidth = 114, forcesWidth = 191 })
+    equal(lay.threshold.mode, "NEXT"); equal(lay.threshold.text, "+3 7:57")
+    equal(lay.pace.mode, "STANDARD"); equal(lay.pace.text, "RITMO +1"); equal(lay.pace.confidence, "30%")
+    equal(lay.forces.mode, "SPLIT"); equal(lay.forces.primary, "329 / 729"); equal(lay.forces.secondary, "faltan 400")
+    -- Later in the same run: 565 / 729.
+    lay = layoutOf(nalorakkModel(1300, 565, 5, pred("+1", 40, false)), {}, { timerWidth = 114, forcesWidth = 191 })
+    equal(lay.threshold.text, "+2 3:56"); equal(lay.forces.primary, "565 / 729"); equal(lay.forces.secondary, "faltan 164")
+end)
+
+test("adaptive layout: sacrifice order ETA -> confidence -> pace, never the threshold first", function()
+    local m = nalorakkModel(675, 329, 0, pred("+1", 30, true, 1790))
+    local opts = { showConfidence = true, showETA = true }
+    -- "RITMO +1"=48, gap 6, "30%"=18, gap 6, "~29:50"=36
+    equal(layoutOf(m, opts, { timerWidth = 114 }).pace.mode, "WIDE")
+    local lay = layoutOf(m, opts, { timerWidth = 113 })
+    equal(lay.pace.mode, "STANDARD"); equal(lay.pace.eta, nil, "ETA goes first"); equal(lay.pace.confidence, "30%")
+    lay = layoutOf(m, opts, { timerWidth = 71 })
+    equal(lay.pace.mode, "COMPACT"); equal(lay.pace.confidence, nil, "then confidence"); equal(lay.threshold.mode, "NEXT")
+    lay = layoutOf(m, opts, { timerWidth = 47 })
+    equal(lay.pace.mode, "TOO_NARROW"); equal(lay.threshold.mode, "NEXT", "threshold survives the pace")
+    lay = layoutOf(m, opts, { timerWidth = 41 })
+    equal(lay.threshold.mode, "TOO_NARROW"); equal(lay.pace.mode, "NONE", "no pace where the threshold did not fit")
+    -- Confidence off but ETA on: ETA is the only secondary.
+    lay = layoutOf(nalorakkModel(675, 329, 0, pred("+1", 30, true, 1790), { showConfidence = false, showETA = true }),
+        { showConfidence = false }, { timerWidth = 90 })
+    equal(lay.pace.mode, "STANDARD"); equal(lay.pace.eta, "~29:50"); equal(lay.pace.confidence, nil)
+    -- Unknown width: everything the options allow.
+    equal(layoutOf(m, opts, {}).pace.mode, "WIDE")
+    -- Deterministic.
+    for _ = 1, 3 do equal(layoutOf(m, opts, { timerWidth = 71 }).pace.mode, "COMPACT") end
+end)
+
+test("adaptive layout: forces split -> count -> compact count, large numbers never overflow", function()
+    local function forcesLayout(cur, total, width, opts)
+        local st = { timeLimit = 1920, forcesCurrent = cur, forcesTotal = total, forcesPercent = cur / total * 100 }
+        return layoutOf(TP.Build({ status = "RUNNING", state = st, elapsed = 600, constants = RATIOS }), opts or {},
+            { timerWidth = 114, forcesWidth = width }).forces
+    end
+    local fo = forcesLayout(1234, 1450, 191)
+    equal(fo.mode, "SPLIT"); equal(fo.primary, "1,234 / 1,450"); equal(fo.secondary, "faltan 216")
+    fo = forcesLayout(1234, 1450, 140)                         -- 78 + 12 + 60 = 150 > 140
+    equal(fo.mode, "PRIMARY"); equal(fo.primary, "1,234 / 1,450"); equal(fo.secondary, nil, "remaining goes before the count")
+    fo = forcesLayout(1234, 1450, 70)
+    equal(fo.mode, "PRIMARY_COMPACT"); equal(fo.primary, "1,234/1,450")
+    fo = forcesLayout(1234, 1450, 50)
+    equal(fo.mode, "TOO_NARROW"); equal(fo.primary, nil)
+    for _, width in ipairs({ 30, 60, 90, 120, 150, 191 }) do
+        local f2 = forcesLayout(1234, 1450, width)
+        local used = (f2.primary and glyphs(f2.primary) or 0) + (f2.secondary and (TP.SPLIT_GAP + glyphs(f2.secondary)) or 0)
+        truthy(used <= width, "forces fit in " .. width .. " px")
+    end
+    fo = forcesLayout(87, 100, 191, { showForcesCount = false })
+    equal(fo.mode, "SECONDARY"); equal(fo.secondary, "faltan 13")
+    -- No bar (Blizzard freed it): nothing.
+    equal(layoutOf(nalorakkModel(675, 329), {}, { timerWidth = 114 }).forces.mode, "NONE")
+end)
+
+test("adaptive layout: localized strings are measured, not assumed", function()
+    local original = TP.TEXT.REMAINING
+    TP.TEXT.REMAINING = "restantes por matar: %s"
+    local ok, err = pcall(function()
+        local st = { timeLimit = 1920, forcesCurrent = 329, forcesTotal = 729, forcesPercent = 329 / 729 * 100 }
+        local fo = layoutOf(TP.Build({ status = "RUNNING", state = st, elapsed = 675, constants = RATIOS }), {},
+            { timerWidth = 114, forcesWidth = 191 }).forces
+        equal(fo.mode, "PRIMARY", "longer translation no longer fits beside the count")
+    end)
+    TP.TEXT.REMAINING = original
+    if not ok then error(err, 0) end
+end)
+
+test("Angry Keystones: threshold deferred to it, pace kept, overtime shows no threshold", function()
+    local m = nalorakkModel(675, 329, 0, pred("+1", 30, false))
+    local lay = layoutOf(m, {}, { timerWidth = 80, deferThreshold = true })
+    equal(lay.threshold.mode, "DEFERRED"); equal(lay.threshold.text, nil); equal(lay.pace.mode, "STANDARD")
+    lay = layoutOf(m, {}, { timerWidth = 114, deferThreshold = false })
+    equal(lay.threshold.mode, "NEXT")
+    lay = layoutOf(nalorakkModel(1950, 729, 0, pred("FUERA", 99, true)), {}, { timerWidth = 114 })
+    equal(lay.threshold.mode, "OVERTIME"); equal(lay.threshold.text, nil)
+    equal(layoutOf(m, { showUpgradeTimes = false }, { timerWidth = 114 }).threshold.mode, "DISABLED")
 end)
 
 if #failures > 0 then error(string.format("TrackerPresenter: %d failures\n%s", #failures, table.concat(failures, "\n")), 0) end

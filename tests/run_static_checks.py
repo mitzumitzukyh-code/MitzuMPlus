@@ -234,6 +234,13 @@ def check_enhancer_safety(c):
     # Only Mitzu's own frames are re-parented.
     for receiver in re.findall(r"([\w\.]+)\s*:\s*SetParent\s*\(", code):
         c.check(receiver in ENHANCER_OWN_PARENTED, f"{name}: SetParent on a frame Mitzu does not own: {receiver}")
+    # dev.8: no second main timer (Blizzard's TimeLeft uses the Huge font) and
+    # the embedded model never re-writes the forces percentage under the bar.
+    c.check("Huge" not in code, f"{name}: a second big timer font in the enhancer")
+    presenter_src = read(ADDON / "modules" / "Tracker" / "TrackerPresenter.lua")
+    embedded = re.search(r"function TP\.BuildEmbedded\(.*?\nend\n", presenter_src, re.DOTALL)
+    c.check(embedded is not None and "percentText" not in embedded.group(0),
+            "TrackerPresenter.BuildEmbedded must not add a forces percentage (Blizzard/AK already show it)")
     for global_name in re.findall(r"rawget\(\s*_G\s*,\s*\"(\w+)\"", code):
         c.check(global_name in {"ScenarioObjectiveTracker", "hooksecurefunc", "CreateFrame"},
                 f"{name}: unexpected global read: {global_name}")

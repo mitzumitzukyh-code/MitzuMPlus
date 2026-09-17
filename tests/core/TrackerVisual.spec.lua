@@ -113,8 +113,16 @@ test("A: running key renders inside the Blizzard block and never as a floating H
         equal(EN.elements.forcesRoot:GetParent(), BT.block)
 
         local shown = EN._displayed
-        equal(shown.forces, "343 / 686 · 50.00% · faltan 343", "count, precise % (no Angry Keystones) and remaining")
-        truthy(shown.upgrade and shown.upgrade:find("^%+3 "), "nearest upgrade first: " .. tostring(shown.upgrade))
+        equal(shown.forces, "343 / 686  faltan 343", "count and remaining in two columns, no duplicated %")
+        equal(shown.forcesPrimary, "343 / 686"); equal(shown.forcesSecondary, "faltan 343"); equal(shown.forcesLayoutMode, "SPLIT")
+        truthy(shown.upgrade and shown.upgrade:find("^%+3 %d+:%d%d$"), "ONE threshold only: " .. tostring(shown.upgrade))
+        equal(shown.threshold, "+3"); equal(shown.thresholdMode, "NEXT")
+        truthy(not EN.elements.threshold:GetText():find("+2", 1, true), "never the three thresholds")
+        for _, key in ipairs({ "threshold", "pace", "paceExtra", "penalty" }) do
+            local text = EN.elements[key]:GetText() or ""
+            truthy(not text:find("Muertes", 1, true), "no duplicated death count in " .. key)
+        end
+        truthy(not (EN.elements.forcesPrimary:GetText() or ""):find("%%"), "no % under Blizzard's bar")
         truthy(shown.paceText and shown.paceText:find("RITMO", 1, true), tostring(shown.paceText))
         equal(shown.forcesBar, true)
         local d = MT:GetDisplayed()
@@ -130,7 +138,10 @@ test("A: running key renders inside the Blizzard block and never as a floating H
             "blizzardTrackerLoaded=true", "challengeBlockFound=true", "challengeBlockShown=true", "attached=true",
             "attachGeneration=1", "attachReason=ATTACHED", "attachmentHealthy=true", "trackerVisible=true",
             "floatingVisible=false", "upgradeTimesDisplayed=true", "forcesCountDisplayed=true",
-            "forcesRemainingDisplayed=true", "hooksInstalled=true", "lastRenderError=nil" }) do
+            "forcesRemainingDisplayed=true", "hooksInstalled=true", "lastRenderError=nil",
+            "thresholdDisplayed=+3", "thresholdTimeDisplayed=", "thresholdMode=NEXT", "paceDisplayed=RITMO",
+            "paceMode=", "forcesPrimaryDisplayed=343 / 686", "forcesSecondaryDisplayed=faltan 343",
+            "forcesLayoutMode=SPLIT", "availableWidth=", "angryKeystonesLoaded=false" }) do
             truthy(report:find(field, 1, true), field .. "\n" .. report)
         end
         truthy(report:find("sectionsFailed=none", 1, true), report)
@@ -157,7 +168,13 @@ test("B: preview uses the floating view, stays isolated and is refused during a 
         equal(MT:GetMode(), "PREVIEW"); equal(MT:GetRenderMode(), "PREVIEW_FLOATING")
         equal(floatingShown(MP), true); equal(MP.BlizzardTrackerEnhancer:IsVisible(), false)
         local d = MT:GetDisplayed()
-        equal(d.timer, "19:37"); equal(d.prediction, "+2"); equal(d.forces, "449 / 608 73.85%")
+        equal(d.timer, "19:37"); equal(d.prediction, "+2"); equal(d.forces, "449 / 608  faltan 159")
+        local r = MP.TrackerView.r
+        equal(r.threshold:GetText():match("%+3") ~= nil and r.threshold:GetText():find("6:25", 1, true) ~= nil, true,
+            "preview shows the single next threshold: " .. tostring(r.threshold:GetText()))
+        equal(r.forcesLabel:GetText(), "73%", "simulated Blizzard label keeps the integer %")
+        equal(r.penalty:GetText(), "-0:15"); equal(r.deathCount:GetText(), "3")
+        truthy(MP.TrackerView.WIDTH <= 280, "preview simulates the narrow tracker, not the dev.6 panel")
         env.WoW.advance(5)
         equal(engineCalls, 0); equal(TS:GetRevision(), before.revision); equal(TS._stats.refreshes, before.refreshes)
         equal(historyCount(MP), before.runs); equal(S.serialize(MP.db.global.activeRunSession), before.session)
@@ -290,12 +307,12 @@ test("forces line follows Blizzard's pooled bar and disappears at 100 %", functi
         equal(EN.elements.forcesRoot:IsShown(), false)
         BT.tracker.usedProgressBars.other = nil
         env.WoW.advance(1.1)
-        equal(EN._displayed.forces, "600 / 686 · 87.46% · faltan 86", "back to the single real bar")
+        equal(EN._displayed.forces, "600 / 686  faltan 86", "back to the single real bar")
         equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
     end)
 end)
 
-test("L: adaptive upgrade line uses the real space left by Blizzard's regions", function()
+test("L: single threshold follows the clock, penalty narrows the line, options remove lines", function()
     S.isolated(function()
         local env = S.boot({})
         installScenario()
@@ -303,30 +320,100 @@ test("L: adaptive upgrade line uses the real space left by Blizzard's regions", 
         local EN = MP.BlizzardTrackerEnhancer
         local BT = freshMock(); BT.install()
         runningKey(env, BT)
-        -- Mock font: 6 px per character. Block 251, TimeLeft "25:00" = 30 px:
-        -- available = 251 - 47 - 4 - (28 + 30 + 8) = 134 -> two thresholds fit (17 chars = 102 px), three do not.
+        -- Mock font: 6 px per glyph. Block 251, TimeLeft "25:00" = 30 px:
+        -- available = 251 - 47 - 4 - (28 + 30 + 8) = 134.
         equal(EN._displayed.available, 134)
-        local _, count = select(2, EN._displayed.upgrade:gsub("%+", ""))
-        equal(select(2, EN._displayed.upgrade:gsub("%+%d", "")), 2, EN._displayed.upgrade)
-        -- Deaths with published penalty: shown next to Blizzard's counter and the line narrows.
+        equal(EN._displayed.threshold, "+3")
+        -- +3 at 18:00 (limit 30:00): past it the next relevant one is +2, then +1.
+        env.WoW.advance(1090 - 305); BT.tick(1090); env.WoW.advance(1.1)
+        equal(EN._displayed.threshold, "+2"); truthy(EN._displayed.upgrade:find("^%+2 "), EN._displayed.upgrade)
+        env.WoW.advance(1450 - 1091); BT.tick(1450); env.WoW.advance(1.1)
+        equal(EN._displayed.threshold, "+1")
+        -- Deaths with published penalty: next to Blizzard's counter, line narrows.
+        local wide = EN._displayed.available
         BT.setDeaths(2)
         _G.C_ChallengeMode.GetDeathCount = function() return 2, 10 end
         env.WoW.fire("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
         env.WoW.advance(2)
         equal(EN._displayed.penalty, "-0:10")
-        equal(EN._displayed.available, 134 - (5 * 6 + 4))
-        equal(select(2, EN._displayed.upgrade:gsub("%+%d", "")), 1, "narrower: nearest threshold only")
+        equal(EN._displayed.available, wide - (5 * 6 + 4))
         equal(EN.elements.penalty.__points[1][2], BT.block.DeathCount)
-        -- Turning options off removes lines.
         MP.MitzuTracker:SetOption("showUpgradeTimes", false)
         MP.MitzuTracker:SetOption("showDeaths", false)
         MP.MitzuTracker:SetOption("showForcesRemaining", false)
-        equal(EN._displayed.upgrade, nil); equal(EN._displayed.penalty, nil)
-        equal(EN._displayed.forces, "343 / 686 · 50.00%")
+        equal(EN._displayed.upgrade, nil); equal(EN._displayed.thresholdMode, "DISABLED"); equal(EN._displayed.penalty, nil)
+        equal(EN._displayed.forces, "343 / 686"); equal(EN._displayed.forcesSecondary, nil)
+        MP.MitzuTracker:SetOption("showConfidence", false)
+        equal(EN._displayed.confidence, nil); equal(EN.elements.paceExtra:GetText(), "")
         MP.MitzuTracker:SetOption("showPrediction", false)
         equal(EN._displayed.paceText, nil); equal(MP.MitzuTracker:GetDisplayed().prediction, "NONE")
         equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))
+    end)
+end)
+
+test("narrow block: threshold kept before secondary data, never overflows", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install({ blockWidth = 190 })
+        runningKey(env, BT)
+        -- available = 190 - 47 - 4 - 66 = 73: "+3 20:00" (48) fits, "RITMO --" (48) fits without extras.
+        equal(EN._displayed.available, 73)
+        equal(EN._displayed.thresholdMode, "NEXT")
+        truthy(EN._displayed.paceMode == "COMPACT" or EN._displayed.paceMode == "STANDARD", tostring(EN._displayed.paceMode))
+        local BT2 = freshMock(); BT2.install({ blockWidth = 150 })   -- rebuilt narrower: 33 px
+        BT2.activate(310, 1800); BT2.setForces(true)
+        env.WoW.advance(1.1)
+        equal(EN._displayed.available, 33)
+        equal(EN._displayed.thresholdMode, "TOO_NARROW"); equal(EN._displayed.upgrade, nil)
+        equal(EN._displayed.paceText, nil, "no pace where the threshold does not fit")
+        equal(EN.elements.threshold:GetText(), ""); equal(EN.elements.pace:GetText(), "")
+        equal(#BT2.foreign, 0, table.concat(BT2.foreign, ","))
+    end)
+end)
+
+test("Angry Keystones loaded: Mitzu does not repeat its threshold and right-aligns the pace", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        env.WoW.addonsLoaded.AngryKeystones = true
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        equal(EN._displayed.angryKeystones, true); equal(EN._displayed.thresholdMode, "DEFERRED")
+        equal(EN._displayed.upgrade, nil); equal(EN.elements.threshold:GetText(), "")
+        truthy(EN._displayed.paceText, "pace still shown")
+        equal(EN.elements.paceExtra.__points[1][1], "TOPRIGHT", "pace anchored on the right, away from AK's text")
+        equal(EN._displayed.available, 134 - EN.LAYOUT.AK_RESERVE)
+        equal(EN._displayed.forces, "343 / 686  faltan 343", "never a second % over AK's precise label")
+        local report = MP.BugReport:Build()
+        truthy(report:find("angryKeystonesLoaded=true", 1, true)); truthy(report:find("thresholdMode=DEFERRED", 1, true))
+        equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
+    end)
+end)
+
+test("performance: same content is not re-measured or re-written", function()
+    S.isolated(function()
+        local env = S.boot({})
+        installScenario()
+        local MP = _G.MitzuMPlus
+        local EN = MP.BlizzardTrackerEnhancer
+        local BT = freshMock(); BT.install()
+        runningKey(env, BT)
+        local measured, written = 0, 0
+        for _, m in pairs(EN.elements.measure) do
+            local set = m.SetText
+            m.SetText = function(self, v) measured = measured + 1; return set(self, v) end
+        end
+        local set = EN.elements.forcesPrimary.SetText
+        EN.elements.forcesPrimary.SetText = function(self, v) written = written + 1; return set(self, v) end
+        local model, opts = EN._model, EN._opts
+        for _ = 1, 5 do EN:Render(model, opts, "TEST") end
+        equal(measured, 0, "cached widths"); equal(written, 0, "cached text")
     end)
 end)
 
@@ -399,7 +486,7 @@ test("F: /reload mid-key reattaches to the new Blizzard block with the same sess
         equal(MP.TrackerState:GetStatus(), "RUNNING"); equal(MP.TrackerState:GetSnapshot().recovered, true)
         local EN = MP.BlizzardTrackerEnhancer
         equal(EN:IsAttached(), true); equal(EN:IsVisible(), true); equal(floatingShown(MP), false)
-        equal(EN._displayed.forces, "343 / 686 · 50.00% · faltan 343")
+        equal(EN._displayed.forces, "343 / 686  faltan 343")
         local fails, detail = invariants(MP); equal(fails, 0, detail)
         equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
         equal(#env.errors + #env.WoW.errors, 0, errorsText(env))

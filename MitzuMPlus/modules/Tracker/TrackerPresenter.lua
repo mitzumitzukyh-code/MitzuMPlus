@@ -357,17 +357,23 @@ function TP.Build(input)
 end
 
 -- ---------------------------------------------------------------------------
--- MODELO INTEGRADO (1.1.0-dev.7)
+-- MODELO INTEGRADO (dev.7 arquitectura, dev.8 densidad y jerarquia)
 --
 -- Lo que el BlizzardTrackerEnhancer anade al bloque M+ nativo. Blizzard ya
--- pinta nombre, nivel, temporizador, jefes, barra de fuerzas y contador de
--- muertes: aqui solo va lo que Blizzard NO ensena. Cada linea llega como una
--- lista de candidatos de mas completo a mas corto; el enhancer elige con
--- TP.FitText el primero que cabe en el espacio real del bloque.
+-- pinta nombre, nivel, temporizador, jefes, barra de fuerzas (con su %) y
+-- contador de muertes: aqui solo va lo que Blizzard NO ensena, y poco.
+--
+-- Jerarquia (de mas a menos peso):
+--   1 TimeLeft (Blizzard)  2 proximo umbral  3 RITMO  4 fuerzas exactas
+--   5 fuerzas restantes    6 penalizacion    7 confianza  8 ETA
+-- Orden de sacrificio cuando falta espacio: ETA, confianza, restantes,
+-- recuento, ritmo. El umbral nunca cae antes que un dato secundario.
 -- ---------------------------------------------------------------------------
 
 TP.EMBEDDED_MODES = { PENDING = true, RUNNING = true, COMPLETING = true }
 TP.SEPARATOR = " · "
+TP.GAP = 6             -- px entre partes de una misma linea
+TP.SPLIT_GAP = 12      -- px minimos entre recuento y restantes
 
 -- Primer candidato cuyo ancho medido cabe. Determinista. Sin ancho conocido
 -- se elige el mas corto. Si ni el mas corto cabe, nada ("").
@@ -381,77 +387,144 @@ function TP.FitText(candidates, maxWidth, measure)
     return "", 0
 end
 
--- Umbrales vigentes, del mas cercano al mas lejano, recortando por el final:
--- { "+3 6:25  +2 13:01  +1 19:37", "+3 6:25  +2 13:01", "+3 6:25" }
-function TP.UpgradeCandidates(timer)
-    local live = {}
-    for _, seg in ipairs(type(timer) == "table" and timer.segments or {}) do
-        if seg.left and not seg.lost then live[#live + 1] = seg.code .. " " .. TP.FormatClock(seg.left) end
+-- El umbral que el reloj aun permite y esta mas cerca de perderse, con el
+-- margen que queda. Sale de los umbrales centralizados (TP.Thresholds via
+-- BuildTimer); aqui no hay matematica nueva. nil si no hay reloj, no hay
+-- umbrales o ya no queda ninguno (fuera de tiempo).
+--   { upgrade = "+3", time = 385 }
+function TP.GetNextRelevantUpgradeThreshold(model)
+    local m = type(model) == "table" and model or {}
+    local t = type(m.timer) == "table" and m.timer or m
+    if type(t.segments) ~= "table" or not t.elapsed then return nil end
+    for _, seg in ipairs(t.segments) do
+        if seg.left and not seg.lost then return { upgrade = seg.code, time = seg.left } end
     end
-    local out = {}
-    for n = #live, 1, -1 do out[#out + 1] = table.concat(live, "  ", 1, n) end
-    return out
-end
-
-local function addUnique(list, text)
-    if text and text ~= "" then
-        for _, v in ipairs(list) do if v == text then return end end
-        list[#list + 1] = text
-    end
+    return nil
 end
 
 function TP.BuildEmbedded(model, opts)
     local m = type(model) == "table" and model or {}
     local o = type(opts) == "table" and opts or {}
-    local e = { mode = m.mode, active = TP.EMBEDDED_MODES[m.mode] == true,
-                upgrade = {}, pace = {}, forces = {} }
+    -- `simulate`: la vista previa flotante reproduce el mismo contenido.
+    local e = { mode = m.mode, active = TP.EMBEDDED_MODES[m.mode] == true or (o.simulate == true and m.mode == "PREVIEW") }
     if not e.active then return e end
+    local running = m.mode ~= "PENDING"
 
     local t = m.timer or {}
     e.overtime = t.overtime == true
-    e.bracket = t.bracket
-    if o.showUpgradeTimes ~= false and m.mode ~= "PENDING" then
-        e.upgrade = TP.UpgradeCandidates(t)
+    e.thresholdEnabled = o.showUpgradeTimes ~= false
+    if e.thresholdEnabled and running then
+        local next = TP.GetNextRelevantUpgradeThreshold(m)
+        if next then
+            e.threshold = { upgrade = next.upgrade, time = next.time,
+                            timeText = TP.FormatClock(next.time) }
+            e.threshold.text = next.upgrade .. " " .. e.threshold.timeText
+        end
     end
 
     local p = m.prediction or {}
     e.paceCode, e.provisional = p.code or TP.NONE, p.provisional == true
-    if o.showPrediction ~= false and m.mode ~= "PENDING" then
+    if o.showPrediction ~= false and running then
         local code = (p.code and p.code ~= TP.NONE) and p.code or TP.TEXT.NO_VALUE
-        local base = TP.TEXT.PACE .. " " .. code
-        if p.confidenceText then addUnique(e.pace, base .. "  " .. p.confidenceText) end
-        addUnique(e.pace, base)
-        if code ~= TP.TEXT.NO_VALUE then addUnique(e.pace, code) end
+        e.paceLabel, e.paceValue = TP.TEXT.PACE, code
+        e.paceText = TP.TEXT.PACE .. " " .. code
+        if code ~= TP.TEXT.NO_VALUE then
+            -- Secundarios: solo con bracket del motor y con su opcion activa.
+            if o.showConfidence ~= false and p.confidence then e.confidenceText = string.format(TP.TEXT.CONFIDENCE, p.confidence) end
+            if o.showETA ~= false and p.eta then e.etaText = "~" .. TP.FormatClock(p.eta) end
+        end
     end
 
-    -- Fuerzas: la barra y el porcentaje entero son de Blizzard. Se anade el
-    -- recuento, lo que falta y, solo si nadie mas lo pinta, el % con decimales.
+    -- Fuerzas: la barra y su % son de Blizzard (o de Angry Keystones). Mitzu
+    -- anade el recuento exacto y lo que falta; nunca vuelve a escribir el %.
     local f = m.forces or {}
     if f.available and not f.complete then
-        local count = o.showForcesCount ~= false and f.countText or nil
-        local pct = o.preciseForcesPercent == true and f.percentText or nil
-        local rem = o.showForcesRemaining ~= false and f.remainingText or nil
-        local function join(...)
-            local parts = {}
-            for i = 1, select("#", ...) do
-                local v = select(i, ...)
-                if v then parts[#parts + 1] = v end
-            end
-            return table.concat(parts, TP.SEPARATOR)
+        if o.showForcesCount ~= false and f.current and f.total then
+            e.forcesPrimary = f.countText
+            e.forcesPrimaryCompact = TP.FormatCount(f.current) .. "/" .. TP.FormatCount(f.total)
         end
-        addUnique(e.forces, join(count, pct, rem))
-        addUnique(e.forces, join(count, rem))
-        addUnique(e.forces, join(count))
-        addUnique(e.forces, join(rem))
+        if o.showForcesRemaining ~= false then e.forcesSecondary = f.remainingText end
     end
 
-    -- Muertes: Blizzard ya ensena el numero; Mitzu anade el tiempo perdido
-    -- publicado (el reloj de Blizzard es tiempo restante: se muestra con "-").
+    -- Muertes: Blizzard ya ensena icono y numero; Mitzu solo el tiempo perdido
+    -- publicado (el reloj de Blizzard es tiempo restante: "-").
     local d = m.deaths or {}
     if o.showDeaths ~= false and d.count and d.count > 0 and d.timeLost and d.timeLost > 0 then
         e.penaltyText = "-" .. TP.FormatClock(d.timeLost)
     end
     return e
+end
+
+-- Decide que cabe. Puro y determinista.
+--   space.timerWidth   ancho a la derecha del temporizador de Blizzard
+--   space.forcesWidth  ancho de la barra de fuerzas de Blizzard (nil = sin barra)
+--   space.deferThreshold  otro addon (Angry Keystones) ya pinta el umbral ahi
+--   measure(text, kind)   kind: "threshold" | "pace" | "secondary" | "forces"
+function TP.LayoutEmbedded(emb, space, measure)
+    local e = type(emb) == "table" and emb or {}
+    local sp = type(space) == "table" and space or {}
+    local w = function(text, kind) return text and measure(text, kind) or 0 end
+    local out = { threshold = { mode = "NONE" }, pace = { mode = "NONE" }, forces = { mode = "NONE" } }
+    local tw = sp.timerWidth
+
+    -- 1. Umbral
+    local th = out.threshold
+    if not e.active then
+        th.mode = "NONE"
+    elseif not e.thresholdEnabled then
+        th.mode = "DISABLED"
+    elseif sp.deferThreshold then
+        th.mode = "DEFERRED"
+    elseif e.overtime then
+        th.mode = "OVERTIME"
+    elseif not e.threshold then
+        th.mode = "NONE"
+    elseif type(tw) == "number" and w(e.threshold.text, "threshold") > tw then
+        th.mode = "TOO_NARROW"
+    else
+        th.mode, th.text, th.upgrade, th.timeText = "NEXT", e.threshold.text, e.threshold.upgrade, e.threshold.timeText
+    end
+
+    -- 2. Ritmo (+ confianza + ETA). Si el umbral no cupo, el ritmo tampoco se
+    -- ensena: nunca un dato de menos prioridad donde falta el principal.
+    local pc = out.pace
+    if e.paceText and th.mode ~= "TOO_NARROW" then
+        local base = w(e.paceText, "pace")
+        local conf = e.confidenceText and (TP.GAP + w(e.confidenceText, "secondary")) or nil
+        local eta = e.etaText and (TP.GAP + w(e.etaText, "secondary")) or nil
+        local fits = function(x) return type(tw) ~= "number" or x <= tw end
+        if conf and eta and fits(base + conf + eta) then
+            pc.mode, pc.confidence, pc.eta = "WIDE", e.confidenceText, e.etaText
+        elseif conf and fits(base + conf) then
+            pc.mode, pc.confidence = "STANDARD", e.confidenceText
+        elseif (not conf) and eta and fits(base + eta) then
+            pc.mode, pc.eta = "STANDARD", e.etaText
+        elseif fits(base) then
+            pc.mode = "COMPACT"
+        else
+            pc.mode = "TOO_NARROW"
+        end
+        if pc.mode ~= "TOO_NARROW" then pc.text, pc.label, pc.value = e.paceText, e.paceLabel, e.paceValue end
+    end
+
+    -- 3. Fuerzas: "329 / 729      faltan 400" -> "329 / 729" -> "329/729".
+    local fo = out.forces
+    local fw = sp.forcesWidth
+    if type(fw) == "number" and (e.forcesPrimary or e.forcesSecondary) then
+        local p1, p2 = e.forcesPrimary, e.forcesSecondary
+        if p1 and p2 and w(p1, "forces") + TP.SPLIT_GAP + w(p2, "secondary") <= fw then
+            fo.mode, fo.primary, fo.secondary = "SPLIT", p1, p2
+        elseif p1 and w(p1, "forces") <= fw then
+            fo.mode, fo.primary = "PRIMARY", p1
+        elseif p1 and e.forcesPrimaryCompact and w(e.forcesPrimaryCompact, "forces") <= fw then
+            fo.mode, fo.primary = "PRIMARY_COMPACT", e.forcesPrimaryCompact
+        elseif not p1 and p2 and w(p2, "secondary") <= fw then
+            fo.mode, fo.secondary = "SECONDARY", p2
+        else
+            fo.mode = "TOO_NARROW"
+        end
+    end
+    return out
 end
 
 -- Datos de VISTA PREVIA: realistas (Reposo de los Reyes +12 al 74 %), solo
