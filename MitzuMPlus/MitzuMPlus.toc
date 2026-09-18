@@ -30,6 +30,9 @@ libs\AceSerializer-3.0\AceSerializer-3.0.xml
 # Localization
 Locales\enUS.lua
 Locales\esES.lua
+# Experimental locale extensions keep English/Spanish key parity isolated.
+Locales\enUS_Experimental.lua
+Locales\esES_Experimental.lua
 
 # Bootstrap / core
 Bootstrap.lua
@@ -65,8 +68,9 @@ modules\DungeonRegistry.lua
 modules\DungeonContext.lua
 # PartyProfiler: los cinco del grupo. Incluye PartyContext y SpecCache.
 modules\PartyProfiler.lua
-# Experimental lab: pure factual party-composition coverage for future LFG UI.
+# Experimental lab: factual party-composition coverage and read-only LFG hint.
 modules\Experimental\PartyNeeds.lua
+modules\Experimental\LFGCompositionHint.lua
 # RunSession: identidad persistente de la partida y recuperación tras /reload.
 modules\RunSession.lua
 modules\Validation.lua
