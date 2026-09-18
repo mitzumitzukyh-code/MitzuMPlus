@@ -11,6 +11,8 @@ MitzuMPlus.LFGCompositionHint = Hint
 local eventFrame
 local text
 local refreshPending = false
+local lastRenderedText
+local lastVisible = false
 
 local function ActiveListingExists()
     if not (C_LFGList and type(C_LFGList.GetActiveEntryInfo) == "function") then
@@ -79,19 +81,39 @@ function Hint:GetApplicantCoverageText(applicantID, memberIndex)
     return self:BuildApplicantCoverage(analyzer:Analyze(CollectParty()), applicant)
 end
 
+-- Keep the Blizzard-owned viewer as the source of layout truth. We only update
+-- our FontString when its semantic state actually changes, avoiding redundant
+-- SetText/Show/Hide churn during noisy LFG event bursts.
+function Hint:ApplyPresentation(value, visible)
+    if not text then return false end
+    value = type(value) == "string" and value or ""
+    visible = visible == true
+    local changed = false
+    if visible and value ~= lastRenderedText then
+        text:SetText(value)
+        lastRenderedText = value
+        changed = true
+    end
+    if visible ~= lastVisible then
+        if visible then text:Show() else text:Hide() end
+        lastVisible = visible
+        changed = true
+    end
+    return changed
+end
+
 function Hint:Refresh()
     if not text then return end
     if not ActiveListingExists() then
-        text:Hide()
+        self:ApplyPresentation("", false)
         return
     end
     local analyzer = MitzuMPlus.PartyNeeds
     if not (analyzer and type(analyzer.Analyze) == "function") then
-        text:Hide()
+        self:ApplyPresentation("", false)
         return
     end
-    text:SetText(self:BuildText(analyzer:Analyze(CollectParty())))
-    text:Show()
+    self:ApplyPresentation(self:BuildText(analyzer:Analyze(CollectParty())), true)
 end
 
 -- LFG can emit several applicant/list events in the same UI burst. Coalesce them
@@ -123,6 +145,8 @@ function Hint:TryAttach()
     text:SetWidth(390)
     text:SetWordWrap(false)
     text:Hide()
+    lastVisible = false
+    lastRenderedText = nil
     self:Refresh()
     return true
 end
