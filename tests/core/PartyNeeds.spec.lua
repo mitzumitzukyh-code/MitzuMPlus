@@ -22,6 +22,8 @@ local PartyNeeds = addon.PartyNeeds
 test("empty party exposes every factual need", function()
     local s = PartyNeeds:Analyze({})
     equal(s.size, 0)
+    equal(s.slotsOpen, 5)
+    equal(s.unknownRoles, 0)
     truthy(s.needTank)
     truthy(s.needHealer)
     equal(s.needDPS, 3)
@@ -35,6 +37,7 @@ test("class capability detects lust and battle rez", function()
         { role = "HEALER", classFile = "SHAMAN" },
         { role = "DAMAGER", classFile = "ROGUE" },
     })
+    equal(s.slotsOpen, 2)
     falsy(s.needTank)
     falsy(s.needHealer)
     equal(s.needDPS, 2)
@@ -45,9 +48,11 @@ end)
 test("unknown class and role never become positive signals", function()
     local s = PartyNeeds:Analyze({ { role = "NONE", classFile = "UNKNOWN" } })
     equal(s.size, 1)
+    equal(s.slotsOpen, 4)
+    equal(s.unknownRoles, 1)
     truthy(s.needTank)
     truthy(s.needHealer)
-    equal(s.needDPS, 3)
+    equal(s.needDPS, 2)
     truthy(s.needLust)
     truthy(s.needBattleRez)
 end)
@@ -67,9 +72,36 @@ test("applicant coverage reports only missing capabilities", function()
     falsy(add.battleRez)
 end)
 
+test("duplicate roles cannot advertise more dps seats than remain", function()
+    local s = PartyNeeds:Analyze({
+        { role = "TANK", classFile = "WARRIOR" },
+        { role = "TANK", classFile = "PALADIN" },
+        { role = "DAMAGER", classFile = "ROGUE" },
+        { role = "DAMAGER", classFile = "MONK" },
+    })
+    equal(s.slotsOpen, 1)
+    truthy(s.needHealer)
+    equal(s.needDPS, 0)
+end)
+
+test("full group never recommends an applicant even if utility is missing", function()
+    local s = PartyNeeds:Analyze({
+        { role = "TANK", classFile = "WARRIOR" },
+        { role = "HEALER", classFile = "PRIEST" },
+        { role = "DAMAGER", classFile = "ROGUE" },
+        { role = "DAMAGER", classFile = "MONK" },
+        { role = "DAMAGER", classFile = "DEMONHUNTER" },
+    })
+    equal(s.slotsOpen, 0)
+    equal(s.needDPS, 0)
+    local add = PartyNeeds:WouldAddCoverage(s, { role = "DAMAGER", classFile = "MAGE" })
+    falsy(add.dps)
+    falsy(add.lust)
+end)
+
 test("summary tokens remain language-neutral", function()
     local s = PartyNeeds:Analyze({ { role = "TANK", classFile = "WARRIOR" } })
-    equal(table.concat(PartyNeeds:SummaryTokens(s), ","), "HEALER,DPS:3,LUST,BREZ")
+    equal(table.concat(PartyNeeds:SummaryTokens(s), ","), "HEALER,DPS:2,LUST,BREZ")
 end)
 
 if #failures > 0 then
