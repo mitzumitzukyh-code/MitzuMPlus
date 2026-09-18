@@ -45,6 +45,39 @@ function Hint:BuildText(snapshot)
     return L["LFG_NEEDS_PREFIX"] .. ": " .. table.concat(needs, "  -  ")
 end
 
+function Hint:BuildApplicantCoverage(snapshot, applicant)
+    local analyzer = MitzuMPlus.PartyNeeds
+    if not (analyzer and type(analyzer.WouldAddCoverage) == "function") then return "" end
+    local coverage = analyzer:WouldAddCoverage(snapshot, applicant)
+    local labels = {}
+    if coverage.tank then labels[#labels + 1] = L["LFG_COV_TANK"] end
+    if coverage.healer then labels[#labels + 1] = L["LFG_COV_HEALER"] end
+    if coverage.dps then labels[#labels + 1] = L["LFG_COV_DPS"] end
+    if coverage.lust then labels[#labels + 1] = L["LFG_COV_LUST"] end
+    if coverage.battleRez then labels[#labels + 1] = L["LFG_COV_BREZ"] end
+    if #labels == 0 then return "" end
+    return L["LFG_APPLICANT_COVERS"] .. ": " .. table.concat(labels, "  -  ")
+end
+
+function Hint:ReadApplicantMember(applicantID, memberIndex)
+    if not (C_LFGList and type(C_LFGList.GetApplicantMemberInfo) == "function") then return nil end
+    local ok, _, classFile, _, _, _, _, tank, healer, damage, _, _, _, _, _, specID = pcall(C_LFGList.GetApplicantMemberInfo, applicantID, memberIndex or 1)
+    if not ok then return nil end
+    local role
+    if tank then role = "TANK"
+    elseif healer then role = "HEALER"
+    elseif damage then role = "DAMAGER" end
+    return { classFile = classFile, role = role, specID = specID }
+end
+
+function Hint:GetApplicantCoverageText(applicantID, memberIndex)
+    local applicant = self:ReadApplicantMember(applicantID, memberIndex)
+    if not applicant then return "" end
+    local analyzer = MitzuMPlus.PartyNeeds
+    if not (analyzer and type(analyzer.Analyze) == "function") then return "" end
+    return self:BuildApplicantCoverage(analyzer:Analyze(CollectParty()), applicant)
+end
+
 function Hint:Refresh()
     if not text then return end
     if not ActiveListingExists() then
@@ -82,6 +115,8 @@ function Hint:Initialize()
     eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+    eventFrame:RegisterEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
+    eventFrame:RegisterEvent("LFG_LIST_APPLICANT_UPDATED")
     eventFrame:SetScript("OnEvent", function(_, event, loadedName)
         if event == "ADDON_LOADED" and loadedName ~= "Blizzard_GroupFinder" then return end
         if Hint:TryAttach() then Hint:Refresh() end
