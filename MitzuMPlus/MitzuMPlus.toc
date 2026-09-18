@@ -65,6 +65,8 @@ modules\DungeonRegistry.lua
 modules\DungeonContext.lua
 # PartyProfiler: los cinco del grupo. Incluye PartyContext y SpecCache.
 modules\PartyProfiler.lua
+# Experimental lab: pure factual party-composition coverage for future LFG UI.
+modules\Experimental\PartyNeeds.lua
 # RunSession: identidad persistente de la partida y recuperación tras /reload.
 modules\RunSession.lua
 modules\Validation.lua
