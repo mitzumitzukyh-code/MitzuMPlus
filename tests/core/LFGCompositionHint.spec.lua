@@ -12,16 +12,22 @@ end
 
 local addon = {}
 local locale = {
-    TANK = "Tank", HEALER = "Healer",
     LFG_NEEDS_PREFIX = "Party needs",
     LFG_COVERAGE_READY = "Core coverage ready",
+    LFG_NEED_TANK = "Tank",
+    LFG_NEED_HEALER = "Healer",
     LFG_NEED_LUST = "Bloodlust",
     LFG_NEED_BREZ = "Battle rez",
     LFG_NEED_DPS_N = "DPS x%d",
 }
 _G.LibStub = function(name)
     if name == "AceAddon-3.0" then return { GetAddon = function() return addon end } end
-    if name == "AceLocale-3.0" then return { GetLocale = function() return locale end } end
+    if name == "AceLocale-3.0" then
+        return { GetLocale = function(namespace)
+            equal(namespace, "MitzuMPlusExperimental", "locale namespace")
+            return locale
+        end }
+    end
     error("unexpected library " .. tostring(name))
 end
 _G.CreateFrame = function()
@@ -73,7 +79,7 @@ test("experimental English and Spanish locale keys have exact parity", function(
     for key in pairs(en) do countEn = countEn + 1; truthy(es[key], "missing esES key " .. key) end
     for key in pairs(es) do countEs = countEs + 1; truthy(en[key], "missing enUS key " .. key) end
     equal(countEn, countEs, "locale key count")
-    equal(countEn, 5, "expected experimental key count")
+    equal(countEn, 7, "expected experimental key count")
 end)
 
 if #failures > 0 then
