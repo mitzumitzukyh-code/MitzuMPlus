@@ -114,6 +114,40 @@ test("event bursts coalesce into one next-frame refresh", function()
     _G.C_Timer = nil
 end)
 
+test("presentation cache skips redundant UI writes", function()
+    local calls = { set = 0, show = 0, hide = 0 }
+    _G.LFGListFrame = { ApplicationViewer = {
+        CreateFontString = function()
+            return {
+                SetPoint = function() end,
+                SetJustifyH = function() end,
+                SetWidth = function() end,
+                SetWordWrap = function() end,
+                SetText = function(_, value) calls.set = calls.set + 1; calls.value = value end,
+                Show = function() calls.show = calls.show + 1 end,
+                Hide = function() calls.hide = calls.hide + 1 end,
+            }
+        end,
+    } }
+    _G.C_LFGList = { GetActiveEntryInfo = function() return nil end }
+    truthy(Hint:TryAttach(), "font string attaches")
+    equal(calls.hide, 1, "initial construction hide only")
+    equal(Hint:ApplyPresentation("Party needs: Tank", true), true, "first visible state changes")
+    equal(calls.set, 1, "first text write")
+    equal(calls.show, 1, "first show")
+    equal(Hint:ApplyPresentation("Party needs: Tank", true), false, "identical state is cached")
+    equal(calls.set, 1, "no duplicate text write")
+    equal(calls.show, 1, "no duplicate show")
+    equal(Hint:ApplyPresentation("Party needs: Healer", true), true, "changed text writes")
+    equal(calls.set, 2, "second semantic text write")
+    equal(Hint:ApplyPresentation("", false), true, "hide changes state")
+    equal(calls.hide, 2, "one semantic hide after construction")
+    equal(Hint:ApplyPresentation("", false), false, "duplicate hide cached")
+    equal(calls.hide, 2, "no duplicate hide")
+    _G.C_LFGList = nil
+    _G.LFGListFrame = nil
+end)
+
 local function read(path)
     local f = assert(io.open(path, "rb"))
     local s = f:read("*a")
