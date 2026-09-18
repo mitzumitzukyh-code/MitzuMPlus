@@ -19,6 +19,12 @@ local locale = {
     LFG_NEED_LUST = "Bloodlust",
     LFG_NEED_BREZ = "Battle rez",
     LFG_NEED_DPS_N = "DPS x%d",
+    LFG_APPLICANT_COVERS = "Covers",
+    LFG_COV_TANK = "tank seat",
+    LFG_COV_HEALER = "healer seat",
+    LFG_COV_DPS = "DPS seat",
+    LFG_COV_LUST = "Bloodlust",
+    LFG_COV_BREZ = "battle rez",
 }
 _G.LibStub = function(name)
     if name == "AceAddon-3.0" then return { GetAddon = function() return addon end } end
@@ -39,6 +45,7 @@ end
 _G.C_LFGList = nil
 _G.LFGListFrame = nil
 
+dofile("MitzuMPlus/modules/Experimental/PartyNeeds.lua")
 dofile("MitzuMPlus/modules/Experimental/LFGCompositionHint.lua")
 local Hint = addon.LFGCompositionHint
 
@@ -54,6 +61,30 @@ test("complete composition uses localized ready state", function()
         needTank = false, needHealer = false, needDPS = 0,
         needLust = false, needBattleRez = false,
     }), "Core coverage ready")
+end)
+
+test("applicant coverage stays factual and localized", function()
+    local snapshot = addon.PartyNeeds:Analyze({
+        { classFile = "WARRIOR", role = "TANK" },
+        { classFile = "PRIEST", role = "HEALER" },
+        { classFile = "ROGUE", role = "DAMAGER" },
+        { classFile = "MONK", role = "DAMAGER" },
+    })
+    equal(Hint:BuildApplicantCoverage(snapshot, { classFile = "SHAMAN", role = "DAMAGER" }),
+        "Covers: DPS seat  -  Bloodlust")
+    equal(Hint:BuildApplicantCoverage(snapshot, { classFile = "PALADIN", role = "DAMAGER" }),
+        "Covers: DPS seat  -  battle rez")
+end)
+
+test("full party never recommends applicant coverage", function()
+    local snapshot = addon.PartyNeeds:Analyze({
+        { classFile = "WARRIOR", role = "TANK" },
+        { classFile = "PRIEST", role = "HEALER" },
+        { classFile = "ROGUE", role = "DAMAGER" },
+        { classFile = "MONK", role = "DAMAGER" },
+        { classFile = "WARRIOR", role = "DAMAGER" },
+    })
+    equal(Hint:BuildApplicantCoverage(snapshot, { classFile = "SHAMAN", role = "DAMAGER" }), "")
 end)
 
 test("invalid snapshot produces no visible text", function()
@@ -79,7 +110,7 @@ test("experimental English and Spanish locale keys have exact parity", function(
     for key in pairs(en) do countEn = countEn + 1; truthy(es[key], "missing esES key " .. key) end
     for key in pairs(es) do countEs = countEs + 1; truthy(en[key], "missing enUS key " .. key) end
     equal(countEn, countEs, "locale key count")
-    equal(countEn, 7, "expected experimental key count")
+    equal(countEn, 13, "expected experimental key count")
 end)
 
 if #failures > 0 then
