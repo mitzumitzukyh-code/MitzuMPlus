@@ -73,7 +73,6 @@ test("summary tokens remain language-neutral", function()
 end)
 
 if #failures > 0 then
-    error(table.concat(failures, "\n"))
+    error(string.format("PartyNeeds: %d failures\n%s", #failures, table.concat(failures, "\n")), 0)
 end
-
-print(string.format("PartyNeeds.spec: %d tests / %d assertions", tests, assertions))
+return { tests = tests, assertions = assertions }
