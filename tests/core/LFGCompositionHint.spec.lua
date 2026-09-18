@@ -91,6 +91,29 @@ test("invalid snapshot produces no visible text", function()
     equal(Hint:BuildText(nil), "")
 end)
 
+test("event bursts coalesce into one next-frame refresh", function()
+    local callbacks = {}
+    _G.C_Timer = { After = function(delay, callback)
+        equal(delay, 0, "next-frame delay")
+        callbacks[#callbacks + 1] = callback
+    end }
+    local refreshes = 0
+    local originalRefresh = Hint.Refresh
+    Hint.Refresh = function() refreshes = refreshes + 1 end
+    equal(Hint:ScheduleRefresh(), true, "first event schedules")
+    equal(Hint:ScheduleRefresh(), false, "second event coalesces")
+    equal(Hint:ScheduleRefresh(), false, "third event coalesces")
+    equal(#callbacks, 1, "one timer callback")
+    equal(refreshes, 0, "not refreshed before next frame")
+    callbacks[1]()
+    equal(refreshes, 1, "one refresh after burst")
+    equal(Hint:ScheduleRefresh(), true, "later burst can schedule")
+    equal(#callbacks, 2, "second burst gets new callback")
+    callbacks[2]()
+    Hint.Refresh = originalRefresh
+    _G.C_Timer = nil
+end)
+
 local function read(path)
     local f = assert(io.open(path, "rb"))
     local s = f:read("*a")
