@@ -1,75 +1,79 @@
-local T = require("tests.harness.test")
-local Loader = require("tests.harness.addon_loader")
+local tests, assertions, failures = 0, 0, {}
+local function equal(a, b, label)
+    assertions = assertions + 1
+    if a ~= b then error((label or "equal") .. ": " .. tostring(a) .. " ~= " .. tostring(b), 2) end
+end
+local function truthy(v, label) equal(not not v, true, label) end
+local function falsy(v, label) equal(not not v, false, label) end
+local function test(name, fn)
+    tests = tests + 1
+    local ok, err = pcall(fn)
+    if not ok then failures[#failures + 1] = name .. ": " .. tostring(err) end
+end
 
-T.describe("PartyNeeds", function()
-    local addon
+local addon = {}
+_G.LibStub = function()
+    return { GetAddon = function() return addon end }
+end
 
-    T.before_each(function()
-        addon = Loader.load({
-            "MitzuMPlus/modules/Experimental/PartyNeeds.lua",
-        })
-    end)
+dofile("MitzuMPlus/modules/Experimental/PartyNeeds.lua")
+local PartyNeeds = addon.PartyNeeds
 
-    T.it("detects empty-party needs without inventing coverage", function()
-        local s = addon.PartyNeeds:Analyze({})
-        T.eq(s.size, 0)
-        T.truthy(s.needTank)
-        T.truthy(s.needHealer)
-        T.eq(s.needDPS, 3)
-        T.truthy(s.needLust)
-        T.truthy(s.needBattleRez)
-    end)
-
-    T.it("detects lust and battle rez conservatively from class capability", function()
-        local s = addon.PartyNeeds:Analyze({
-            { role = "TANK", classFile = "PALADIN" },
-            { role = "HEALER", classFile = "SHAMAN" },
-            { role = "DAMAGER", classFile = "ROGUE" },
-        })
-        T.falsy(s.needTank)
-        T.falsy(s.needHealer)
-        T.eq(s.needDPS, 2)
-        T.falsy(s.needLust)
-        T.falsy(s.needBattleRez)
-    end)
-
-    T.it("does not treat unknown class or role as a positive signal", function()
-        local s = addon.PartyNeeds:Analyze({
-            { role = "NONE", classFile = "UNKNOWN" },
-        })
-        T.eq(s.size, 1)
-        T.truthy(s.needTank)
-        T.truthy(s.needHealer)
-        T.eq(s.needDPS, 3)
-        T.truthy(s.needLust)
-        T.truthy(s.needBattleRez)
-    end)
-
-    T.it("reports only coverage an applicant would actually add", function()
-        local s = addon.PartyNeeds:Analyze({
-            { role = "TANK", classFile = "WARRIOR" },
-            { role = "HEALER", classFile = "PRIEST" },
-            { role = "DAMAGER", classFile = "ROGUE" },
-            { role = "DAMAGER", classFile = "MONK" },
-        })
-        local add = addon.PartyNeeds:WouldAddCoverage(s, {
-            role = "DAMAGER",
-            classFile = "MAGE",
-        })
-        T.falsy(add.tank)
-        T.falsy(add.healer)
-        T.truthy(add.dps)
-        T.truthy(add.lust)
-        T.falsy(add.battleRez)
-    end)
-
-    T.it("keeps summary tokens language-neutral for the presenter", function()
-        local s = addon.PartyNeeds:Analyze({
-            { role = "TANK", classFile = "WARRIOR" },
-        })
-        local tokens = addon.PartyNeeds:SummaryTokens(s)
-        T.eq(table.concat(tokens, ","), "HEALER,DPS:3,LUST,BREZ")
-    end)
+test("empty party exposes every factual need", function()
+    local s = PartyNeeds:Analyze({})
+    equal(s.size, 0)
+    truthy(s.needTank)
+    truthy(s.needHealer)
+    equal(s.needDPS, 3)
+    truthy(s.needLust)
+    truthy(s.needBattleRez)
 end)
 
-return T
+test("class capability detects lust and battle rez", function()
+    local s = PartyNeeds:Analyze({
+        { role = "TANK", classFile = "PALADIN" },
+        { role = "HEALER", classFile = "SHAMAN" },
+        { role = "DAMAGER", classFile = "ROGUE" },
+    })
+    falsy(s.needTank)
+    falsy(s.needHealer)
+    equal(s.needDPS, 2)
+    falsy(s.needLust)
+    falsy(s.needBattleRez)
+end)
+
+test("unknown class and role never become positive signals", function()
+    local s = PartyNeeds:Analyze({ { role = "NONE", classFile = "UNKNOWN" } })
+    equal(s.size, 1)
+    truthy(s.needTank)
+    truthy(s.needHealer)
+    equal(s.needDPS, 3)
+    truthy(s.needLust)
+    truthy(s.needBattleRez)
+end)
+
+test("applicant coverage reports only missing capabilities", function()
+    local s = PartyNeeds:Analyze({
+        { role = "TANK", classFile = "WARRIOR" },
+        { role = "HEALER", classFile = "PRIEST" },
+        { role = "DAMAGER", classFile = "ROGUE" },
+        { role = "DAMAGER", classFile = "MONK" },
+    })
+    local add = PartyNeeds:WouldAddCoverage(s, { role = "DAMAGER", classFile = "MAGE" })
+    falsy(add.tank)
+    falsy(add.healer)
+    truthy(add.dps)
+    truthy(add.lust)
+    falsy(add.battleRez)
+end)
+
+test("summary tokens remain language-neutral", function()
+    local s = PartyNeeds:Analyze({ { role = "TANK", classFile = "WARRIOR" } })
+    equal(table.concat(PartyNeeds:SummaryTokens(s), ","), "HEALER,DPS:3,LUST,BREZ")
+end)
+
+if #failures > 0 then
+    error(table.concat(failures, "\n"))
+end
+
+print(string.format("PartyNeeds.spec: %d tests / %d assertions", tests, assertions))
