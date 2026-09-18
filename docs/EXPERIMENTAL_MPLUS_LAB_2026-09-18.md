@@ -123,6 +123,37 @@ Class-level capability is deliberately conservative. It means “this class can 
 
 Added `tests/core/PartyNeeds.spec.lua` covering empty groups, complete role/utility detection, unknown data fail-closed behavior, candidate delta coverage and language-neutral summary tokens. No user-visible strings were introduced in this iteration, so enUS/esES key parity is unchanged.
 
+## Fresh evidence — iteration 2
+
+Public sources checked on 2026-09-18 show the composition problem is still active in Midnight Season 2:
+
+- A high-engagement r/wow thread describes leaders receiving very large DPS applicant queues and explicitly filling missing Bloodlust or battle resurrection first.
+- Current addons NZT Group, LFGBuddy, OAK LFG Sorter and KIC LFG Sorter all expose some form of role/utility composition context. This confirms demand, but most solutions either add a full filter panel or replace/re-sort significant parts of the applicant workflow.
+- PremadeGroupsQOL documents a deliberately narrow compatibility strategy: post-hook Blizzard presentation code and avoid the secure listing path. Its repository is MIT. Source inspection of `ApplicationViewer.lua` confirms a current pattern of post-hooking Blizzard applicant presentation rather than replacing protected actions. Mitzu uses that only as architectural evidence; no source was copied.
+- LFM+ still lists player-history memory and utility filtering as desired/WIP functionality, reinforcing Mitzu's planned local-history differentiator.
+
+### Implemented in iteration 2: localized, read-only Party Needs hint
+
+Added `modules/Experimental/LFGCompositionHint.lua` plus isolated experimental locale extensions.
+
+Behavior:
+- attaches one addon-owned FontString to Blizzard's applicant viewer only after that UI exists;
+- appears only while the player has an active LFG listing;
+- reads the current party through `UnitExists`, `UnitClassBase`/`UnitClass` and `UnitGroupRolesAssigned`;
+- delegates all composition decisions to the pure `PartyNeeds` engine;
+- shows missing Tank/Healer/DPS slots plus class-level Bloodlust/Battle Rez coverage in one compact line;
+- refreshes only on bounded events (`ADDON_LOADED`, `GROUP_ROSTER_UPDATE`, `PLAYER_ENTERING_WORLD`, `LFG_LIST_ACTIVE_ENTRY_UPDATE`);
+- never filters, sorts, invites, declines, auto-starts, calls protected listing actions, or installs an `OnUpdate` loop;
+- fails closed if the Blizzard frame, active-entry API or PartyNeeds engine is unavailable.
+
+Localization:
+- English remains the base/default locale;
+- Spanish has exact key parity in `esES_Experimental.lua`;
+- all visible feature text comes from AceLocale keys; dungeon/class names remain Blizzard-owned where applicable;
+- `LFGCompositionHint.spec.lua` includes an explicit enUS/esES experimental-key parity gate.
+
+Testing note: the new pure presenter tests are wired into the repository's automatic `tests/core/*.spec.lua` discovery. The automation environment used for this iteration does not contain the repository's Lupa dependency or a Lua interpreter, and outbound git clone is unavailable, so the full suite could not be executed here. This is recorded as an environment limitation, not reported as a passing test. Final packaging must run the repository suite before the ZIP is accepted.
+
 ## Candidate experimental modules
 
 ### 1. KeystoneQuickActions
