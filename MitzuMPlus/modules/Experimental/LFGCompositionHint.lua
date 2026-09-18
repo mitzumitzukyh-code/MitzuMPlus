@@ -3,7 +3,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
-local L = LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME)
+local L = LibStub("AceLocale-3.0"):GetLocale("MitzuMPlusExperimental")
 
 local Hint = {}
 MitzuMPlus.LFGCompositionHint = Hint
@@ -35,8 +35,8 @@ end
 function Hint:BuildText(snapshot)
     if type(snapshot) ~= "table" then return "" end
     local needs = {}
-    if snapshot.needTank then needs[#needs + 1] = L["TANK"] end
-    if snapshot.needHealer then needs[#needs + 1] = L["HEALER"] end
+    if snapshot.needTank then needs[#needs + 1] = L["LFG_NEED_TANK"] end
+    if snapshot.needHealer then needs[#needs + 1] = L["LFG_NEED_HEALER"] end
     local dps = tonumber(snapshot.needDPS) or 0
     if dps > 0 then needs[#needs + 1] = L["LFG_NEED_DPS_N"]:format(dps) end
     if snapshot.needLust then needs[#needs + 1] = L["LFG_NEED_LUST"] end
