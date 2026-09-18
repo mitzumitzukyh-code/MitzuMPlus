@@ -96,6 +96,33 @@ Engineering consequence:
 - protected actions remain user-initiated;
 - compatibility mode when Raider.IO/other UI enhancers are present.
 
+## Fresh evidence — iteration 1
+
+Public sources checked on 2026-09-18 reinforce the same narrow opportunity rather than a full LFG replacement:
+
+- A current Reddit M+ thread recommends filtering for leaders near the player's own rating and groups that still need the player's role, showing that the scanning problem is primarily contextual rather than a need for automatic applicant decisions.
+- NZT Group exposes filters for role, Bloodlust and battle resurrection and explicitly stays read-only/local; this validates utility coverage as a useful factual signal. Its project is MIT, but Mitzu did not copy its implementation.
+- LFG Mythic+ describes a companion panel centered on live party composition and missing utility, independently validating the same demand.
+- OAK LFG Sorter's current changelog emphasizes combat-safe disabling of protected actions and explanatory tooltips. Its code/license is treated as reference-only; no source is copied.
+- CompMatcher now advises compositions from external meta data. Mitzu intentionally does not follow that direction: Party Needs reports capabilities only and avoids meta/spec ranking.
+
+### Implemented in iteration 1: pure PartyNeeds engine
+
+Added `modules/Experimental/PartyNeeds.lua`, loaded after `PartyProfiler`.
+
+The module:
+- accepts normalized party/applicant records rather than reading or writing LFG itself;
+- counts Tank/Healer/DPS slots;
+- reports class-level Bloodlust and battle-resurrection coverage conservatively;
+- reports which currently missing capabilities a candidate would add;
+- emits language-neutral tokens for a later localized presenter;
+- never ranks players, auto-invites, auto-declines or touches protected frames;
+- has no OnUpdate loop and no SavedVariables footprint.
+
+Class-level capability is deliberately conservative. It means “this class can provide this group utility”, not “this character has the relevant talent/pet configured right now”. The eventual UI must label it accordingly and must not overstate certainty.
+
+Added `tests/core/PartyNeeds.spec.lua` covering empty groups, complete role/utility detection, unknown data fail-closed behavior, candidate delta coverage and language-neutral summary tokens. No user-visible strings were introduced in this iteration, so enUS/esES key parity is unchanged.
+
 ## Candidate experimental modules
 
 ### 1. KeystoneQuickActions
