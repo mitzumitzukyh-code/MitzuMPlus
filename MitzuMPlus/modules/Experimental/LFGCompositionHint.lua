@@ -10,6 +10,7 @@ MitzuMPlus.LFGCompositionHint = Hint
 
 local eventFrame
 local text
+local refreshPending = false
 
 local function ActiveListingExists()
     if not (C_LFGList and type(C_LFGList.GetActiveEntryInfo) == "function") then
@@ -93,6 +94,24 @@ function Hint:Refresh()
     text:Show()
 end
 
+-- LFG can emit several applicant/list events in the same UI burst. Coalesce them
+-- into one next-frame refresh so Mitzu stays event-driven without repeatedly
+-- rebuilding the same five-member party snapshot.
+function Hint:ScheduleRefresh()
+    if refreshPending then return false end
+    refreshPending = true
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(0, function()
+            refreshPending = false
+            Hint:Refresh()
+        end)
+    else
+        refreshPending = false
+        self:Refresh()
+    end
+    return true
+end
+
 function Hint:TryAttach()
     if text then return true end
     local viewer = _G.LFGListFrame and _G.LFGListFrame.ApplicationViewer
@@ -119,7 +138,7 @@ function Hint:Initialize()
     eventFrame:RegisterEvent("LFG_LIST_APPLICANT_UPDATED")
     eventFrame:SetScript("OnEvent", function(_, event, loadedName)
         if event == "ADDON_LOADED" and loadedName ~= "Blizzard_GroupFinder" then return end
-        if Hint:TryAttach() then Hint:Refresh() end
+        if Hint:TryAttach() then Hint:ScheduleRefresh() end
     end)
     self:TryAttach()
 end
