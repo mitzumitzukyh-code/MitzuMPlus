@@ -27,8 +27,6 @@ local BATTLE_REZ_CLASSES = {
 local function NormalizeClass(classFile)
     if type(classFile) ~= "string" then return nil end
     local value = classFile:upper():gsub("[^A-Z]", "")
-    if value == "DEATHKNIGHT" then return value end
-    if value == "DEMONHUNTER" then return value end
     return value ~= "" and value or nil
 end
 
@@ -52,6 +50,8 @@ end
 function PartyNeeds:Analyze(members)
     local result = {
         size = 0,
+        slotsOpen = 5,
+        unknownRoles = 0,
         roles = { TANK = 0, HEALER = 0, DAMAGER = 0 },
         hasLust = false,
         hasBattleRez = false,
@@ -70,7 +70,11 @@ function PartyNeeds:Analyze(members)
         if type(member) == "table" then
             result.size = result.size + 1
             local role = NormalizeRole(member.role)
-            if role then result.roles[role] = result.roles[role] + 1 end
+            if role then
+                result.roles[role] = result.roles[role] + 1
+            else
+                result.unknownRoles = result.unknownRoles + 1
+            end
 
             local utility = self:ClassProvides(member.classFile or member.class)
             result.hasLust = result.hasLust or utility.lust
@@ -78,9 +82,20 @@ function PartyNeeds:Analyze(members)
         end
     end
 
+    result.slotsOpen = math.max(0, 5 - result.size)
     result.needTank = result.roles.TANK < 1
     result.needHealer = result.roles.HEALER < 1
-    result.needDPS = math.max(0, 3 - result.roles.DAMAGER)
+
+    -- DPS demand must never exceed the number of seats left after reserving
+    -- seats for a missing tank/healer. This keeps the hint actionable for odd
+    -- compositions (duplicate roles, role NONE, or a full group).
+    local reserved = (result.needTank and 1 or 0) + (result.needHealer and 1 or 0)
+    local dpsSeats = math.max(0, result.slotsOpen - reserved)
+    result.needDPS = math.min(math.max(0, 3 - result.roles.DAMAGER), dpsSeats)
+
+    -- Utility remains factual even when no seat is open: it describes current
+    -- coverage. WouldAddCoverage below separately refuses to recommend an
+    -- applicant when the party is already full.
     result.needLust = not result.hasLust
     result.needBattleRez = not result.hasBattleRez
     return result
@@ -91,13 +106,14 @@ function PartyNeeds:WouldAddCoverage(snapshot, applicant)
     applicant = type(applicant) == "table" and applicant or {}
     local role = NormalizeRole(applicant.role)
     local utility = self:ClassProvides(applicant.classFile or applicant.class)
+    local hasSeat = (tonumber(snapshot.slotsOpen) or 0) > 0
 
     return {
-        tank = snapshot.needTank == true and role == "TANK",
-        healer = snapshot.needHealer == true and role == "HEALER",
-        dps = (tonumber(snapshot.needDPS) or 0) > 0 and role == "DAMAGER",
-        lust = snapshot.needLust == true and utility.lust,
-        battleRez = snapshot.needBattleRez == true and utility.battleRez,
+        tank = hasSeat and snapshot.needTank == true and role == "TANK",
+        healer = hasSeat and snapshot.needHealer == true and role == "HEALER",
+        dps = hasSeat and (tonumber(snapshot.needDPS) or 0) > 0 and role == "DAMAGER",
+        lust = hasSeat and snapshot.needLust == true and utility.lust,
+        battleRez = hasSeat and snapshot.needBattleRez == true and utility.battleRez,
     }
 end
 
