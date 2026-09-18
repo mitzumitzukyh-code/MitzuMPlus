@@ -3,6 +3,7 @@ local function equal(a, b, label)
     assertions = assertions + 1
     if a ~= b then error((label or "equal") .. ": " .. tostring(a) .. " ~= " .. tostring(b), 2) end
 end
+local function truthy(v, label) equal(not not v, true, label) end
 local function test(name, fn)
     tests = tests + 1
     local ok, err = pcall(fn)
@@ -51,6 +52,28 @@ end)
 
 test("invalid snapshot produces no visible text", function()
     equal(Hint:BuildText(nil), "")
+end)
+
+local function read(path)
+    local f = assert(io.open(path, "rb"))
+    local s = f:read("*a")
+    f:close()
+    return s
+end
+local function keys(source)
+    local out = {}
+    for key in source:gmatch('L%["([A-Z0-9_]+)"%]%s*=') do out[key] = true end
+    return out
+end
+
+test("experimental English and Spanish locale keys have exact parity", function()
+    local en = keys(read("MitzuMPlus/Locales/enUS_Experimental.lua"))
+    local es = keys(read("MitzuMPlus/Locales/esES_Experimental.lua"))
+    local countEn, countEs = 0, 0
+    for key in pairs(en) do countEn = countEn + 1; truthy(es[key], "missing esES key " .. key) end
+    for key in pairs(es) do countEs = countEs + 1; truthy(en[key], "missing enUS key " .. key) end
+    equal(countEn, countEs, "locale key count")
+    equal(countEn, 5, "expected experimental key count")
 end)
 
 if #failures > 0 then
