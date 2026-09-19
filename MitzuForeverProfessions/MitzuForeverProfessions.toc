@@ -1,0 +1,11 @@
+## Interface: 11509
+## Title: MitzuForeverProfessions
+## Notes: Experimental professions and Camping companion for World of Warcraft: Forever.
+## Author: Mutzuki Mizt
+## Version: 0.1.0-dev
+## SavedVariables: MitzuForeverProfessionsDB
+## X-Status: EXPERIMENTAL_PRE_BETA
+
+Core.lua
+Data.lua
+UI.lua
