@@ -5,7 +5,7 @@ local L = MitzuMPlus.L
 
 local BR = {}
 MitzuMPlus.BugReport = BR
-BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 5, 80, 10
+BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 6, 80, 10
 
 local function safe()
     return MitzuMPlus.QASafe or {
@@ -93,6 +93,28 @@ SECTIONS[#SECTIONS + 1] = { "PARTY", function(add)
             safe().Text(member.specID), safe().Text(member.specState),
             safe().Text(member.assignedRole), safe().Text(member.specRole)))
     end
+end }
+
+SECTIONS[#SECTIONS + 1] = { "INSPECT SAFETY", function(add)
+    local A = MitzuMPlus.InspectArbiter
+    local st = call(A, "Status")
+    if type(st) ~= "table" then
+        add("status", A and "UNAVAILABLE" or "MISSING")
+        return
+    end
+    add("owner", st.owner or "none")
+    add("guid", st.guid or "none")
+    add("nativeInspectActive", st.nativeInspectActive == true)
+    add("nativeInspectVisible", st.nativeInspectVisible == true)
+    add("nativeInspectUnit", st.nativeInspectUnit or "none")
+    add("externalGrace", st.externalGrace)
+    add("nativeGrace", st.nativeGrace)
+    add("lastReason", st.lastReason)
+    add("requests", st.requests)
+    add("blockedNative", st.blockedNative)
+    add("blockedThrottle", st.blockedThrottle)
+    add("blockedMitzu", st.blockedMitzu)
+    add("clearInspectCalls", 0)
 end }
 
 SECTIONS[#SECTIONS + 1] = { "RUN", function(add)

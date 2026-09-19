@@ -26,7 +26,7 @@ local newLocale = dofile("tests/harness/locale_stub.lua")
 -- Palabras que delatan español en una interfaz que debería estar en inglés.
 -- Se comparan sobre el texto real que producen los módulos, no sobre el código.
 local SPANISH_MARKERS = {
-    "Historial", "Estadísticas", "Configuración", "Fuerzas", "faltan", "RITMO",
+    "Historial", "Estadísticas", "Configuración", "Fuerzas", "faltan", "Ritmo",
     "Muertes", "Jefes", "LLAVE", "Llave", "Esperando", "Vista previa",
     "VISTA PREVIA", "Cerrar", "Eliminar", "Jugadores", "Mazmorra", "MAZMORRA",
     "Temporada", "Todas", "Todos", "Buscar", "Guardar", "Personaje", "Ninguno",
@@ -34,8 +34,8 @@ local SPANISH_MARKERS = {
     "RESULTADO", "JUGADOR", "MEJOR", "TIEMPO", "FECHA",
 }
 local ENGLISH_MARKERS = {
-    "History", "Statistics", "Settings", "Enemy Forces", "remaining", "PACE",
-    "Deaths", "Bosses", "KEY ", "Waiting", "PREVIEW", "Close", "Delete",
+    "History", "Statistics", "Settings", "Enemy Forces", "remaining", "Pace",
+    "Deaths", "Bosses", "Key ", "Waiting", "PREVIEW", "Close", "Delete",
     "Players", "Dungeon", "DUNGEON", "Season", "Search", "Character",
 }
 
@@ -161,9 +161,9 @@ test("enUS client: the whole visible surface is English, with no Spanish left", 
         end
         equal(MP.L["TABBAR_HISTORY"], "HISTORY"); equal(MP.L["TABBAR_STATS"], "STATISTICS")
         equal(MP.L["TABBAR_PLAYERS"], "PLAYERS"); equal(MP.L["TABBAR_SETTINGS"], "SETTINGS")
-        equal(MP.TrackerPresenter.TEXT.PACE, "PACE")
+        equal(MP.TrackerPresenter.TEXT.PACE, "Pace")
         equal(MP.TrackerPresenter.TEXT.FORCES, "Enemy Forces")
-        equal(MP.TrackerPresenter.TEXT.KEY_COMPLETE, "KEY COMPLETE")
+        equal(MP.TrackerPresenter.TEXT.KEY_COMPLETE, "Key completed")
     end)
 end)
 
@@ -177,7 +177,7 @@ test("enGB client: English through AceLocale's own mapping, no enGB file needed"
             equal(#hits, 0, "Spanish on an enGB client: " .. text)
         end
         equal(MP.L["TABBAR_HISTORY"], "HISTORY")
-        equal(MP.TrackerPresenter.TEXT.PACE, "PACE")
+        equal(MP.TrackerPresenter.TEXT.PACE, "Pace")
         equal(MP.TrackerPresenter.TEXT.REMAINING, "%s remaining")
     end)
     -- Y no existe un fichero enGB duplicado que mantener.
@@ -196,13 +196,14 @@ for _, locale in ipairs({ "esES", "esMX" }) do
             equal(MP.L["TABBAR_STATS"], "ESTADÍSTICAS")
             equal(MP.L["TABBAR_PLAYERS"], "JUGADORES")
             equal(MP.L["TABBAR_SETTINGS"], "CONFIGURACIÓN")
-            equal(MP.TrackerPresenter.TEXT.PACE, "RITMO")
+            equal(MP.TrackerPresenter.TEXT.PACE, "Ritmo")
             equal(MP.TrackerPresenter.TEXT.FORCES, "Fuerzas enemigas")
-            equal(MP.TrackerPresenter.TEXT.KEY_COMPLETE, "LLAVE COMPLETADA")
+            equal(MP.TrackerPresenter.TEXT.KEY_COMPLETE, "Llave completada")
             -- Ni una sola cadena inglesa donde hay traducción española.
             local english = 0
             for _, text in ipairs(visibleStrings(MP)) do
                 english = english + #contamination(text, ENGLISH_MARKERS)
+                truthy(not text:find("^[A-Z][A-Z0-9]*_[A-Z0-9_]+$"), "raw locale key rendered: " .. text)
             end
             equal(english, 0, "unexpected English on a Spanish client")
         end)
@@ -217,11 +218,12 @@ for _, locale in ipairs({ "deDE", "frFR", "ptBR", "ruRU", "koKR", "zhCN", "zhTW"
             equal(MP.Localization:IsEnglishDefault(), true)
             equal(MP.Localization:MissingKeys(), 0, "no missing keys on " .. locale)
             equal(MP.L["TABBAR_HISTORY"], "HISTORY")
-            equal(MP.TrackerPresenter.TEXT.PACE, "PACE")
+            equal(MP.TrackerPresenter.TEXT.PACE, "Pace")
             for _, text in ipairs(visibleStrings(MP)) do
                 local hits = contamination(text, SPANISH_MARKERS)
                 equal(#hits, 0, "Spanish leaked into " .. locale .. ": " .. text)
                 truthy(text ~= nil and text ~= "", "no empty string on " .. locale)
+                truthy(not text:find("^[A-Z][A-Z0-9]*_[A-Z0-9_]+$"), "raw locale key rendered: " .. text)
             end
         end)
     end)
@@ -252,7 +254,7 @@ test("the tracker reads the same in both languages, and the layout measures the 
     equal(en.confidence, "50%"); equal(es.confidence, "50%")
     equal(en.penalty, "-0:15"); equal(es.penalty, "-0:15")
     -- Solo el texto cambia.
-    equal(en.pace, "PACE +2"); equal(es.pace, "RITMO +2")
+    equal(en.pace, "Pace +2"); equal(es.pace, "Ritmo +2")
     equal(en.secondary, "227 remaining"); equal(es.secondary, "faltan 227")
     -- Y el layout mide el texto REAL: el inglés aquí es más largo y aun así cabe.
     equal(en.forcesMode, "SPLIT"); equal(es.forcesMode, "SPLIT")
@@ -357,33 +359,80 @@ test("a missing key is reported, never silently filled", function()
     end)
 end)
 
+-- 1.1.0: hay DOS espacios de nombres de AceLocale.
+--   "MitzuMPlus"             -> Locales/enUS.lua + esES.lua           (L[...])
+--   "MitzuMPlusExperimental" -> Locales/*_Experimental.lua            (EL[...])
+-- Los módulos de modules/Experimental/ piden el segundo con su propia `L`;
+-- un fichero del núcleo que pinte ajustes de la UI nativa (UI/Panels/Config.lua)
+-- lo pide como `EL`. Cada clave se comprueba contra la tabla que de verdad la
+-- sirve, nunca contra la otra.
+local function readFile(path)
+    local f = io.open(path, "rb")
+    if not f then return nil end
+    local src = f:read("*a"); f:close()
+    return src
+end
+
+-- Claves declaradas por un fichero de locale. esES_Experimental.lua las escribe
+-- indentadas dentro de fill(), porque registra la misma tabla para esES y esMX.
+local function declaredKeys(path)
+    local out, src = {}, readFile(path)
+    truthy(src ~= nil, "locale file is missing: " .. path)
+    for key in (src or ""):gmatch('[\n\r][ \t]*L%["([A-Z][A-Z0-9_]*)"%]%s*=') do out[key] = true end
+    return out
+end
+
+-- Lecturas L[...] y EL[...] por separado: sin el guardia previo, EL["X"]
+-- también encajaría en el patrón de L["X"].
+local function reads(src, prefix)
+    local out = {}
+    for before, key in src:gmatch('([%w_]?)' .. prefix .. '%[%s*"([A-Z][A-Z0-9_]*)"%s*%]') do
+        if before == "" then out[key] = true end
+    end
+    return out
+end
+
 test("every locale key the runtime asks for exists in both files", function()
     -- La lista sale del CÓDIGO, no de una copia: si alguien añade L["NUEVA"]
     -- sin traducirla, este banco lo ve.
-    local used, order = {}, {}
-    local function scan(dir)
-        local pipe = io.popen('dir /b /s "' .. dir .. '\\*.lua" 2>nul')
-        if not pipe then return end
-        for path in pipe:lines() do
-            local f = io.open(path, "rb")
-            if f then
-                local src = f:read("*a"); f:close()
-                if not path:find("\\libs\\") and not path:find("\\Locales\\") then
-                    for key in src:gmatch('L%[%s*"([A-Z][A-Z0-9_]*)"%s*%]') do
-                        if not used[key] then used[key] = true; order[#order + 1] = key end
-                    end
+    local en, es = newLocale("enUS"), newLocale("esES")
+    local enRaw, esRaw = getmetatable(en).raw, getmetatable(es).raw
+    local xen = declaredKeys("MitzuMPlus/Locales/enUS_Experimental.lua")
+    local xes = declaredKeys("MitzuMPlus/Locales/esES_Experimental.lua")
+
+    local coreCount, experimentalCount = 0, 0
+    local pipe = io.popen('dir /b /s "MitzuMPlus\\*.lua" 2>nul')
+    truthy(pipe ~= nil, "could not list the addon sources")
+    for path in pipe:lines() do
+        if not path:find("\\libs\\") and not path:find("\\Locales\\") then
+            local src = readFile(path)
+            if src then
+                local short = path:match("MitzuMPlus\\[^\\]*$") or path
+                local native = path:find("\\Experimental\\") ~= nil
+                -- En un módulo nativo la propia `L` YA es el espacio experimental.
+                local coreKeys = native and {} or reads(src, "L")
+                local nativeKeys = native and reads(src, "L") or reads(src, "EL")
+                for key in pairs(coreKeys) do
+                    coreCount = coreCount + 1
+                    truthy(rawget(enRaw, key) ~= nil, "enUS has no entry for L[\"" .. key .. "\"] (" .. short .. ")")
+                    truthy(rawget(esRaw, key) ~= nil, "esES has no entry for L[\"" .. key .. "\"] (" .. short .. ")")
+                end
+                for key in pairs(nativeKeys) do
+                    experimentalCount = experimentalCount + 1
+                    truthy(xen[key] ~= nil, "experimental enUS has no entry for L[\"" .. key .. "\"] (" .. short .. ")")
+                    truthy(xes[key] ~= nil, "experimental esES has no entry for L[\"" .. key .. "\"] (" .. short .. ")")
                 end
             end
         end
-        pipe:close()
     end
-    scan("MitzuMPlus")
-    truthy(#order > 100, "found " .. #order .. " keys used by the runtime")
-    local en, es = newLocale("enUS"), newLocale("esES")
-    local enRaw, esRaw = getmetatable(en).raw, getmetatable(es).raw
-    for _, key in ipairs(order) do
-        truthy(rawget(enRaw, key) ~= nil, "enUS has no entry for L[\"" .. key .. "\"]")
-        truthy(rawget(esRaw, key) ~= nil, "esES has no entry for L[\"" .. key .. "\"]")
+    pipe:close()
+    truthy(coreCount > 100, "found " .. coreCount .. " core keys used by the runtime")
+    truthy(experimentalCount > 20, "found " .. experimentalCount .. " native-UI keys used by the runtime")
+
+    -- Y los dos espacios no se solapan: nadie puede leer una clave de la tabla
+    -- equivocada y recibir la clave cruda de vuelta.
+    for key in pairs(xen) do
+        truthy(rawget(enRaw, key) == nil, "key lives in both locale namespaces: " .. key)
     end
 end)
 

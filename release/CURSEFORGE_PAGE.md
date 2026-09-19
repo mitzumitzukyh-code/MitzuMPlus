@@ -83,15 +83,17 @@ Use clean screenshots from the current build, without white arrows or debug anno
 
 ## Upload notes
 
-Recommended first public file type: **Beta**.
+Recommended file type: **Release**.
 
 Suggested file name:
-`MitzuMPlus-1.0.0-beta.1.zip`
+`MitzuMPlus-1.1.0.zip`
 
-Changelog for the CurseForge upload: paste the `1.0.0-beta.1` section of `release/CHANGELOG.md`. Short version:
+Changelog for the CurseForge upload: paste the `1.1.0` section of `release/CHANGELOG.md`. Short version:
 
-First public beta of MitzuMPlus (1.0.0-beta.1).
+First stable release of MitzuMPlus (1.1.0).
 
-Includes Mythic+ history, statistics, player profiles, optional Puntaje mítico through Raider.IO, live key prediction HUD, personal bests, notifications, group loot tracking, notes, favorites, copy/delete actions, bug report tooling, the new MitzuMPlus icon set, UI polish and minimap integration.
+Adds a live Mythic+ layer inside Blizzard's own interface: the native objective tracker shows dynamic +3/+2/+1 thresholds with a stabilized pace prediction, Enemy Forces as current/total with the remaining count, and an end-of-run summary. The Mythic+ panel gains a per-character season goal, per-dungeon score and dungeon teleports; the keystone frame gains auto-slot (never an automatic challenge start), Ready Check and a configurable 5/10/20s pull timer; and the LFG list shows Heroism/Bloodlust, Brez and Soothe coverage. Inspect traffic is now owned by a single arbiter, history and database finalization were corrected, and the whole interface is localized in English and Spanish.
+
+Still includes Mythic+ history, statistics, player profiles, optional Puntaje mítico through Raider.IO, personal bests, notifications, group loot tracking, notes, favorites, copy/delete actions, bug report tooling, the MitzuMPlus icon set and minimap integration.
 
 Route-arrow functionality is intentionally excluded from this package and remains in a separate development addon.

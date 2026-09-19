@@ -14,6 +14,11 @@ MitzuMPlusDB_Defaults = {
         -- FIX BUG-12: la versión se actualiza en OnInitialize leyendo MitzuMPlus.VERSION
         -- para que siempre refleje la versión instalada real.
         version    = "UNSET",
+        -- Esquema persistente independiente de la version del addon.
+        -- Las migraciones viven en modules/Database.lua.
+        schemaVersion = 2,
+        backups = {},
+        quarantineRuns = {},
 
         -- ── Log de errores del addon (gestionado por modules/ErrorLogger.lua)
         -- Máximo MAX_ERRORS entradas; las más antiguas se rotan automáticamente.

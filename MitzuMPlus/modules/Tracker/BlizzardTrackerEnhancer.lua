@@ -76,13 +76,13 @@ E.SCALE_MIN, E.SCALE_MAX = 0.8, 1.25
 E.LAYOUT = {
     LEVEL_X        = 28,   -- Level y TimeLeft empiezan aqui
     DEATH_RIGHT    = 47,   -- DeathCount: TOPLEFT en BOTTOMRIGHT -47
-    GAP            = 8,    -- separacion tras el temporizador
-    LOOT_ICON      = 24,   -- TimesUpLootStatus (19 px + 4) cuando se acaba el tiempo
-    LINE_2_Y       = -14,  -- linea de ritmo bajo la del umbral
-    AK_RESERVE     = 44,   -- px que se dejan al texto de Angry Keystones tras el reloj
-    FORCES_GAP_Y   = -1,   -- separacion unica bajo la StatusBar de Blizzard
-    FORCES_ROW_H   = 12,   -- alto de la fila propia anclada a los extremos de la barra
-    FORCES_INSET   = 1,    -- margen dentro de los extremos de la barra (no se sale)
+    ELAPSED_COL_W  = 62,   -- columna izquierda reservada al reloj nativo
+    COLUMN_GAP     = 8,   -- separacion fija reloj <-> umbral
+    PACE_TOP_Y     = -17,  -- fila propia, debajo del reloj/umbral
+    PACE_ROW_H     = 14,
+    FORCES_GAP_Y   = -3,   -- 3 px uniformes bajo la StatusBar de Blizzard
+    FORCES_ROW_H   = 14,   -- fila fija para GameFontHighlight
+    FORCES_INSET   = 0,    -- columnas clavadas a los bordes reales de la barra
     MEASURE_CACHE  = 256,  -- anchos medidos que se recuerdan
     FALLBACK_TIME_W = 60,
     FALLBACK_BLOCK_W = 251,
@@ -107,18 +107,18 @@ E.COLOR = {
 }
 
 -- Objetos de fuente de Blizzard por tipo de texto (solo se usan como plantilla).
--- dev.11: jerarquia explicita, en px de altura de la fuente nativa:
---   Blizzard TimeLeft (Huge, 20)  >  threshold (Large, 16)  >  pace (12)
---   >  forcesPrimary (12)  >  forcesSecondary (10)  =  penalty (10)
---   >  secondary/confianza (10, ademas atenuada).
+-- experimental.7: misma presencia visual que la UI nativa aprobada:
+--   Blizzard TimeLeft (Huge, 20) > threshold (Large, 16)
+--   > pace (Medium, ~14) > forces/remaining/penalty (Highlight, ~12)
+--   > confidence/ETA (DisableSmall, ~10).
 -- Nunca se crea una fuente propia ni se llama a SetFont: solo plantillas nativas.
 E.FONT = {
     threshold       = "GameFontHighlightLarge",
-    pace            = "GameFontHighlight",
+    pace            = "GameFontHighlightMedium",
     secondary       = "GameFontDisableSmall",
     forces          = "GameFontHighlight",
-    forcesSecondary = "GameFontHighlightSmall",
-    penalty         = "GameFontHighlightSmall",
+    forcesSecondary = "GameFontHighlight",
+    penalty         = "GameFontHighlight",
 }
 
 -- Orden de la jerarquia, de mayor a menor. Lo consumen las pruebas y las
@@ -178,6 +178,23 @@ end
 local function onBlizzardLayout(reason)
     if E._disabled then return end
     E._lastLayoutReason = reason
+
+    -- experimental.11: EndLayout puede dispararse cuando las regiones ya
+    -- existen pero sus metricas de texto aun no han convergido. Medir ahi
+    -- hacia que TimeLeft pareciera mucho mas ancho durante un frame y el
+    -- Presenter degradara RITMO a TOO_NARROW. Se difiere una vuelta del loop
+    -- y se coalescan reconstrucciones consecutivas; no se modifica ningun
+    -- frame de Blizzard.
+    local timer = rawget(_G, "C_Timer")
+    if type(timer) == "table" and type(timer.After) == "function" then
+        E._layoutSerial = (E._layoutSerial or 0) + 1
+        local serial = E._layoutSerial
+        timer.After(0, function()
+            if E._disabled or E._layoutSerial ~= serial then return end
+            if E._model then E:Render(E._model, E._opts, tostring(reason) .. "_STABLE") end
+        end)
+        return
+    end
     if E._model then E:Render(E._model, E._opts, reason) end
 end
 
@@ -212,18 +229,26 @@ function E:_CreateElements()
         return t
     end
     local el = { root = root, forcesRoot = forcesRoot }
-    el.threshold = fs(root, "threshold")
+    -- experimental.12: dos filas propias. El reloj de Blizzard NO se toca;
+    -- timerRow solo nos da una geometria estable para alinear el umbral y
+    -- paceRow una fila independiente para Ritmo.
+    el.timerRow = create("Frame", nil, root)
+    el.paceRow = create("Frame", nil, root)
+    el.paceRow:SetHeight(E.LAYOUT.PACE_ROW_H)
+    el.threshold = fs(el.timerRow, "threshold", "RIGHT")
     el.threshold:SetTextColor(E.COLOR.threshold[1], E.COLOR.threshold[2], E.COLOR.threshold[3], 1)
-    el.pace = fs(root, "pace")
-    el.paceExtra = fs(root, "secondary")
+    el.pace = fs(el.paceRow, "pace", "CENTER")
+    el.paceExtra = fs(el.paceRow, "secondary", "RIGHT")
     el.paceExtra:SetTextColor(E.COLOR.secondary[1], E.COLOR.secondary[2], E.COLOR.secondary[3], 1)
     el.penalty = fs(root, "penalty", "RIGHT")
     el.penalty:SetTextColor(E.COLOR.penalty[1], E.COLOR.penalty[2], E.COLOR.penalty[3], E.COLOR.penalty[4])
     el.forcesPrimary = fs(forcesRoot, "forces")
+    el.forcesPrimary:SetJustifyV("TOP")
     el.forcesPrimary:SetTextColor(E.COLOR.forces[1], E.COLOR.forces[2], E.COLOR.forces[3], 1)
     -- dev.11: los restantes tienen fuente propia (legible), no la atenuada de
     -- la confianza. Antes compartian `secondary` y por eso casi no se veian.
     el.forcesSecondary = fs(forcesRoot, "forcesSecondary", "RIGHT")
+    el.forcesSecondary:SetJustifyV("TOP")
     el.forcesSecondary:SetTextColor(E.COLOR.secondary[1], E.COLOR.secondary[2], E.COLOR.secondary[3], 1)
     -- Medidores ocultos, uno por fuente: deciden que cabe.
     el.measure = {}
@@ -403,9 +428,20 @@ function E:_Render(model, opts, reason)
     local L = E.LAYOUT
     local TPL = TP
     local blizzTimeLeft, blizzDeath = get(blizzBlock, "TimeLeft"), get(blizzBlock, "DeathCount")
-    local timeW = read(blizzTimeLeft, "GetStringWidth") or L.FALLBACK_TIME_W
     local blockW = read(blizzBlock, "GetWidth") or L.FALLBACK_BLOCK_W
-    local offsetX = L.GAP + (emb.overtime and L.LOOT_ICON or 0)
+
+    -- experimental.12: las posiciones ya no dependen del ancho medido del
+    -- texto del reloj. Se conserva la medicion SOLO como telemetria QA.
+    local timeW = read(blizzTimeLeft, "GetUnboundedStringWidth")
+    local timeWidthSource = "UNBOUNDED"
+    if type(timeW) ~= "number" or timeW <= 0 then
+        timeW = read(blizzTimeLeft, "GetStringWidth")
+        timeWidthSource = "STRING"
+    end
+    if type(timeW) ~= "number" or timeW <= 0 then
+        timeW = L.FALLBACK_TIME_W
+        timeWidthSource = "FALLBACK"
+    end
     local defer = opts and opts.angryKeystones == true
     local measure = function(text, kind) return self:_Measure(text, kind) end
 
@@ -420,13 +456,33 @@ function E:_Render(model, opts, reason)
         end)
     end
     local rightEdge = blockW - L.DEATH_RIGHT - 4 - penaltyW
-    local available = rightEdge - (L.LEVEL_X + timeW + offsetX)
-    if defer then available = available - L.AK_RESERVE end
+    local paceRightEdge = blockW - L.DEATH_RIGHT - 4
+    local rowWidth = math.max(0, rightEdge - L.LEVEL_X)
+    local thresholdWidth = math.max(0, rowWidth - L.ELAPSED_COL_W - L.COLUMN_GAP)
+    -- La penalizacion vive en la fila del reloj. Ritmo no se desplaza cuando
+    -- cambia el contador de muertes: conserva siempre el centro del area segura.
+    local paceWidth = math.max(0, paceRightEdge - L.LEVEL_X)
+
+    -- Filas deterministas: timerRow comparte exactamente la vertical del
+    -- TimeLeft nativo y tiene ancho fijo hasta el borde seguro; paceRow ocupa
+    -- el mismo ancho pero una linea mas abajo. Ninguna usa GetStringWidth para
+    -- decidir coordenadas.
+    place(self, "timerGrid", el.timerRow, string.format("%d:%d", math.floor(rowWidth + 0.5), math.floor(rightEdge + 0.5)), function()
+        el.timerRow:SetPoint("TOPLEFT", blizzTimeLeft, "TOPLEFT", 0, 0)
+        el.timerRow:SetPoint("BOTTOMLEFT", blizzTimeLeft, "BOTTOMLEFT", 0, 0)
+        el.timerRow:SetWidth(rowWidth)
+    end)
+    place(self, "paceGrid", el.paceRow, string.format("%d:%d", math.floor(paceWidth + 0.5), L.PACE_TOP_Y), function()
+        el.paceRow:SetPoint("TOPLEFT", blizzTimeLeft, "TOPLEFT", 0, L.PACE_TOP_Y)
+        el.paceRow:SetWidth(paceWidth)
+        el.paceRow:SetHeight(L.PACE_ROW_H)
+    end)
 
     local blizzBar, barWhy = self:FindForcesBar(blizzTracker)
     local blizzInner = blizzBar and get(blizzBar, "Bar") or nil
     local lay = TPL.LayoutEmbedded(emb, {
-        timerWidth = available, deferThreshold = defer,
+        thresholdWidth = thresholdWidth, paceWidth = paceWidth,
+        deferThreshold = defer,
         forcesWidth = blizzInner and read(blizzInner, "GetWidth") or nil,
     }, measure)
 
@@ -435,33 +491,33 @@ function E:_Render(model, opts, reason)
     -- vistazo y ahora pesa lo mismo que en Angry Keystones.
     local th = lay.threshold
     setText(self, "threshold", el.threshold, th.text or "")
-    place(self, "thresholdAt", el.threshold, "time:" .. offsetX, function()
-        el.threshold:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, -1)
+    place(self, "thresholdAt", el.threshold, "GRID_RIGHT", function()
+        el.threshold:SetPoint("BOTTOMRIGHT", el.timerRow, "BOTTOMRIGHT", 0, 0)
     end)
 
-    -- 2. Ritmo: "RITMO +1" y, en gris, confianza / ETA.
+    -- 2. Ritmo: fila independiente y centrada. Sin prediccion valida no hay
+    -- placeholder. Confianza/ETA solo aparecen a la derecha si caben SIN tocar
+    -- el texto centrado; nunca desplazan Ritmo ni cambian su alineacion.
     local pc = lay.pace
     local paceText = pc.text and ("|cff" .. E.COLOR.label .. pc.label .. "|r " .. colored(pc.value)) or ""
     setText(self, "pace", el.pace, paceText)
+    place(self, "paceAt", el.pace, "GRID_CENTER", function()
+        el.pace:SetPoint("CENTER", el.paceRow, "CENTER", 0, 0)
+    end)
     local extras = {}
     if pc.confidence then extras[#extras + 1] = pc.confidence end
     if pc.eta then extras[#extras + 1] = pc.eta end
-    setText(self, "paceExtra", el.paceExtra, pc.text and table.concat(extras, "  ") or "")
-    local paceSig = (defer and "right:" or "left:") .. offsetX .. ":" .. math.floor(rightEdge + 0.5)
-    -- dev.9: la linea del ritmo ya no se atenua cuando el bracket es
-    -- provisional. La provisionalidad la cuenta la confianza (secundaria, gris);
-    -- bajar el alfa de todo el texto solo lo hacia ilegible en combate.
-    place(self, "paceAt", el.pace, paceSig, function()
-        el.paceExtra:ClearAllPoints()
-        if defer then
-            -- Alineado a la derecha: el hueco tras el reloj es de Angry Keystones.
-            -- TimeLeft empieza en x=LEVEL_X del bloque: el borde derecho es rightEdge.
-            el.paceExtra:SetPoint("TOPRIGHT", blizzTimeLeft, "TOPLEFT", rightEdge - L.LEVEL_X, L.LINE_2_Y - 1)
-            el.pace:SetPoint("RIGHT", el.paceExtra, "LEFT", -TPL.GAP, 0)
-        else
-            el.pace:SetPoint("TOPLEFT", blizzTimeLeft, "TOPRIGHT", offsetX, L.LINE_2_Y)
-            el.paceExtra:SetPoint("LEFT", el.pace, "RIGHT", TPL.GAP, 0)
-        end
+    local extrasText = pc.text and table.concat(extras, "  ") or ""
+    if extrasText ~= "" then
+        local paceTextW = measure(pc.text, "pace")
+        local extrasW = measure(extrasText, "secondary")
+        local rightRoom = (paceWidth / 2) - (paceTextW / 2) - TPL.GAP
+        if extrasW > rightRoom then extrasText = "" end
+    end
+    local extrasVisible = extrasText ~= ""
+    setText(self, "paceExtra", el.paceExtra, extrasText)
+    place(self, "paceExtraAt", el.paceExtra, "GRID_RIGHT", function()
+        el.paceExtra:SetPoint("RIGHT", el.paceRow, "RIGHT", 0, 0)
     end)
 
     -- 3. Fuerzas: debajo de la barra de Blizzard, en dos columnas.
@@ -476,11 +532,13 @@ function E:_Render(model, opts, reason)
             el.forcesRoot:SetPoint("TOPRIGHT", blizzInner, "BOTTOMRIGHT", 0, L.FORCES_GAP_Y)
             el.forcesRoot:SetHeight(L.FORCES_ROW_H)
             el.forcesPrimary:ClearAllPoints(); el.forcesSecondary:ClearAllPoints()
-            -- Ambos por el borde INFERIOR de la misma fila: misma base, misma
-            -- altura, misma separacion respecto a la barra (las dos fuentes son
-            -- del mismo tamano, solo cambia el color).
-            el.forcesPrimary:SetPoint("BOTTOMLEFT", el.forcesRoot, "BOTTOMLEFT", L.FORCES_INSET, 0)
-            el.forcesSecondary:SetPoint("BOTTOMRIGHT", el.forcesRoot, "BOTTOMRIGHT", -L.FORCES_INSET, 0)
+            -- experimental.13: ambos textos nacen en el borde SUPERIOR de la
+            -- misma fila y usan el mismo FontObject. Asi la primera linea de
+            -- glifos comparte baseline visual y queda a 3 px de la barra, sin
+            -- caer al fondo de un contenedor de 14 px. X nunca depende del
+            -- ancho del string: LEFT/RIGHT siguen los extremos reales del bar.
+            el.forcesPrimary:SetPoint("TOPLEFT", el.forcesRoot, "TOPLEFT", L.FORCES_INSET, 0)
+            el.forcesSecondary:SetPoint("TOPRIGHT", el.forcesRoot, "TOPRIGHT", -L.FORCES_INSET, 0)
         end)
     else
         self._cache.forcesAt = nil
@@ -502,9 +560,13 @@ function E:_Render(model, opts, reason)
         threshold = th.upgrade, thresholdTime = th.timeText, thresholdMode = th.mode,
         upgrade = th.text,
         pace = emb.paceCode, paceText = pc.text, paceMode = pc.mode,
-        confidence = pc.confidence, eta = pc.eta,
+        confidence = extrasVisible and pc.confidence or nil,
+        eta = extrasVisible and pc.eta or nil,
+        layoutMode = "GRID_V1",
         forcesPrimary = showForces and fo.primary or nil, forcesSecondary = showForces and fo.secondary or nil,
-        forcesLayoutMode = blizzInner and fo.mode or "NO_BAR",
+        -- Al 100 % Blizzard puede liberar su progress bar. Eso no es un
+        -- fallo de layout: ya no hay fuerzas restantes que Mitzu deba repetir.
+        forcesLayoutMode = emb.forcesComplete and "COMPLETE" or (blizzInner and fo.mode or "NO_BAR"),
         forces = forcesLine,
         forcesBar = blizzBar ~= nil, forcesBarReason = barWhy,
         penalty = penalty ~= "" and penalty or nil,
@@ -512,7 +574,11 @@ function E:_Render(model, opts, reason)
         -- Responde a "se te ve pequeno" sin pedir una captura de pantalla.
         thresholdFont = E.FONT.threshold, paceFont = E.FONT.pace,
         forcesPrimaryFont = E.FONT.forces, forcesSecondaryFont = E.FONT.forcesSecondary,
-        available = math.floor(available + 0.5),
+        available = math.floor(rowWidth + 0.5),
+        thresholdColumnWidth = math.floor(thresholdWidth + 0.5),
+        paceRowWidth = math.floor(paceWidth + 0.5),
+        timerTextWidth = math.floor(timeW + 0.5),
+        timerWidthSource = timeWidthSource,
         angryKeystones = defer,
         reason = reason,
     }
@@ -552,6 +618,7 @@ function E:DiagnosticFields()
         { "thresholdMode", d.thresholdMode },
         { "paceDisplayed", d.paceText },
         { "paceMode", d.paceMode },
+        { "layoutMode", d.layoutMode },
         { "confidenceTextDisplayed", d.confidence },
         { "etaDisplayed", d.eta },
         { "forcesPrimaryDisplayed", d.forcesPrimary },
@@ -560,6 +627,10 @@ function E:DiagnosticFields()
         { "forcesLineDisplayed", d.forces },
         { "penaltyDisplayed", d.penalty },
         { "availableWidth", d.available },
+        { "thresholdColumnWidth", d.thresholdColumnWidth },
+        { "paceRowWidth", d.paceRowWidth },
+        { "timerTextWidth", d.timerTextWidth },
+        { "timerWidthSource", d.timerWidthSource },
         { "angryKeystonesLoaded", d.angryKeystones },
         { "lastLayoutReason", self._lastLayoutReason },
         { "enhancerErrors", self._errors },

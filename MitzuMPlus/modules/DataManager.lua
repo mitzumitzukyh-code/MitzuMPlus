@@ -16,40 +16,33 @@ MitzuMPlus.DataManager = DataManager
 
 function DataManager:GetCharacters()
     local runs = MitzuMPlus:GetAllRuns() or {}
-    local chars = {}
-    local seen  = {}
+    local byKey, chars = {}, {}
 
+    -- Una sola pasada: la version anterior hacia un segundo loop por cada
+    -- personaje y escalaba O(n^2) con historiales grandes.
     for _, run in ipairs(runs) do
         local name  = run.playerName  or ""
         local realm = run.playerRealm or ""
-        local class = run.playerClass or ""
-        local key   = name .. "-" .. realm
-
-        if name ~= "" and not seen[key] then
-            seen[key] = true
-            local runCount = 0
-            local bestKey  = 0
-            for _, r in ipairs(runs) do
-                local rk = (r.playerName or "") .. "-" .. (r.playerRealm or "")
-                if rk == key then
-                    runCount = runCount + 1
-                    local kl = tonumber(r.keyLevel) or 0
-                    if kl > bestKey then bestKey = kl end
-                end
+        if name ~= "" then
+            local key = name .. "-" .. realm
+            local entry = byKey[key]
+            if not entry then
+                entry = {
+                    name = name, realm = realm, class = run.playerClass or "",
+                    key = key, runCount = 0, bestKey = 0,
+                }
+                byKey[key] = entry
+                chars[#chars + 1] = entry
             end
-
-            chars[#chars + 1] = {
-                name     = name,
-                realm    = realm,
-                class    = class,
-                key      = key,
-                runCount = runCount,
-                bestKey  = bestKey,
-            }
+            entry.runCount = entry.runCount + 1
+            entry.bestKey = math.max(entry.bestKey, tonumber(run.keyLevel) or 0)
         end
     end
 
-    table.sort(chars, function(a, b) return a.runCount > b.runCount end)
+    table.sort(chars, function(a, b)
+        if a.runCount == b.runCount then return a.key < b.key end
+        return a.runCount > b.runCount
+    end)
     return chars
 end
 
@@ -80,50 +73,90 @@ end
 -- ─────────────────────────────────────────────────────────────────────────
 
 function DataManager:ValidateAllRuns()
-    if not MitzuMPlus.db or not MitzuMPlus.db.global then return 0, 0 end
+    if not MitzuMPlus.db or not MitzuMPlus.db.global then return 0, 0, {} end
 
-    local runs = MitzuMPlus.db.global.runs or {}
-    local valid   = 0
-    local invalid = 0
-    local corrupt = {}
-
-    for runID, run in pairs(runs) do
-        if type(run) ~= "table" then
-            corrupt[#corrupt + 1] = runID
-            invalid = invalid + 1
-        elseif not run.dungeonName or run.dungeonName == ""
-            or not run.keyLevel or tonumber(run.keyLevel) == nil
-            or not run.startTime or tonumber(run.startTime) == nil
-            or not run.completionTime or tonumber(run.completionTime) == nil then
-            corrupt[#corrupt + 1] = runID
-            invalid = invalid + 1
-        else
+    local valid, invalid, corrupt = 0, 0, {}
+    for runID, run in pairs(MitzuMPlus.db.global.runs or {}) do
+        local ok = type(run) == "table"
+            and (tonumber(run.dungeonID) or 0) > 0
+            and (tonumber(run.keyLevel) or 0) >= 2
+            and (tonumber(run.startTime) or 0) > 0
+        if ok then
             valid = valid + 1
+        else
+            invalid = invalid + 1
+            corrupt[#corrupt + 1] = runID
         end
     end
-
     return valid, invalid, corrupt
 end
 
--- ─────────────────────────────────────────────────────────────────────────
--- DATA INTEGRITY: Remove corrupt runs
--- ─────────────────────────────────────────────────────────────────────────
+-- Reparar tablas antiguas cuando sea seguro y mover a cuarentena, nunca
+-- borrar, lo que no cumpla la identidad minima de una run.
+function DataManager:RepairAndQuarantineRuns()
+    if not MitzuMPlus.db or not MitzuMPlus.db.global then return 0, 0 end
+    local g = MitzuMPlus.db.global
+    g.runs = type(g.runs) == "table" and g.runs or {}
+    g.quarantineRuns = type(g.quarantineRuns) == "table" and g.quarantineRuns or {}
 
+    local repaired, quarantine = 0, {}
+    for runID, run in pairs(g.runs) do
+        if type(run) == "table" then
+            -- Sanitize solo normaliza tipos/campos; no inventa identidad valida.
+            if type(MitzuMPlus.SanitizeRunData) == "function" then
+                MitzuMPlus:SanitizeRunData(run)
+            end
+            local ok = (tonumber(run.dungeonID) or 0) > 0
+                and (tonumber(run.keyLevel) or 0) >= 2
+                and (tonumber(run.startTime) or 0) > 0
+            if ok then
+                if not run.dungeonName or run.dungeonName == "" then
+                    local name
+                    if C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+                        local success, value = pcall(C_ChallengeMode.GetMapUIInfo, run.dungeonID)
+                        if success then name = value end
+                    end
+                    if name and name ~= "" then
+                        run.dungeonName = name
+                        repaired = repaired + 1
+                    end
+                    -- Si la API aun no esta lista al login, conservar la run.
+                    -- El nombre se puede recuperar mas tarde; la identidad
+                    -- dungeonID/key/startTime ya es suficiente para no perderla.
+                end
+            else
+                quarantine[#quarantine + 1] = { id = runID, reason = "invalid identity" }
+            end
+        else
+            quarantine[#quarantine + 1] = { id = runID, reason = "run is not a table" }
+        end
+    end
+
+    if #quarantine > 0 and MitzuMPlus.CreateDatabaseBackup then
+        MitzuMPlus:CreateDatabaseBackup("pre-quarantine")
+    end
+    for _, item in ipairs(quarantine) do
+        local runID = item.id
+        g.quarantineRuns[#g.quarantineRuns + 1] = {
+            runID = runID, reason = item.reason,
+            quarantinedAt = time and time() or 0,
+            data = g.runs[runID],
+        }
+        g.runs[runID] = nil
+    end
+
+    if #quarantine > 0 and MitzuMPlus.Print then
+        local msg = L["MSG_QUARANTINE_CORRUPT"] or "%d invalid runs moved to quarantine; %d valid runs kept."
+        local valid = 0; for _ in pairs(g.runs) do valid = valid + 1 end
+        MitzuMPlus:Print(string.format(msg, #quarantine, valid))
+    end
+    return repaired, #quarantine
+end
+
+-- Compatibilidad con callers antiguos: el nombre historico ya no elimina datos.
 function DataManager:RemoveCorruptRuns()
-    local valid, invalid, corrupt = self:ValidateAllRuns()
-    if invalid == 0 then return 0 end
-
-    for _, runID in ipairs(corrupt) do
-        MitzuMPlus.db.global.runs[runID] = nil
-    end
-
-    if MitzuMPlus.Print then
-        MitzuMPlus:Print(string.format(
-            L["MSG_PURGE_CORRUPT"],
-            invalid, valid))
-    end
-
-    return invalid
+    local _, quarantined = self:RepairAndQuarantineRuns()
+    return quarantined
 end
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -184,30 +217,11 @@ end
 -- BACKUP: Save a snapshot of current data
 -- ─────────────────────────────────────────────────────────────────────────
 
-function DataManager:CreateBackup()
-    if not MitzuMPlus.db or not MitzuMPlus.db.global then return false end
-
-    if not MitzuMPlus.db.global.backups then
-        MitzuMPlus.db.global.backups = {}
+function DataManager:CreateBackup(reason)
+    if MitzuMPlus.CreateDatabaseBackup then
+        return MitzuMPlus:CreateDatabaseBackup(reason or "manual")
     end
-
-    -- Keep max 3 backups
-    while #MitzuMPlus.db.global.backups >= 3 do
-        table.remove(MitzuMPlus.db.global.backups, 1)
-    end
-
-    local runCount = 0
-    for _ in pairs(MitzuMPlus.db.global.runs or {}) do
-        runCount = runCount + 1
-    end
-
-    MitzuMPlus.db.global.backups[#MitzuMPlus.db.global.backups + 1] = {
-        date     = time and time() or 0,
-        runCount = runCount,
-        version  = MitzuMPlus.VERSION or "unknown",
-    }
-
-    return true
+    return false
 end
 
 -- ─────────────────────────────────────────────────────────────────────────

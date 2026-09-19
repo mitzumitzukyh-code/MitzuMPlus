@@ -129,6 +129,7 @@ function MitzuMPlus:SanitizeRunData(run)
     stats.enemyForcesFinalPct    = tonumber(stats.enemyForcesFinalPct)    or 0
     stats.enemyForcesFinalCount  = tonumber(stats.enemyForcesFinalCount)  or 0
     stats.enemyForcesTotal       = tonumber(stats.enemyForcesTotal)       or 0
+    stats.enemyForcesDataSource  = tostring(stats.enemyForcesDataSource or "")
     stats.deathTimeLostSec       = tonumber(stats.deathTimeLostSec)       or 0
 
     if type(run.timeline) ~= "table" then run.timeline = {} end

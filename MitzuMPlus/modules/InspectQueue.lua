@@ -1,7 +1,8 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- MitzuMPlus M+ Historial — modules/InspectQueue.lua
 -- Enriquece run.group[i] con specID/spec vía NotifyInspect + INSPECT_READY.
--- Rate-limited para respetar el límite de Blizzard (~1 inspección / 2s).
+-- Desde experimental.5 las peticiones pasan por InspectArbiter, que comparte
+-- throttle/ownership con PartyProfiler y cede al InspectFrame nativo.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local ADDON_NAME = "MitzuMPlus"
@@ -11,7 +12,7 @@ local InspectQueue = {}
 MitzuMPlus.InspectQueue = InspectQueue
 
 -- ── Constantes ──────────────────────────────────────────────────────────────
-local INSPECT_INTERVAL = 2.5   -- segundos entre inspecciones (límite Blizzard ≈ 2s)
+local INSPECT_RETRY    = 1.0   -- reintento local; el throttle global vive en InspectArbiter
 local INSPECT_TIMEOUT  = 3.0   -- segundos para esperar INSPECT_READY por miembro
 local DEFERRED_RETRY   = 10.0  -- segundos para reintentar después de M+ activa
 
@@ -37,6 +38,16 @@ InspectQueue._active  = false  -- hay una campaña de inspección en curso
 InspectQueue._queue   = nil    -- lista de tareas pendientes
 InspectQueue._current = nil    -- tarea actual en espera de INSPECT_READY
 InspectQueue._ticker  = nil    -- C_Timer ticker para procesar la siguiente tarea
+
+local function arbiter()
+    return MitzuMPlus.InspectArbiter
+end
+
+local function scheduleNext(delay)
+    if C_Timer and C_Timer.After then
+        C_Timer.After(delay or INSPECT_RETRY, function() InspectQueue:_ProcessNext() end)
+    end
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- HELPERS
@@ -118,9 +129,12 @@ function InspectQueue:HandleInspectReady(guid)
         end
     end
 
-    -- Liberamos y pasamos al siguiente inmediatamente (respetando intervalo global)
-    if ClearInspectPlayer then pcall(ClearInspectPlayer) end
+    -- Liberamos solo NUESTRO ownership. Nunca se limpia la caché global de
+    -- inspección: Blizzard InspectFrame puede estar consumiéndola al mismo tiempo.
+    local A = arbiter()
+    if A and A.Complete then A:Complete("InspectQueue", guid) end
     self._current = nil
+    if self._active then scheduleNext(INSPECT_RETRY) end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -164,7 +178,12 @@ end
 function InspectQueue:Stop()
     self._active = false
     self._queue  = nil
+    local current = self._current
     self._current = nil
+    if current then
+        local A = arbiter()
+        if A and A.Abandon then A:Abandon("InspectQueue", current.targetGUID, "STOP") end
+    end
     if self._ticker and self._ticker.Cancel then
         pcall(self._ticker.Cancel, self._ticker)
     end
@@ -172,7 +191,8 @@ function InspectQueue:Stop()
     if self._frame and self._frame:IsEventRegistered("INSPECT_READY") then
         self._frame:UnregisterEvent("INSPECT_READY")
     end
-    if ClearInspectPlayer then pcall(ClearInspectPlayer) end
+    -- PLAYER-INSPECT-001: no ClearInspectPlayer aquí. La caché es compartida
+    -- con Blizzard InspectFrame y limpiarla puede vaciar sus slots de equipo.
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -181,6 +201,23 @@ end
 
 function InspectQueue:_ProcessNext()
     if not self._active then return end
+    local A = arbiter()
+
+    -- Si el jugador abrió el InspectFrame nativo mientras Mitzu esperaba una
+    -- respuesta, esa inspección tiene prioridad. Reencolamos nuestra tarea sin
+    -- tocar la caché global y esperamos a que Blizzard termine.
+    if self._current and A and A.IsNativeInspectBusy then
+        local nativeBusy = A:IsNativeInspectBusy()
+        if nativeBusy then
+            local current = self._current
+            self._current = nil
+            if A.Abandon then A:Abandon("InspectQueue", current.targetGUID, "NATIVE_UI_TAKEOVER") end
+            if self._queue then table.insert(self._queue, 1, current) end
+            scheduleNext(INSPECT_RETRY)
+            return
+        end
+    end
+
     if not self._queue or #self._queue == 0 then
         self:Stop()
         return
@@ -189,16 +226,27 @@ function InspectQueue:_ProcessNext()
     -- Si ya hay una inspección en curso, dejar que termine o expire vía timeout.
     if self._current then return end
 
+    -- Ceder antes de retirar trabajo de la cola.
+    if A and A.IsNativeInspectBusy then
+        local busy = A:IsNativeInspectBusy()
+        if busy then
+            scheduleNext(INSPECT_RETRY)
+            return
+        end
+        local owner = A.CurrentOwner and A:CurrentOwner() or nil
+        if owner ~= nil and owner ~= "InspectQueue" then
+            scheduleNext(INSPECT_RETRY)
+            return
+        end
+    end
+
     local task = table.remove(self._queue, 1)
     if not task or not task.member then
-        -- Programar siguiente intento
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.1, function() InspectQueue:_ProcessNext() end)
-        end
+        scheduleNext(0.1)
         return
     end
 
-    -- Caso rápido: si es el jugador local, leer el spec directamente
+    -- Caso rápido: si es el jugador local, leer el spec directamente.
     if task.member.name and UnitName and UnitName("player") == task.member.name then
         if GetSpecializationInfoByID and GetSpecialization then
             local specIdx = GetSpecialization()
@@ -211,70 +259,68 @@ function InspectQueue:_ProcessNext()
                 end
             end
         end
-        -- Pasar al siguiente sin gastar el cooldown de inspect
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.05, function() InspectQueue:_ProcessNext() end)
-        end
+        scheduleNext(0.05)
         return
     end
 
     -- Resolver unitID actualizado (el miembro puede haberse movido, desconectado, etc.)
     local unit = ResolveUnitID(task.targetName, task.targetGUID)
     if not unit then
-        -- Saltamos: intentaremos siguiente miembro sin gastar rate-limit
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.1, function() InspectQueue:_ProcessNext() end)
-        end
+        scheduleNext(0.1)
         return
     end
 
-    -- Verificaciones de pre-requisito (misma realm/zona, visible, inspeccionable)
     if CanInspect and not CanInspect(unit) then
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.1, function() InspectQueue:_ProcessNext() end)
-        end
+        scheduleNext(0.1)
         return
     end
 
-    task.targetGUID = (UnitGUID and UnitGUID(unit)) or task.targetGUID
-    self._current   = task
-
-    -- FIX BUG-INSPECT-1: No inspeccionar durante contexto restringido (M+/combate).
-    -- NotifyInspect causa taint en InspectPVPFrame en Midnight 12.0.5.
+    -- No inspeccionar durante contexto restringido (M+/combate).
     if IsInRestrictedContext() then
-        -- Re-encolar la tarea y reintentar después
         table.insert(self._queue, 1, task)
-        self._current = nil
         if C_Timer and C_Timer.After then
             C_Timer.After(DEFERRED_RETRY, function()
-                if InspectQueue._active and not IsInRestrictedContext() then
-                    InspectQueue:_ProcessNext()
-                end
+                if InspectQueue._active then InspectQueue:_ProcessNext() end
             end)
         end
         return
     end
 
-    if NotifyInspect then
-        pcall(NotifyInspect, unit)
+    task.targetGUID = (UnitGUID and UnitGUID(unit)) or task.targetGUID
+
+    -- Safety-first: toda petición debe pasar por el árbitro. Si no existe, no
+    -- hacemos fallback directo a NotifyInspect porque recrearía PLAYER-INSPECT-001.
+    if not (A and type(A.Request) == "function") then
+        scheduleNext(INSPECT_RETRY)
+        return
     end
 
-    -- Timeout: si INSPECT_READY no llega en N segundos, forzamos avanzar.
+    local ok, reason = A:Request("InspectQueue", unit, task.targetGUID)
+    if not ok then
+        if self._queue then table.insert(self._queue, 1, task) end
+        scheduleNext(reason == "GLOBAL_THROTTLE" and INSPECT_RETRY or INSPECT_RETRY)
+        return
+    end
+
+    self._current = task
+
+    -- Timeout: abandonar sólo el ownership Mitzu. NUNCA ClearInspectPlayer.
     if C_Timer and C_Timer.After then
         local snapshot = task
         C_Timer.After(INSPECT_TIMEOUT, function()
             if InspectQueue._current == snapshot then
                 InspectQueue._current = nil
+                local arb = arbiter()
+                if arb and arb.Abandon then
+                    arb:Abandon("InspectQueue", snapshot.targetGUID, "TIMEOUT")
+                end
+                if InspectQueue._active then InspectQueue:_ProcessNext() end
             end
         end)
     end
 
-    -- Programamos el siguiente procesamiento en INSPECT_INTERVAL
-    if C_Timer and C_Timer.After then
-        C_Timer.After(INSPECT_INTERVAL, function()
-            InspectQueue:_ProcessNext()
-        end)
-    end
+    -- El arbiter impone el intervalo global entre PartyProfiler e InspectQueue.
+    scheduleNext(INSPECT_RETRY)
 end
 
 return InspectQueue

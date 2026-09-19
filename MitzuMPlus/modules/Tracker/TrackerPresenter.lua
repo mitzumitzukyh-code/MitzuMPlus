@@ -68,6 +68,9 @@ TP.TEXT_KEYS = {
     PREVIEW      = "TRACKER_PREVIEW",
     LEVEL        = "TRACKER_LEVEL",
     BOSS_N       = "TRACKER_BOSS_N",
+    SUMMARY_PB   = "TRACKER_SUMMARY_PB",
+    SUMMARY_LEVEL= "TRACKER_SUMMARY_BEST_LEVEL",
+    SUMMARY_SCORE= "TRACKER_SUMMARY_SCORE_GAIN",
 }
 
 -- Los que no llevan palabras son universales: un reloj y un porcentaje se leen
@@ -309,14 +312,20 @@ function TP.FinalFromRun(run, lastCode)
     local levels = num(run.keystoneUpgradeLevels) or 0
     local t = num(run.completionTime)
     if t and t <= 0 then t = nil end
+    local extra = {
+        achievements = type(run._summaryAchievements) == "table" and run._summaryAchievements or nil,
+        scoreGain = num(run._summaryScoreGain),
+    }
     if type(run.completionInfoSource) == "string" and (run.inTime == true or run.inTime == false) then
         local code = "OVERTIME"
         if run.inTime == true then
             code = levels >= 3 and "+3" or (levels == 2 and "+2" or "+1")
         end
-        return { code = code, source = "OFFICIAL", time = t }
+        extra.code, extra.source, extra.time = code, "OFFICIAL", t
+        return extra
     end
-    return { code = lastCode, source = "LAST_PREDICTION", time = t }
+    extra.code, extra.source, extra.time = lastCode, "LAST_PREDICTION", t
+    return extra
 end
 
 -- ---------------------------------------------------------------------------
@@ -365,10 +374,20 @@ function TP.Build(input)
         local code = TP.RESULT_CODE[f.code] or (f.code == "OVERTIME" and "OVERTIME") or nil
         m.prediction = { code = code or TP.NONE, text = code or TP.TEXT.NO_VALUE, label = TP.TEXT.RESULT,
                          sourceText = f.source == "OFFICIAL" and TP.TEXT.OFFICIAL or (code and TP.TEXT.LAST_PACE or nil) }
+        local a = type(f.achievements) == "table" and f.achievements or {}
+        local noteText
+        if a.newBestLevel then
+            noteText = TP.TEXT.SUMMARY_LEVEL
+        elseif a.personalBest then
+            noteText = TP.TEXT.SUMMARY_PB
+        end
+        local scoreGain = num(f.scoreGain)
         m.summary = {
             title = code == "OVERTIME" and TP.TEXT.KEY_OVERTIME or (code and TP.TEXT.KEY_COMPLETE or TP.TEXT.KEY_DONE),
             official = f.source == "OFFICIAL",
             timeText = m.timer.subText,
+            noteText = noteText,
+            scoreText = scoreGain and scoreGain > 0 and string.format(TP.TEXT.SUMMARY_SCORE, floor(scoreGain + 0.5)) or nil,
         }
     else
         m.prediction = TP.BuildPrediction(i.prediction, i.settings)
@@ -448,10 +467,13 @@ function TP.BuildEmbedded(model, opts)
     local p = m.prediction or {}
     e.paceCode, e.provisional = p.code or TP.NONE, p.provisional == true
     if o.showPrediction ~= false and running then
-        local code = (p.code and p.code ~= TP.NONE) and p.code or TP.TEXT.NO_VALUE
-        e.paceLabel, e.paceValue = TP.TEXT.PACE, code
-        e.paceText = TP.TEXT.PACE .. " " .. code
-        if code ~= TP.TEXT.NO_VALUE then
+        -- experimental.12: no se pinta "Ritmo --". Sin una prediccion real,
+        -- la fila permanece vacia; un placeholder solo anade ruido y hace que
+        -- el bloque parezca desalineado al empezar una llave.
+        local code = (p.code and p.code ~= TP.NONE) and p.code or nil
+        if code then
+            e.paceLabel, e.paceValue = TP.TEXT.PACE, code
+            e.paceText = TP.TEXT.PACE .. " " .. code
             -- Secundarios: solo con bracket del motor y con su opcion activa.
             if o.showConfidence ~= false and p.confidence then e.confidenceText = string.format(TP.TEXT.CONFIDENCE, p.confidence) end
             if o.showETA ~= false and p.eta then e.etaText = "~" .. TP.FormatClock(p.eta) end
@@ -461,6 +483,7 @@ function TP.BuildEmbedded(model, opts)
     -- Fuerzas: la barra y su % son de Blizzard (o de Angry Keystones). Mitzu
     -- anade el recuento exacto y lo que falta; nunca vuelve a escribir el %.
     local f = m.forces or {}
+    e.forcesComplete = f.available == true and f.complete == true
     if f.available and not f.complete then
         if o.showForcesCount ~= false and f.current and f.total then
             e.forcesPrimary = f.countText
@@ -489,7 +512,12 @@ function TP.LayoutEmbedded(emb, space, measure)
     local sp = type(space) == "table" and space or {}
     local w = function(text, kind) return text and measure(text, kind) or 0 end
     local out = { threshold = { mode = "NONE" }, pace = { mode = "NONE" }, forces = { mode = "NONE" } }
-    local tw = sp.timerWidth
+    -- experimental.12: el reloj y el ritmo ya no comparten un unico
+    -- presupuesto horizontal. El umbral vive en su columna derecha fija y
+    -- Ritmo dispone de la fila completa inferior. `timerWidth` se conserva
+    -- como fallback para pruebas/vistas antiguas.
+    local thresholdW = sp.thresholdWidth or sp.timerWidth
+    local paceW = sp.paceWidth or sp.timerWidth
 
     -- 1. Umbral
     local th = out.threshold
@@ -503,7 +531,7 @@ function TP.LayoutEmbedded(emb, space, measure)
         th.mode = "OVERTIME"
     elseif not e.threshold then
         th.mode = "NONE"
-    elseif type(tw) == "number" and w(e.threshold.text, "threshold") > tw then
+    elseif type(thresholdW) == "number" and w(e.threshold.text, "threshold") > thresholdW then
         th.mode = "TOO_NARROW"
     else
         th.mode, th.text, th.upgrade, th.timeText = "NEXT", e.threshold.text, e.threshold.upgrade, e.threshold.timeText
@@ -516,7 +544,7 @@ function TP.LayoutEmbedded(emb, space, measure)
         local base = w(e.paceText, "pace")
         local conf = e.confidenceText and (TP.GAP + w(e.confidenceText, "secondary")) or nil
         local eta = e.etaText and (TP.GAP + w(e.etaText, "secondary")) or nil
-        local fits = function(x) return type(tw) ~= "number" or x <= tw end
+        local fits = function(x) return type(paceW) ~= "number" or x <= paceW end
         if conf and eta and fits(base + conf + eta) then
             pc.mode, pc.confidence, pc.eta = "WIDE", e.confidenceText, e.etaText
         elseif conf and fits(base + conf) then

@@ -274,7 +274,7 @@ function PanelPlayers:CreateListView(parent)
     local search=CreateFrame("EditBox",nil,bar,BackdropTemplateMixin and "BackdropTemplate")
     search:SetPoint("BOTTOMLEFT",10,7); search:SetSize(300,25); search:SetAutoFocus(false); search:SetTextInsets(9,24,0,0)
     search:SetBackdrop(Theme.BACKDROPS.simple); Theme:SetBackdropColor(search,Theme.BG.input); Theme:SetBackdropBorderColor(search,Theme.BORDER.panel)
-    Theme:ApplyFont(search,"mono",12); Theme:SetTextColor(search,Theme.TEXT.primary); ToolbarLabel(bar,"BUSCAR",search)
+    Theme:ApplyFont(search,"mono",12); Theme:SetTextColor(search,Theme.TEXT.primary); ToolbarLabel(bar,L["PLR_SEARCH_LABEL"],search)
     local ph=search:CreateFontString(nil,"OVERLAY"); ph:SetPoint("LEFT",9,0)
     Theme:ApplyFont(ph,"mono",11); Theme:SetTextColor(ph,Theme.TEXT.dim); ph:SetText(L["PLR_SEARCH"])
     local clear=CreateFrame("Button",nil,search); clear:SetPoint("RIGHT",-3,0); clear:SetSize(18,18); clear:Hide()
@@ -315,7 +315,7 @@ function PanelPlayers:CreateListView(parent)
     table.sort(keys,function(a,b)return (ClassName(a) or a)<(ClassName(b) or b) end)
     for _,token in ipairs(keys) do classItems[#classItems+1]={text=ClassName(token) or token,value=token} end
     local class=MitzuMPlus:CreateSimpleDropdown(bar,190,classItems,function(v)self.classFilter=v or "ALL";self:RenderList()end)
-    class:SetPoint("BOTTOMLEFT",role,"BOTTOMRIGHT",12,0); class:SetSelectedValue("ALL"); ToolbarLabel(bar,"CLASE",class)
+    class:SetPoint("BOTTOMLEFT",role,"BOTTOMRIGHT",12,0); class:SetSelectedValue("ALL"); ToolbarLabel(bar,L["PLR_CLASS_LABEL"],class)
     local function AddFilterHover(dropdown,title)
         local target=dropdown._button or dropdown
         target:HookScript("OnMouseDown",function()search:ClearFocus()end)
@@ -360,7 +360,7 @@ function PanelPlayers:CreateProfileView(parent)
     local title=top:CreateFontString(nil,"OVERLAY"); title:SetPoint("TOPLEFT",112,-11); Theme:ApplyFont(title,"title",18); self.profileTitle=title
     local sub=top:CreateFontString(nil,"OVERLAY"); sub:SetPoint("TOPLEFT",title,"BOTTOMLEFT",0,-5); Theme:ApplyFont(sub,"mono",11)
     Theme:SetTextColor(sub,Theme.TEXT.secondary); self.profileSubtitle=sub
-    self.cards={}; local labels={L["PLR_RUNS_TOGETHER"],"EXITO",L["PLR_BEST_KEY"],L["PLR_LAST_TIME"]}
+    self.cards={}; local labels={L["PLR_RUNS_TOGETHER"],L["COL_SUCCESS"],L["PLR_BEST_KEY"],L["PLR_LAST_TIME"]}
     for i,labelText in ipairs(labels) do
         local card=CreateFrame("Frame",nil,top,BackdropTemplateMixin and "BackdropTemplate"); card:SetSize(126,49)
         card:SetPoint("TOPRIGHT",-10-((4-i)*134),-21); card:SetBackdrop(Theme.BACKDROPS.simple)
@@ -565,9 +565,9 @@ function PanelPlayers:CreateRunRow(entry,index)
     local cells={};for _,col in ipairs(RUN_COLS)do cells[col.key]=NewCell(row,col,(self.runOffsets or {})[col.key]or{x=0,w=100})end
     local run,m=entry.run,entry.member;cells.dungeon:SetText(run.dungeonName or L["HIST_UNKNOWN_DUNGEON"]);Theme:SetTextColor(cells.dungeon,Theme.TEXT.primary)
     local level=tonumber(run.keyLevel)or 0;cells.level:SetText(level>0 and ("+"..level)or"-");Theme:SetTextColor(cells.level,Theme.GOLD.gold4)
-    if run.inTime then cells.result:SetText("EN TIEMPO");Theme:SetTextColor(cells.result,Theme.STATUS.ok)
-    elseif (tonumber(run.completionTime)or 0)>0 then cells.result:SetText("FUERA");Theme:SetTextColor(cells.result,Theme.STATUS.bad)
-    else cells.result:SetText("INCOMPLETA");Theme:SetTextColor(cells.result,Theme.TEXT.dim)end
+    if run.inTime then cells.result:SetText(L["RUN_IN_TIME"]);Theme:SetTextColor(cells.result,Theme.STATUS.ok)
+    elseif (tonumber(run.completionTime)or 0)>0 then cells.result:SetText(L["RESULT_OUT"]);Theme:SetTextColor(cells.result,Theme.STATUS.bad)
+    else cells.result:SetText(L["RESULT_INCOMPLETE"]);Theme:SetTextColor(cells.result,Theme.TEXT.dim)end
     cells.duration:SetText(MMSS(run.completionTime));Theme:SetTextColor(cells.duration,Theme.TEXT.secondary)
     local metric,label=self:Metric(entry);cells.metric:SetText(m.hasMetrics and (FNum(metric).." "..label)or"-");Theme:SetTextColor(cells.metric,m.hasMetrics and (m.role=="HEALER"and Theme.STATUS.ok or Theme.GOLD.gold4)or Theme.TEXT.dim)
     cells.deaths:SetText(m.hasMetrics and m.deaths or "-");Theme:SetTextColor(cells.deaths,m.hasMetrics and (m.deaths>0 and Theme.STATUS.bad or Theme.STATUS.ok)or Theme.TEXT.dim)

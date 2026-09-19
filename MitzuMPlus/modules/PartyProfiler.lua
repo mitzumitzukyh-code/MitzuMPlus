@@ -19,9 +19,10 @@
 -- terminarla. Aquí hace falta lo contrario — algo vivo fuera de la llave y
 -- direccionado por GUID, no por posición en la run.
 --
--- NotifyInspect es global y solo admite una petición en vuelo, así que dos
--- colas compitiendo se pisarían. Esta cede el paso: si la del historial está
--- activa, no lanza nada y reintenta luego. Ver `otraColaOcupada()`.
+-- NotifyInspect es global y solo admite una petición en vuelo. Desde
+-- experimental.5 TODA petición proactiva pasa por InspectArbiter, que serializa
+-- las colas de Mitzu, aplica throttle global y cede por completo cuando la UI
+-- nativa de Blizzard está inspeccionando a un jugador.
 -- ═════════════════════════════════════════════════════════════════════════
 --
 -- RENDIMIENTO: cero OnUpdate. Todo cuelga de eventos, y la cola usa un
@@ -332,9 +333,22 @@ local TIMEOUT   = 3      -- s antes de dar por perdida una petición
 local MAX_RETRY = 2
 local TICK      = 1
 
-local function otraColaOcupada()
-    local otra = MitzuMPlus.InspectQueue
-    return otra ~= nil and otra._active == true
+local function arbiter()
+    return MitzuMPlus.InspectArbiter
+end
+
+local function enqueueUnique(guid, front)
+    if type(guid) ~= "string" then return false end
+    if Q.active == guid then return false end
+    for _, queued in ipairs(Q.pending) do
+        if queued == guid then return false end
+    end
+    if front then
+        table.insert(Q.pending, 1, guid)
+    else
+        Q.pending[#Q.pending + 1] = guid
+    end
+    return true
 end
 
 local function unitDeGUID(guid)
@@ -358,7 +372,7 @@ function PartyProfiler:_EnqueueMissing()
                     if g == guid then yaEsta = true break end
                 end
             end
-            if not yaEsta then Q.pending[#Q.pending + 1] = guid end
+            if not yaEsta then enqueueUnique(guid, false) end
         end
     end
     self:_Tick()
@@ -377,12 +391,30 @@ function PartyProfiler:_Tick()
 end
 
 function PartyProfiler:_Process()
+    local A = arbiter()
+
+    -- Si Blizzard abrió InspectFrame mientras una petición de Mitzu estaba en
+    -- vuelo, cedemos inmediatamente. NO se llama ClearInspectPlayer: la UI
+    -- nativa es la dueña de esa caché y debe poder terminar sin interferencia.
+    if Q.active and A and A.IsNativeInspectBusy then
+        local nativeBusy = A:IsNativeInspectBusy()
+        if nativeBusy then
+            local guid = Q.active
+            Q.active = nil
+            if A.Abandon then A:Abandon("PartyProfiler", guid, "NATIVE_UI_TAKEOVER") end
+            marcar(guid, PENDING)
+            enqueueUnique(guid, true)
+            return
+        end
+    end
+
     -- ¿Caducó la que estaba en vuelo?
     if Q.active then
         local ahora = (GetTime and GetTime()) or 0
         if ahora - Q.since < TIMEOUT then return end
         local guid = Q.active
         Q.active = nil
+        if A and A.Abandon then A:Abandon("PartyProfiler", guid, "TIMEOUT") end
         Q.retries[guid] = (Q.retries[guid] or 0) + 1
         if Q.retries[guid] > MAX_RETRY then
             -- El servidor puede throttlear y no contestar NUNCA. Eso es un
@@ -390,12 +422,20 @@ function PartyProfiler:_Process()
             marcar(guid, THROTTLED)
         else
             marcar(guid, PENDING)
-            Q.pending[#Q.pending + 1] = guid
+            enqueueUnique(guid, false)
         end
     end
 
     if #Q.pending == 0 then return end
-    if otraColaOcupada() then return end   -- se cede el paso, se reintenta luego
+
+    -- InspectArbiter es la autoridad global. Si Blizzard está usando Inspect o
+    -- la otra cola de Mitzu tiene una petición real en vuelo, no hacemos nada.
+    if A and A.IsNativeInspectBusy then
+        local busy = A:IsNativeInspectBusy()
+        if busy then return end
+        local owner = A.CurrentOwner and A:CurrentOwner() or nil
+        if owner ~= nil and owner ~= "PartyProfiler" then return end
+    end
 
     local guid = table.remove(Q.pending, 1)
     local unit = unitDeGUID(guid)
@@ -407,7 +447,10 @@ function PartyProfiler:_Process()
         marcar(guid, OUT_OF_RANGE)
         return
     end
-    if type(NotifyInspect) ~= "function" then
+
+    local requester = A and A.Request
+    if type(requester) ~= "function" then
+        -- Safety-first: sin árbitro no se usa NotifyInspect desde esta cola.
         marcar(guid, FAILED)
         return
     end
@@ -415,7 +458,18 @@ function PartyProfiler:_Process()
     Q.active = guid
     Q.since  = (GetTime and GetTime()) or 0
     marcar(guid, PENDING)
-    pcall(NotifyInspect, unit)
+
+    local ok, reason = A:Request("PartyProfiler", unit, guid)
+    if not ok then
+        Q.active = nil
+        if reason == "API_UNAVAILABLE" or reason == "NOTIFY_FAILED" then
+            marcar(guid, FAILED)
+        else
+            marcar(guid, PENDING)
+            enqueueUnique(guid, true)
+        end
+        return
+    end
 end
 
 function PartyProfiler:OnInspectReady(guid)
@@ -444,8 +498,13 @@ function PartyProfiler:OnInspectReady(guid)
             if bus then bus:Emit("MITZU_MEMBER_SPEC_UPDATED", guid, specID) end
         end
     end
-    if Q.active == guid then Q.active = nil end
-    if type(ClearInspectPlayer) == "function" then pcall(ClearInspectPlayer) end
+    if Q.active == guid then
+        Q.active = nil
+        local A = arbiter()
+        if A and A.Complete then A:Complete("PartyProfiler", guid) end
+    end
+    -- PLAYER-INSPECT-001: jamás llamar ClearInspectPlayer aquí. Ese estado es
+    -- compartido con InspectFrame y limpiarlo puede dejar sus slots vacíos.
     self:_Tick()
 end
 
@@ -533,6 +592,14 @@ function PartyProfiler:StatusLines()
     local pend, act = self:QueueStatus()
     L[#L + 1] = "inspectPending=" .. tostring(pend)
     L[#L + 1] = "inspectActive=" .. tostring(act or "none")
+    local A = arbiter()
+    if A and A.Status then
+        local st = A:Status()
+        L[#L + 1] = "inspectArbiterOwner=" .. tostring(st.owner or "none")
+        L[#L + 1] = "nativeInspectVisible=" .. tostring(st.nativeInspectVisible == true)
+        L[#L + 1] = "inspectExternalGrace=" .. tostring(st.externalGrace or 0)
+        L[#L + 1] = "clearInspectCalls=0"
+    end
     return L
 end
 

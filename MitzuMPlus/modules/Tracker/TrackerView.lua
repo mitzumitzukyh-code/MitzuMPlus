@@ -34,23 +34,25 @@ MitzuMPlus.TrackerView = TV
 
 -- Geometria copiada del bloque de Blizzard (px) para que el ancho util sea real.
 TV.BLOCK_W, TV.BLOCK_H = 251, 87
-TV.LEVEL_X, TV.DEATH_RIGHT, TV.GAP, TV.LOOT_ICON, TV.LINE_2_Y = 28, 47, 8, 24, -14
+TV.LEVEL_X, TV.DEATH_RIGHT = 28, 47
+TV.ELAPSED_COL_W, TV.COLUMN_GAP, TV.PACE_TOP_Y, TV.PACE_ROW_H = 62, 8, -17, 14
 TV.BAR_W = 191
 -- Mismos numeros que E.LAYOUT en el enhancer: la vista previa debe ensenar la
 -- misma fila de fuerzas que se vera dentro del bloque de Blizzard.
-TV.FORCES_GAP_Y, TV.FORCES_ROW_H, TV.FORCES_INSET = -1, 12, 1
+TV.FORCES_GAP_Y, TV.FORCES_ROW_H, TV.FORCES_INSET = -3, 14, 0
 TV.MAX_BOSSES = 4
 TV.WIDTH = TV.BLOCK_W + 20
 TV.HEADER_H, TV.BOSS_H = 22, 16
+TV.SUMMARY_EXTRA_H = 18
 TV.HEIGHT = TV.HEADER_H + TV.BLOCK_H + TV.MAX_BOSSES * TV.BOSS_H + 58
 TV.WHITE = "Interface\\Buttons\\WHITE8X8"
 
--- dev.11: misma jerarquia que el bloque integrado. La vista previa tiene que
--- ensenar el tamano REAL que el jugador vera en la llave, no uno de muestra.
+-- experimental.7: misma jerarquia grande del bloque integrado. La vista
+-- previa ensena exactamente la escala que se vera en una llave real.
 TV.FONT = {
-    threshold = "GameFontHighlightLarge", pace = "GameFontHighlight", secondary = "GameFontDisableSmall",
-    forces = "GameFontHighlight", forcesSecondary = "GameFontHighlightSmall",
-    penalty = "GameFontHighlightSmall", timer = "GameFontHighlightHuge",
+    threshold = "GameFontHighlightLarge", pace = "GameFontHighlightMedium", secondary = "GameFontDisableSmall",
+    forces = "GameFontHighlight", forcesSecondary = "GameFontHighlight",
+    penalty = "GameFontHighlight", timer = "GameFontHighlightHuge",
 }
 TV.COLOR = {
     bg       = { 0, 0, 0, 0.45 },
@@ -119,12 +121,15 @@ function TV:Create(parent, name)
     r.level:SetPoint("TOPLEFT", TV.LEVEL_X, -18)
     r.timeLeft = fs(block, "GameFontHighlightHuge")
     r.timeLeft:SetPoint("TOPLEFT", r.level, "BOTTOMLEFT", 0, -8)
-    r.threshold = fs(block, TV.FONT.threshold)
+    -- experimental.12: mismas dos filas deterministas del renderer integrado.
+    r.timerRow = CreateFrame("Frame", nil, block)
+    r.paceRow = CreateFrame("Frame", nil, block)
+    r.paceRow:SetHeight(TV.PACE_ROW_H)
+    r.threshold = fs(r.timerRow, TV.FONT.threshold, "RIGHT")
     r.threshold:SetTextColor(C.threshold[1], C.threshold[2], C.threshold[3], 1)
-    r.pace = fs(block, TV.FONT.pace)
-    r.paceExtra = fs(block, TV.FONT.secondary)
+    r.pace = fs(r.paceRow, TV.FONT.pace, "CENTER")
+    r.paceExtra = fs(r.paceRow, TV.FONT.secondary, "RIGHT")
     r.paceExtra:SetTextColor(C.secondary[1], C.secondary[2], C.secondary[3], 1)
-    r.paceExtra:SetPoint("LEFT", r.pace, "RIGHT", 6, 0)
     r.death = CreateFrame("Frame", nil, block)
     r.death:SetSize(20, 16)
     r.death:SetPoint("TOPLEFT", block, "BOTTOMRIGHT", -TV.DEATH_RIGHT, 43)
@@ -140,6 +145,13 @@ function TV:Create(parent, name)
     r.timeBarBg:SetSize(207, 13); r.timeBarBg:SetPoint("BOTTOM", block, "BOTTOM", 0, 10)
     r.timeBar = tex(block, "ARTWORK", C.timeBar)
     r.timeBar:SetHeight(13); r.timeBar:SetPoint("LEFT", r.timeBarBg, "LEFT", 0, 0)
+
+    -- experimental.9: una sola línea consolidada para logros de finalización.
+    -- Solo existe en SUMMARY; nunca añade ruido a la vista previa ni a la run.
+    r.summaryNote = fs(f, "GameFontNormal", "CENTER")
+    r.summaryNote:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -(TV.HEADER_H + TV.BLOCK_H + 3))
+    r.summaryNote:SetPoint("RIGHT", f, "RIGHT", -8, 0)
+    r.summaryNote:Hide()
 
     r.bosses = {}
     for i = 1, TV.MAX_BOSSES do
@@ -161,18 +173,20 @@ function TV:Create(parent, name)
     r.forcesBar:SetHeight(17); r.forcesBar:SetPoint("LEFT", r.forcesBarBg, "LEFT", 0, 0)
     r.forcesLabel = fs(f, "GameFontHighlightMedium", "CENTER")
     r.forcesLabel:SetPoint("CENTER", r.forcesBarBg, "CENTER", 0, 0)
-    -- Fila propia anclada a los dos extremos de la barra; las dos columnas
-    -- comparten borde inferior, asi que comparten base (misma jerarquia que el
-    -- render integrado: recuento legible, restantes en gris).
+    -- Fila propia anclada a los dos extremos de la barra. experimental.13:
+    -- misma fuente, misma vertical superior y 3 px uniformes bajo la barra.
+    -- Ninguna posicion X depende de medir el texto.
     r.forcesRow = CreateFrame("Frame", nil, f)
     r.forcesRow:SetHeight(TV.FORCES_ROW_H)
     r.forcesRow:SetPoint("TOPLEFT", r.forcesBarBg, "BOTTOMLEFT", 0, TV.FORCES_GAP_Y)
     r.forcesRow:SetPoint("TOPRIGHT", r.forcesBarBg, "BOTTOMRIGHT", 0, TV.FORCES_GAP_Y)
     r.forcesPrimary = fs(r.forcesRow, TV.FONT.forces)
-    r.forcesPrimary:SetPoint("BOTTOMLEFT", r.forcesRow, "BOTTOMLEFT", TV.FORCES_INSET, 0)
+    r.forcesPrimary:SetJustifyV("TOP")
+    r.forcesPrimary:SetPoint("TOPLEFT", r.forcesRow, "TOPLEFT", TV.FORCES_INSET, 0)
     r.forcesSecondary = fs(r.forcesRow, TV.FONT.forcesSecondary, "RIGHT")
+    r.forcesSecondary:SetJustifyV("TOP")
     r.forcesSecondary:SetTextColor(C.secondary[1], C.secondary[2], C.secondary[3], 1)
-    r.forcesSecondary:SetPoint("BOTTOMRIGHT", r.forcesRow, "BOTTOMRIGHT", -TV.FORCES_INSET, 0)
+    r.forcesSecondary:SetPoint("TOPRIGHT", r.forcesRow, "TOPRIGHT", -TV.FORCES_INSET, 0)
 
     r.measure = {}
     for kind, template in pairs(TV.FONT) do
@@ -214,6 +228,24 @@ function TV:_Place(key, sig, fn)
     if self._cache[key] == sig then return end
     self._cache[key] = sig
     fn()
+end
+
+function TV:_ApplySummaryLayout(showNote)
+    local shift = showNote and TV.SUMMARY_EXTRA_H or 0
+    self:_Place("summaryLayout", tostring(shift), function()
+        self.frame:SetHeight(TV.HEIGHT + shift)
+        local bossTop = TV.HEADER_H + TV.BLOCK_H + 4 + shift
+        for i = 1, TV.MAX_BOSSES do
+            local row = self.r.bosses[i]
+            row.icon:ClearAllPoints()
+            row.icon:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 20, -(bossTop + (i - 1) * TV.BOSS_H))
+        end
+        local forcesTop = -(TV.HEADER_H + TV.BLOCK_H + 6 + TV.MAX_BOSSES * TV.BOSS_H + shift)
+        self.r.forcesTitle:ClearAllPoints()
+        self.r.forcesTitle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 36, forcesTop)
+        self.r.forcesBarBg:ClearAllPoints()
+        self.r.forcesBarBg:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 40, forcesTop - 16)
+    end)
 end
 
 function TV:ResetCache() self._cache, self._widths = {}, {} end
@@ -259,8 +291,6 @@ function TV:Render(m)
     shown.timer = clock
 
     -- Lineas de Mitzu con la misma decision que el enhancer.
-    local timeW = self:_Measure(clock, "timer")
-    local offsetX = TV.GAP + (red and TV.LOOT_ICON or 0)
     local d = m.deaths or {}
     local deaths = (d.count and d.count > 0) and tostring(math.floor(d.count)) or ""
     self:_Text("deathCount", r.deathCount, deaths)
@@ -269,18 +299,55 @@ function TV:Render(m)
 
     if summary then
         local p = m.prediction or {}
+        local penalty = d.penaltyText and ("-" .. d.penaltyText:sub(2)) or ""
         self:_Text("threshold", r.threshold, p.code ~= TP.NONE and colored(p.code) or "")
         self:_Text("pace", r.pace, summary.timeText or "")
         self:_Text("paceExtra", r.paceExtra, p.sourceText or "")
-        self:_Text("penalty", r.penalty, d.penaltyText and ("-" .. d.penaltyText:sub(2)) or "")
+        self:_Text("penalty", r.penalty, penalty)
         shown.prediction = p.code or TP.NONE
+
+        -- El resumen reutiliza la misma cuadricula para que no dependa de que
+        -- la vista previa se haya abierto antes en esta sesion.
+        local penaltyW = penalty ~= "" and (self:_Measure(penalty, "penalty") + 4) or 0
+        local rightEdge = TV.BLOCK_W - TV.DEATH_RIGHT - 4 - penaltyW
+        local paceRightEdge = TV.BLOCK_W - TV.DEATH_RIGHT - 4
+        local rowWidth = math.max(0, rightEdge - TV.LEVEL_X)
+        local paceWidth = math.max(0, paceRightEdge - TV.LEVEL_X)
+        self:_Place("timerGrid", string.format("%d:%d", math.floor(rowWidth + 0.5), math.floor(rightEdge + 0.5)), function()
+            r.timerRow:ClearAllPoints()
+            r.timerRow:SetPoint("TOPLEFT", r.timeLeft, "TOPLEFT", 0, 0)
+            r.timerRow:SetPoint("BOTTOMLEFT", r.timeLeft, "BOTTOMLEFT", 0, 0)
+            r.timerRow:SetWidth(rowWidth)
+        end)
+        self:_Place("paceGrid", string.format("%d:%d", math.floor(paceWidth + 0.5), TV.PACE_TOP_Y), function()
+            r.paceRow:ClearAllPoints()
+            r.paceRow:SetPoint("TOPLEFT", r.timeLeft, "TOPLEFT", 0, TV.PACE_TOP_Y)
+            r.paceRow:SetWidth(paceWidth)
+            r.paceRow:SetHeight(TV.PACE_ROW_H)
+        end)
+        self:_Place("thresholdAt", "GRID_RIGHT", function()
+            r.threshold:ClearAllPoints()
+            r.threshold:SetPoint("BOTTOMRIGHT", r.timerRow, "BOTTOMRIGHT", 0, 0)
+        end)
+        self:_Place("paceAt", "GRID_CENTER", function()
+            r.pace:ClearAllPoints()
+            r.pace:SetPoint("CENTER", r.paceRow, "CENTER", 0, 0)
+        end)
+        self:_Place("paceExtraAt", "GRID_RIGHT", function()
+            r.paceExtra:ClearAllPoints()
+            r.paceExtra:SetPoint("RIGHT", r.paceRow, "RIGHT", 0, 0)
+        end)
     else
         local emb = TP.BuildEmbedded(m, { simulate = true })
         local penalty = (deaths ~= "" and emb.penaltyText) or ""
         self:_Text("penalty", r.penalty, penalty)
         local penaltyW = penalty ~= "" and (self:_Measure(penalty, "penalty") + 4) or 0
-        local available = TV.BLOCK_W - TV.DEATH_RIGHT - 4 - penaltyW - (TV.LEVEL_X + timeW + offsetX)
-        local lay = TP.LayoutEmbedded(emb, { timerWidth = available, forcesWidth = TV.BAR_W },
+        local rightEdge = TV.BLOCK_W - TV.DEATH_RIGHT - 4 - penaltyW
+        local paceRightEdge = TV.BLOCK_W - TV.DEATH_RIGHT - 4
+        local rowWidth = math.max(0, rightEdge - TV.LEVEL_X)
+        local thresholdWidth = math.max(0, rowWidth - TV.ELAPSED_COL_W - TV.COLUMN_GAP)
+        local paceWidth = math.max(0, paceRightEdge - TV.LEVEL_X)
+        local lay = TP.LayoutEmbedded(emb, { thresholdWidth = thresholdWidth, paceWidth = paceWidth, forcesWidth = TV.BAR_W },
             function(text, kind) return self:_Measure(text, kind) end)
         local th, pc, fo = lay.threshold, lay.pace, lay.forces
         self:_Text("threshold", r.threshold, th.text or "")
@@ -288,21 +355,69 @@ function TV:Render(m)
         local extras = {}
         if pc.confidence then extras[#extras + 1] = pc.confidence end
         if pc.eta then extras[#extras + 1] = pc.eta end
-        self:_Text("paceExtra", r.paceExtra, table.concat(extras, "  "))
+        local extrasText = pc.text and table.concat(extras, "  ") or ""
+        if extrasText ~= "" then
+            local paceTextW = self:_Measure(pc.text, "pace")
+            local extrasW = self:_Measure(extrasText, "secondary")
+            local rightRoom = (paceWidth / 2) - (paceTextW / 2) - TP.GAP
+            if extrasW > rightRoom then extrasText = "" end
+        end
+        local extrasVisible = extrasText ~= ""
+        self:_Text("paceExtra", r.paceExtra, extrasText)
         self:_Text("forcesPrimary", r.forcesPrimary, fo.primary)
         self:_Text("forcesSecondary", r.forcesSecondary, fo.secondary)
         shown.prediction = pc.text and (emb.paceCode or TP.NONE) or TP.NONE
-        shown.confidence = pc.confidence and (m.prediction or {}).confidence or nil
+        shown.confidence = extrasVisible and pc.confidence and (m.prediction or {}).confidence or nil
         shown.threshold, shown.thresholdMode, shown.paceMode, shown.forcesLayoutMode = th.text, th.mode, pc.mode, fo.mode
         shown.forces = (fo.primary or fo.secondary) and table.concat({ fo.primary or "", fo.secondary or "" },
             fo.primary and fo.secondary and "  " or "") or nil
-        shown.available = math.floor(available + 0.5)
+        shown.available = math.floor(rowWidth + 0.5)
+        shown.thresholdColumnWidth = math.floor(thresholdWidth + 0.5)
+        shown.paceRowWidth = math.floor(paceWidth + 0.5)
+
+        self:_Place("timerGrid", string.format("%d:%d", math.floor(rowWidth + 0.5), math.floor(rightEdge + 0.5)), function()
+            r.timerRow:ClearAllPoints()
+            r.timerRow:SetPoint("TOPLEFT", r.timeLeft, "TOPLEFT", 0, 0)
+            r.timerRow:SetPoint("BOTTOMLEFT", r.timeLeft, "BOTTOMLEFT", 0, 0)
+            r.timerRow:SetWidth(rowWidth)
+        end)
+        self:_Place("paceGrid", string.format("%d:%d", math.floor(paceWidth + 0.5), TV.PACE_TOP_Y), function()
+            r.paceRow:ClearAllPoints()
+            r.paceRow:SetPoint("TOPLEFT", r.timeLeft, "TOPLEFT", 0, TV.PACE_TOP_Y)
+            r.paceRow:SetWidth(paceWidth)
+            r.paceRow:SetHeight(TV.PACE_ROW_H)
+        end)
+        self:_Place("thresholdAt", "GRID_RIGHT", function()
+            r.threshold:ClearAllPoints()
+            r.threshold:SetPoint("BOTTOMRIGHT", r.timerRow, "BOTTOMRIGHT", 0, 0)
+        end)
+        self:_Place("paceAt", "GRID_CENTER", function()
+            r.pace:ClearAllPoints()
+            r.pace:SetPoint("CENTER", r.paceRow, "CENTER", 0, 0)
+        end)
+        self:_Place("paceExtraAt", "GRID_RIGHT", function()
+            r.paceExtra:ClearAllPoints()
+            r.paceExtra:SetPoint("RIGHT", r.paceRow, "RIGHT", 0, 0)
+        end)
     end
-    self:_Place("lines", tostring(offsetX), function()
-        r.threshold:ClearAllPoints(); r.pace:ClearAllPoints()
-        r.threshold:SetPoint("TOPLEFT", r.timeLeft, "TOPRIGHT", offsetX, -1)
-        r.pace:SetPoint("TOPLEFT", r.timeLeft, "TOPRIGHT", offsetX, TV.LINE_2_Y)
-    end)
+
+    -- El resumen absorbe los avisos de PB/score en UNA sola línea, en lugar de
+    -- disparar varios toasts sobre el HUD. Si no hay nada extra, la geometría
+    -- queda idéntica a la anterior.
+    local summaryLine = ""
+    if summary then
+        local parts = {}
+        if summary.noteText and summary.noteText ~= "" then
+            parts[#parts + 1] = "|cffffd100" .. summary.noteText .. "|r"
+        end
+        if summary.scoreText and summary.scoreText ~= "" then
+            parts[#parts + 1] = "|cff21de66" .. summary.scoreText .. "|r"
+        end
+        summaryLine = table.concat(parts, "  ·  ")
+    end
+    self:_ApplySummaryLayout(summaryLine ~= "")
+    self:_Text("summaryNote", r.summaryNote, summaryLine)
+    shown.summaryNote = summaryLine ~= "" and summaryLine or nil
 
     -- Jefes (datos del modelo; en el resumen, inferidos si procede).
     local b = m.bosses or {}

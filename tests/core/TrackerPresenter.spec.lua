@@ -169,7 +169,7 @@ test("summary of the real run: 3/4 observed + official completion shows 4/4 mark
     local m = build("COMPLETED", s, 1677, nil, { summary = true,
         final = TP.FinalFromRun({ inTime = true, keystoneUpgradeLevels = 1, completionTime = 1677, completionInfoSource = "API" }) })
     equal(m.mode, "SUMMARY")
-    equal(m.summary.title, "LLAVE COMPLETADA"); equal(m.summary.official, true); equal(m.summary.timeText, "27:57 / 33:00")
+    equal(m.summary.title, "Llave completada"); equal(m.summary.official, true); equal(m.summary.timeText, "27:57 / 33:00")
     equal(m.prediction.code, "+1"); equal(m.prediction.label, "RESULTADO"); equal(m.prediction.sourceText, "oficial")
     equal(m.bosses.text, "4/4"); equal(m.bosses.inferred, true); equal(m.bosses.complete, true)
     equal(m.bosses.list[4].completed, true)
@@ -201,9 +201,9 @@ test("summary without official result falls back to the last pace, and overtime 
     equal(m.prediction.code, "+2"); equal(m.prediction.sourceText, "último ritmo"); equal(m.summary.official, false)
     m = build("COMPLETED", s, nil, nil, { summary = true,
         final = TP.FinalFromRun({ inTime = false, completionTime = 2100, completionInfoSource = "API" }) })
-    equal(m.summary.title, "LLAVE FUERA DE TIEMPO"); equal(m.prediction.code, "OVERTIME")
+    equal(m.summary.title, "Llave fuera de tiempo"); equal(m.prediction.code, "OVERTIME")
     m = build("COMPLETED", s, nil, nil, { summary = true })
-    equal(m.prediction.code, "NONE"); equal(m.summary.title, "LLAVE TERMINADA")
+    equal(m.prediction.code, "NONE"); equal(m.summary.title, "Llave terminada")
 end)
 
 test("official completed results", function()
@@ -298,7 +298,7 @@ test("embedded model: one threshold, pace with secondary parts, forces without %
     local e = TP.BuildEmbedded(m, { showConfidence = true, showETA = true })
     equal(e.active, true)
     equal(e.threshold.text, "+3 7:57"); equal(e.threshold.upgrade, "+3"); equal(e.threshold.timeText, "7:57")
-    equal(e.paceText, "RITMO +1"); equal(e.paceValue, "+1"); equal(e.confidenceText, "30%"); equal(e.etaText, "~29:50")
+    equal(e.paceText, "Ritmo +1"); equal(e.paceValue, "+1"); equal(e.confidenceText, "30%"); equal(e.etaText, "~29:50")
     equal(e.forcesPrimary, "329 / 729"); equal(e.forcesPrimaryCompact, "329/729"); equal(e.forcesSecondary, "faltan 400")
     equal(e.penaltyText, "-0:20")
     for k, v in pairs(e) do
@@ -310,7 +310,7 @@ test("embedded model: one threshold, pace with secondary parts, forces without %
     -- Disabled confidence (settings) and ETA (options) never leak through.
     m = nalorakkModel(675, 329, 4, pred("+1", 30, true, 1790), { showConfidence = false, showETA = true })
     e = TP.BuildEmbedded(m, { showConfidence = false, showETA = false })
-    equal(e.confidenceText, nil); equal(e.etaText, nil); equal(e.paceText, "RITMO +1")
+    equal(e.confidenceText, nil); equal(e.etaText, nil); equal(e.paceText, "Ritmo +1")
     -- Missing confidence / ETA (unconfident engine): pace alone.
     e = TP.BuildEmbedded(nalorakkModel(675, 329, 0, pred("+1", nil, false, 1790)), {})
     equal(e.confidenceText, nil); equal(e.etaText, nil)
@@ -333,7 +333,7 @@ test("embedded model: pending, completing, overtime, complete forces and non-run
     local e = TP.BuildEmbedded(build("PENDING", s, nil, engine("+1", 10, false)))
     equal(e.threshold, nil); equal(e.paceText, nil, "nothing invented before the timer"); equal(e.forcesPrimary, "136 / 608")
     e = TP.BuildEmbedded(build("RUNNING", reposo(60, 10, 0), 60, nil))
-    equal(e.paceText, "RITMO --"); equal(e.confidenceText, nil)
+    equal(e.paceText, nil, "no placeholder without a real prediction"); equal(e.confidenceText, nil)
     local c = reposo(1677, 600, 3, 14); c.finalElapsed = 1677
     e = TP.BuildEmbedded(build("COMPLETING", c, 1677, engine("+1", 70, true)))
     equal(e.threshold.text, "+1 5:03"); equal(e.paceValue, "+1")
@@ -354,7 +354,7 @@ test("adaptive layout: real Nalorakk space (114 px) is wide enough for threshold
     local m = nalorakkModel(675, 329, 4, pred("+1", 30, false))
     local lay = layoutOf(m, { showConfidence = true }, { timerWidth = 114, forcesWidth = 191 })
     equal(lay.threshold.mode, "NEXT"); equal(lay.threshold.text, "+3 7:57")
-    equal(lay.pace.mode, "STANDARD"); equal(lay.pace.text, "RITMO +1"); equal(lay.pace.confidence, "30%")
+    equal(lay.pace.mode, "STANDARD"); equal(lay.pace.text, "Ritmo +1"); equal(lay.pace.confidence, "30%")
     equal(lay.forces.mode, "SPLIT"); equal(lay.forces.primary, "329 / 729"); equal(lay.forces.secondary, "faltan 400")
     -- Later in the same run: 565 / 729.
     lay = layoutOf(nalorakkModel(1300, 565, 5, pred("+1", 40, false)), {}, { timerWidth = 114, forcesWidth = 191 })
@@ -364,7 +364,7 @@ end)
 test("adaptive layout: sacrifice order ETA -> confidence -> pace, never the threshold first", function()
     local m = nalorakkModel(675, 329, 0, pred("+1", 30, true, 1790))
     local opts = { showConfidence = true, showETA = true }
-    -- "RITMO +1"=48, gap 6, "30%"=18, gap 6, "~29:50"=36
+    -- "Ritmo +1"=48, gap 6, "30%"=18, gap 6, "~29:50"=36
     equal(layoutOf(m, opts, { timerWidth = 114 }).pace.mode, "WIDE")
     local lay = layoutOf(m, opts, { timerWidth = 113 })
     equal(lay.pace.mode, "STANDARD"); equal(lay.pace.eta, nil, "ETA goes first"); equal(lay.pace.confidence, "30%")
@@ -437,7 +437,7 @@ end)
 -- 1.1.0-dev.9 -- pulido final sobre la run real de regresion
 -- Guarida de Nalorakk (mapID 586) +4, limite 32:00, +3 a las 19:12.
 -- Observado en vivo: 502 / 729 (68 %, faltan 227), umbral "+3 5:18",
--- "RITMO +2" con 50 % de confianza (bracket provisional).
+-- "Ritmo +2" con 50 % de confianza (bracket provisional).
 -- ---------------------------------------------------------------------------
 
 local function liveRun(elapsed, forces, deaths, prediction)
@@ -455,7 +455,7 @@ test("dev.9 live fixture: the +4 Nalorakk run reads exactly as it did in game", 
     local m = liveRun(834, 502, 0, pred("+2", 50, false))
     local e = TP.BuildEmbedded(m, { showConfidence = true, showETA = true })
     equal(e.threshold.text, "+3 5:18", "the threshold seen on screen")
-    equal(e.paceText, "RITMO +2"); equal(e.confidenceText, "50%")
+    equal(e.paceText, "Ritmo +2"); equal(e.confidenceText, "50%")
     equal(e.provisional, true, "50 % is not a confident bracket")
     equal(e.forcesPrimary, "502 / 729"); equal(e.forcesSecondary, "faltan 227")
     equal(m.forces.remaining, 227); equal(math.floor(m.forces.percent), 68)
@@ -478,15 +478,16 @@ test("dev.9 pace hierarchy: RITMO survives, the confidence is what gives way", f
     equal(TP.LayoutEmbedded(TP.BuildEmbedded(m, opts), { timerWidth = 200 }, glyphs).pace.mode, "WIDE")
     -- Narrow: the secondary parts give way before the pace, the pace before the threshold.
     local narrow = TP.LayoutEmbedded(TP.BuildEmbedded(m, opts), { timerWidth = 60 }, glyphs)
-    equal(narrow.pace.mode, "COMPACT"); equal(narrow.pace.text, "RITMO +2")
+    equal(narrow.pace.mode, "COMPACT"); equal(narrow.pace.text, "Ritmo +2")
     equal(narrow.pace.confidence, nil, "the confidence gives way before the pace")
     equal(narrow.threshold.mode, "NEXT", "and the threshold before both")
     -- The confidence is never promoted over the pace value.
     local off = TP.BuildEmbedded(liveRun(834, 502, 0, pred("+2", 50, false)), { showConfidence = false })
-    equal(off.paceText, "RITMO +2"); equal(off.confidenceText, nil)
+    equal(off.paceText, "Ritmo +2"); equal(off.confidenceText, nil)
     -- No engine bracket: no placeholder confidence either.
     local blind = TP.BuildEmbedded(liveRun(834, 502, 0, nil), opts)
-    equal(blind.paceText, "RITMO --"); equal(blind.confidenceText, nil); equal(blind.etaText, nil)
+    equal(blind.paceText, nil, "no placeholder without a real prediction")
+    equal(blind.confidenceText, nil); equal(blind.etaText, nil)
 end)
 
 test("dev.9 forces: two columns that fit the bar, hidden at 100 %, never a duplicated %", function()

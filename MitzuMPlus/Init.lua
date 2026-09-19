@@ -30,7 +30,15 @@ function MitzuMPlus:OnInitialize()
               "Check that MitzuMPlus_main.lua loads before Init.lua in the TOC.")
     end
 
+    -- Leer el esquema crudo ANTES de que AceDB aplique defaults; de otro modo
+    -- una DB antigua sin schemaVersion pareceria estar ya migrada.
+    local rawDB = rawget(_G, "MitzuMPlusDB")
+    local previousSchema = rawDB and rawDB.global and tonumber(rawDB.global.schemaVersion) or 0
+
     self.db = LibStub("AceDB-3.0"):New("MitzuMPlusDB", MitzuMPlusDB_Defaults, true)
+    if type(self.MigrateDatabaseSchema) == "function" then
+        self:MigrateDatabaseSchema(previousSchema)
+    end
 
     -- FIX BUG-12: actualizar global.version al cargar para que refleje la versión
     -- real del addon (leída del .toc por Bootstrap.lua) y no quede hardcodeada.
@@ -95,9 +103,10 @@ function MitzuMPlus:OnEnable()
     if self.InitMinimapIcon then
         self:InitMinimapIcon()
     end
-    -- DataManager: solo remover runs corruptas, sin backups
-    if self.DataManager then
-        self.DataManager:RemoveCorruptRuns()
+    -- Integridad: reparar lo recuperable y poner lo irrecuperable en
+    -- cuarentena con snapshot previo. Nunca destruir historial al cargar.
+    if self.DataManager and self.DataManager.RepairAndQuarantineRuns then
+        self.DataManager:RepairAndQuarantineRuns()
     end
 
 
@@ -369,7 +378,7 @@ function MitzuMPlus:CreateMainWindow()
     subtitleText:SetPoint("RIGHT", titlebar, "RIGHT", -245, 0)
     subtitleText:SetJustifyH("LEFT")
     subtitleText:SetWordWrap(false)
-    subtitleText:SetText("Mythic+ History & Key Prediction")
+    subtitleText:SetText(L["ADDON_SUBTITLE"])
     subtitleText:SetTextColor(Theme.TEXT.secondary.r, Theme.TEXT.secondary.g, Theme.TEXT.secondary.b, Theme.TEXT.secondary.a)
 
     -- Logo centrado en vertical con el bloque titulo+subtitulo (el titulo no
@@ -535,13 +544,13 @@ function MitzuMPlus:HandleSlashCommand(input)
             chat = self.db and self.db.profile and self.db.profile.chatOutput == true,
         }
         if states.complete and self.ShowToast then
-            self:ShowToast(L["TEST_RUN_DONE"], "ok", 2, true)
+            self:ShowToast({ title = L["TEST_RUN_DONE"], detail = "+14 · +1 · 33:20" }, "ok", 2.5, true)
         end
         if states.record and self.ShowToast then
-            self:ShowToast(L["TEST_NEW_RECORD"], "record", 2, true)
+            self:ShowToast({ title = L["TEST_NEW_RECORD"], detail = "+15" }, "record", 2.5, true)
         end
         if states.personal and self.ShowToast then
-            self:ShowToast(L["TEST_PERSONAL_BEST"], "personal", 2, true)
+            self:ShowToast({ title = L["TEST_PERSONAL_BEST"], detail = "+14 · 31:27" }, "personal", 2.5, true)
         end
         if states.chat and self.Print then
             self:Print(L["TEST_CHAT_SUMMARY"])
@@ -612,6 +621,12 @@ end
 
 function MitzuMPlus:HandleDevCommand(args)
     local sub = args[2]
+    -- Native UI owns only its explicit diagnostic subcommands.
+    local EXP = self.ExperimentalNativeUI
+    if EXP and type(EXP.HandleDevCommand) == "function" then
+        local ok, handled = pcall(EXP.HandleDevCommand, EXP, args)
+        if ok and handled == true then return end
+    end
     if sub == "state" then
         if not self.TrackerState then
             self:Print("|cFFff5555[DEV] TrackerState unavailable.|r")
@@ -662,7 +677,7 @@ function MitzuMPlus:HandleDevCommand(args)
         end
         for _, line in ipairs(Loc:StatusLines()) do self:Print("[DEV] " .. line) end
     else
-        self:Print("|cFFff9922[DEV] Usage: /emp dev tracker|state|blizzard|caps|locale|r")
+        self:Print("|cFFff9922[DEV] Usage: /emp dev tracker|state|blizzard|caps|locale|nativeui|keystoneui|seasonui|lfgui|teleports|partyneeds|inspect|r")
     end
 end
 

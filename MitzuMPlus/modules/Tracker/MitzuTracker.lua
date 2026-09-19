@@ -170,6 +170,9 @@ end
 
 function MT:_StartSummary()
     self._summaryUntil = now() + MT.SUMMARY_SECONDS
+    -- experimental.9: el resumen es la única autoridad visual al terminar.
+    -- Si había un toast anterior, se retira antes de mostrar el HUD final.
+    if MitzuMPlus.DismissToasts then MitzuMPlus:DismissToasts("MPLUS_SUMMARY") end
     local timer = rawget(_G, "C_Timer")
     if type(timer) == "table" and type(timer.After) == "function" then
         local mark = self._summaryUntil
@@ -196,7 +199,30 @@ function MT:GatherInput(readPrediction)
     if status == "RUNNING" or status == "PENDING" then
         if readPrediction ~= false or not self._lastPrediction then
             local run = rawget(_G, "MitzuMPlusCurrentRun")
-            self._lastPrediction = run and method(MitzuMPlus.PredictionEngine, "GetSnapshot", run) or nil
+            local snap = run and method(MitzuMPlus.PredictionEngine, "GetSnapshot", run) or nil
+
+            -- experimental.11: una lectura transitoria incompleta no puede
+            -- borrar un bracket valido que ya estaba visible. En Retail hay
+            -- instantes durante reconstrucciones del Objective Tracker en los
+            -- que KeystoneTracker/PredictionEngine puede devolver nil (o un
+            -- snapshot sin result) aunque la llave siga RUNNING. Antes eso
+            -- producia NONE -> +1 -> NONE -> +1 en pantalla y en FlightRecorder.
+            --
+            -- La memoria se reinicia en MITZU_TRACKER_RUN_STARTED/RUN_ENDED,
+            -- por lo que nunca cruza de una llave a otra. Un resultado nuevo
+            -- reconocido (+3/+2/+1/FUERA) siempre reemplaza al anterior.
+            if type(snap) == "table" then
+                local hasResult = snap.result == "+3" or snap.result == "+2"
+                    or snap.result == "+1" or snap.result == "FUERA"
+                local oldResult = type(self._lastPrediction) == "table" and self._lastPrediction.result or nil
+                local hadResult = oldResult == "+3" or oldResult == "+2"
+                    or oldResult == "+1" or oldResult == "FUERA"
+                if hasResult or not hadResult then
+                    self._lastPrediction = snap
+                end
+            elseif not self._lastPrediction then
+                self._lastPrediction = nil
+            end
         end
         input.prediction = self._lastPrediction
     elseif status == "COMPLETING" then
@@ -394,6 +420,7 @@ MT.LAST_EMBEDDED_FIELDS = {
     { "thresholdMode", "thresholdMode" },
     { "paceDisplayed", "paceText" },
     { "paceMode", "paceMode" },
+    { "layoutMode", "layoutMode" },
     { "prediction", "pace" },
     { "provisional", "provisional" },
     { "confidenceDisplayed", "confidence" },
@@ -403,6 +430,10 @@ MT.LAST_EMBEDDED_FIELDS = {
     { "forcesLayoutMode", "forcesLayoutMode" },
     { "penaltyDisplayed", "penalty" },
     { "availableWidth", "available" },
+    { "thresholdColumnWidth", "thresholdColumnWidth" },
+    { "paceRowWidth", "paceRowWidth" },
+    { "timerTextWidth", "timerTextWidth" },
+    { "timerWidthSource", "timerWidthSource" },
     -- dev.11: nombres de plantilla de fuente, solo texto. Dicen si el
     -- jugador tenia de verdad la jerarquia nueva cuando le parecio pequeno.
     { "thresholdFont", "thresholdFont" },

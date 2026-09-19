@@ -317,8 +317,31 @@ function MitzuMPlus:NotifyEnabled(key)
     return true
 end
 
-function PersonalBest:AnnounceResults(results)
+function PersonalBest:BuildSummaryFlags(results)
+    local out = { personalBest = false, newBestLevel = false, newBestTime = false, flawless = false }
+    if type(results) ~= "table" then return out end
+    local wantRecord = MitzuMPlus:NotifyEnabled("notifyNewRecord")
+    local wantPB = MitzuMPlus:NotifyEnabled("notifyPersonalBest")
+    for _, pb in ipairs(results) do
+        if pb.type == "highest_key" and wantRecord then
+            out.newBestLevel = true
+            out.personalBest = true
+        elseif pb.type == "best_time" or pb.type == "best_time_level" then
+            if wantPB then out.newBestTime = true; out.personalBest = true end
+        elseif pb.type == "best_dps" or pb.type == "best_hps" then
+            if wantPB then out.personalBest = true end
+        elseif pb.type == "flawless" and wantPB then
+            out.flawless = true
+            out.personalBest = true
+        end
+    end
+    return out
+end
+
+function PersonalBest:AnnounceResults(results, opts)
     if not results or #results == 0 then return end
+    opts = type(opts) == "table" and opts or {}
+    local visual = opts.visual ~= false
 
     -- "Nuevo record" es subir de nivel de llave; "Marca personal" cubre
     -- tiempo/DPS/HPS/flawless. Cada interruptor controla tanto el mensaje de
@@ -388,11 +411,11 @@ function PersonalBest:AnnounceResults(results)
     -- Como una sola run puede disparar varias marcas a la vez, se limita a un
     -- toast por categoria. ShowToast mantiene una cola para no pisarlos entre
     -- si ni pisar el aviso de run completada.
-    if recordToast and MitzuMPlus.ShowToast then
-        MitzuMPlus:ShowToast(recordToast, "record", 4, true)
+    if visual and recordToast and MitzuMPlus.ShowToast then
+        MitzuMPlus:ShowToast(recordToast, "record", 3, true)
     end
-    if personalToast and MitzuMPlus.ShowToast then
-        MitzuMPlus:ShowToast(personalToast, "personal", 4, true)
+    if visual and personalToast and MitzuMPlus.ShowToast then
+        MitzuMPlus:ShowToast(personalToast, "personal", 3, true)
     end
 
     if MitzuMPlus.EventBus then

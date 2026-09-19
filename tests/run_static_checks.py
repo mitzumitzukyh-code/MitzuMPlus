@@ -161,12 +161,16 @@ def check_no_emoji(c):
     # built with chr() to keep this file ASCII-only.
     emoji = re.compile("[" + chr(0x1F000) + "-" + chr(0x1FFFF) + chr(0x2600) + "-" + chr(0x27BF)
                        + chr(0x2B00) + "-" + chr(0x2BFF) + chr(0xFE0F) + "]")
+    # U+2713 CHECK MARK is a plain dingbat, not emoji: WoW's fonts render it and
+    # the season panel uses it as the "goal reached" mark. Keep it allowed.
+    allowed = {chr(0x2713)}
     paths = [p for p in ADDON.rglob("*") if p.suffix.lower() in {".lua", ".toc", ".xml"}]
     paths += list((ROOT / "tests").rglob("*.lua")) + list((ROOT / "tests").rglob("*.py"))
     paths += list((ROOT / "tools").rglob("*.py"))
     for path in sorted(paths):
         for number, line in enumerate(read(path).splitlines(), 1):
-            c.check(not emoji.search(line), f"emoji in source: {relative(path)}:{number}")
+            bad = [m.group(0) for m in emoji.finditer(line) if m.group(0) not in allowed]
+            c.check(not bad, f"emoji in source: {relative(path)}:{number}")
 
 def check_version_consistency(c):
     version = metadata().get("Version", "")
@@ -298,7 +302,9 @@ def check_enhancer_safety(c):
     c.check(embedded is not None and "percentText" not in embedded.group(0),
             "TrackerPresenter.BuildEmbedded must not add a forces percentage (Blizzard/AK already show it)")
     for global_name in re.findall(r"rawget\(\s*_G\s*,\s*\"(\w+)\"", code):
-        c.check(global_name in {"ScenarioObjectiveTracker", "hooksecurefunc", "CreateFrame"},
+        # C_Timer: experimental.11 defers the post-EndLayout remeasure one loop
+        # turn so text metrics have converged. Read-only namespace lookup.
+        c.check(global_name in {"ScenarioObjectiveTracker", "hooksecurefunc", "CreateFrame", "C_Timer"},
                 f"{name}: unexpected global read: {global_name}")
     # dev.9: no background of its own behind the embedded lines.
     for token in ENHANCER_NO_BACKGROUND:
@@ -438,6 +444,14 @@ def check_tracker_layers(c):
 LOCALE_DIR = ADDON / "Locales"
 LOCALE_FILES = {"enUS": LOCALE_DIR / "enUS.lua", "esES": LOCALE_DIR / "esES.lua"}
 
+# 1.1.0: the native-UI modules under modules/Experimental/ read a SECOND
+# AceLocale namespace ("MitzuMPlusExperimental") served by its own pair of
+# files. It is a separate table, so its keys must be checked against that pair
+# and never against the core one.
+EXPERIMENTAL_LOCALE_FILES = {"enUS": LOCALE_DIR / "enUS_Experimental.lua",
+                             "esES": LOCALE_DIR / "esES_Experimental.lua"}
+EXPERIMENTAL_DIR = "Experimental"
+
 # Files that legitimately hold text a player never reads: developer dumps
 # (/emp dev ...), the sanitized bug report and the flight recorder. Section 8
 # of the brief allows those to stay technical -- but they are English-only.
@@ -462,7 +476,7 @@ SPANISH_WORDS = [
     "Personaje", "Mítica", "Mitica", "Duración", "Duracion", "Añadir", "Añade",
     "Restablecer", "ÉXITO", "RESULTADO", "Borrar", "Nivel de", "Expansión",
     "Puntaje", "Compañer", "Calidad", "Registrar", "Mostrar", "Bloquear",
-    "Ventana", "ultimo ritmo", "último ritmo", "oficial", "completo",
+    "Ventana", "ultimo ritmo", "último ritmo", "oficial", "completo", "Ritmo",
 ]
 # A language setting would defeat the whole design: WoW already chose.
 LOCALE_SETTING_TOKENS = ["settings.locale", "settings.language", "SetLocale", "selectedLocale",
@@ -472,7 +486,9 @@ LOCALE_SETTING_TOKENS = ["settings.locale", "settings.language", "SetLocale", "s
 def locale_keys(path):
     """{key: value} exactly as the locale file declares them."""
     out = {}
-    for match in re.finditer(r'^L\["([A-Z][A-Z0-9_]*)"\]\s*=\s*(.+)$', read(path), re.MULTILINE):
+    # esES_Experimental.lua declares its keys indented inside a fill() helper,
+    # because it registers the same table for esES and esMX.
+    for match in re.finditer(r'^[ \t]*L\["([A-Z][A-Z0-9_]*)"\]\s*=\s*(.+)$', read(path), re.MULTILINE):
         out[match.group(1)] = match.group(2).strip().rstrip(",")
     return out
 
@@ -512,22 +528,60 @@ def check_localization(c):
             "Bootstrap.lua must expose MitzuMPlus.L from AceLocale")
     toc_lines = [l.strip() for l in read(TOC).splitlines() if l.strip().lower().endswith(".lua")]
     locales = [i for i, l in enumerate(toc_lines) if l.startswith("Locales")]
-    c.check(len(locales) == 2, f"expected exactly two locale files in the TOC: {len(locales)}")
+    # Two namespaces, two files each: core enUS/esES plus the native-UI pair.
+    c.check(len(locales) == 4, f"expected exactly four locale files in the TOC: {len(locales)}")
     bootstrap_at = toc_lines.index("Bootstrap.lua")
     c.check(max(locales) < bootstrap_at,
             "Locales must load before Bootstrap.lua, and therefore before every module")
 
-    # Every L["KEY"] the runtime asks for has to exist in BOTH files.
+    # The native-UI pair mirrors the same contract on its own namespace.
+    xen = locale_keys(EXPERIMENTAL_LOCALE_FILES["enUS"])
+    xes = locale_keys(EXPERIMENTAL_LOCALE_FILES["esES"])
+    c.check(len(xen) > 20, f"the experimental enUS locale looks too small: {len(xen)} keys")
+    c.check(set(xen) == set(xes),
+            f"experimental enUS/esES key mismatch: only-enUS={sorted(set(xen) - set(xes))[:5]} "
+            f"only-esES={sorted(set(xes) - set(xen))[:5]}")
+    xen_src = read(EXPERIMENTAL_LOCALE_FILES["enUS"])
+    c.check('NewLocale("MitzuMPlusExperimental", "enUS", true)' in xen_src,
+            "the experimental enUS file must be that namespace's default locale")
+    xes_src = read(EXPERIMENTAL_LOCALE_FILES["esES"])
+    c.check('NewLocale("MitzuMPlusExperimental", "esES")' in xes_src
+            and 'NewLocale("MitzuMPlusExperimental", "esMX")' in xes_src,
+            "the experimental Spanish file must serve esES and esMX")
+    # Every key is checked against the table the reader actually holds:
+    #   L[...]  -> core, except inside modules/Experimental/ where L IS the
+    #              experimental namespace;
+    #   EL[...] -> the experimental namespace, from a core file such as
+    #              UI/Panels/Config.lua that renders the native-UI settings.
+    # The lookbehind keeps EL[...] from also being counted as L[...].
+    core_reads = re.compile(r'(?<![A-Za-z0-9_])L\[\s*"([A-Z][A-Z0-9_]*)"\s*\]')
+    experimental_reads = re.compile(r'(?<![A-Za-z0-9_])EL\[\s*"([A-Z][A-Z0-9_]*)"\s*\]')
     used = set()
     for path in sorted(ADDON.rglob("*.lua")):
-        parts = set(path.relative_to(ADDON).parts)
+        rel = path.relative_to(ADDON)
+        parts = set(rel.parts)
         if "libs" in parts or "Locales" in parts:
             continue
-        used |= set(re.findall(r'L\[\s*"([A-Z][A-Z0-9_]*)"\s*\]', read(path)))
+        code = read(path)
+        own = set(core_reads.findall(code))
+        foreign = set(experimental_reads.findall(code))
+        if EXPERIMENTAL_DIR in parts:
+            c.check(not foreign, f"{rel.as_posix()}: a native-UI module already owns L, EL is redundant")
+            experimental_keys, core = own | foreign, set()
+        else:
+            experimental_keys, core = foreign, own
+            used |= core
+        for key in sorted(core):
+            c.check(key in en, f'enUS has no entry for L["{key}"] ({rel.as_posix()})')
+            c.check(key in es, f'esES has no entry for L["{key}"] ({rel.as_posix()})')
+        for key in sorted(experimental_keys):
+            c.check(key in xen, f'experimental enUS has no entry for L["{key}"] ({rel.as_posix()})')
+            c.check(key in xes, f'experimental esES has no entry for L["{key}"] ({rel.as_posix()})')
     c.check(len(used) > 150, f"the runtime barely uses the locale table: {len(used)} keys")
-    for key in sorted(used):
-        c.check(key in en, f'enUS has no entry for L["{key}"]')
-        c.check(key in es, f'esES has no entry for L["{key}"]')
+    # And the two namespaces stay disjoint, so nobody reads a key from the
+    # wrong table and silently gets the raw key back.
+    overlap = set(xen) & set(en)
+    c.check(not overlap, f"a key exists in both locale namespaces: {sorted(overlap)[:5]}")
 
     # No Spanish sentence may live outside Locales/, and no module may decide
     # the language by itself.

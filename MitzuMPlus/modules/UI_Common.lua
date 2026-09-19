@@ -518,26 +518,33 @@ function MitzuMPlus:CreateButton(parent, label, style, onClick)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- TOAST
+-- TOAST / NOTIFICATION LAYER  (experimental.9)
 --
--- Solo texto flotante: sin backdrop, borde ni textura. El contraste lo dan el
--- outline y la sombra de la fuente. El frame contenedor existe únicamente para
--- posición, alpha y fundidos; la cola y los timers viven en ShowToast y en el
--- temporizador de abajo, igual que antes.
+-- Diseño: tipografía nativa de Blizzard, sentence case, sin contorno grueso ni
+-- caja. El título usa GameFontNormalLarge; el dato secundario usa
+-- GameFontHighlight. Durante el cierre de una M+ el resumen del tracker es la
+-- única autoridad visual y los toasts no compiten con él.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-local TOAST_MAX_WIDTH = 640
-local TOAST_FONT_SIZE = 20
+local TOAST_MAX_WIDTH = 520
 local TOAST_FADE_IN   = 0.15
-local TOAST_FADE_OUT  = 0.35
+local TOAST_FADE_OUT  = 0.50
+local TOAST_DEFAULT_DURATION = 3.0
+local TOAST_FINAL_QUIET_SECONDS = 5
 
--- Colores de texto por tipo de aviso. Tonos suaves, no neón.
-local TOAST_COLORS = {
-    ok       = { r = 0.47, g = 0.90, b = 0.55 },  -- run completada / éxito
-    record   = { r = 1.00, g = 0.80, b = 0.30 },  -- nuevo récord
-    personal = { r = 1.00, g = 0.89, b = 0.58 },  -- marca personal
-    warn     = { r = 1.00, g = 0.68, b = 0.35 },
-    bad      = { r = 1.00, g = 0.44, b = 0.40 },  -- error / fuera de tiempo
+local TOAST_TITLE_COLORS = {
+    ok       = { 1.00, 0.82, 0.00 }, -- oro Blizzard
+    record   = { 1.00, 0.82, 0.00 },
+    personal = { 1.00, 0.82, 0.00 },
+    warn     = { 1.00, 0.68, 0.35 },
+    bad      = { 1.00, 0.35, 0.30 },
+}
+local TOAST_DETAIL_COLORS = {
+    ok       = { 1.00, 1.00, 1.00 },
+    record   = { 0.25, 1.00, 0.45 },
+    personal = { 1.00, 1.00, 1.00 },
+    warn     = { 1.00, 0.92, 0.72 },
+    bad      = { 1.00, 0.70, 0.68 },
 }
 
 local function NewToastFade(tf, fromAlpha, toAlpha, seconds)
@@ -551,61 +558,118 @@ local function NewToastFade(tf, fromAlpha, toAlpha, seconds)
     return group
 end
 
+local function CancelToastTimer(tf, key)
+    local t = tf and tf[key]
+    if t and t.Cancel then t:Cancel() end
+    if tf then tf[key] = nil end
+end
+
+function MitzuMPlus:DismissToasts(reason)
+    local tf = self._toastFrame
+    if tf then
+        CancelToastTimer(tf, "_toastTimer")
+        CancelToastTimer(tf, "_fadeTimer")
+        if tf._fadeIn and tf._fadeIn:IsPlaying() then tf._fadeIn:Stop() end
+        if tf._fadeOut and tf._fadeOut:IsPlaying() then tf._fadeOut:Stop() end
+        tf:Hide()
+    end
+    self._toastActive = false
+    self._toastQueue = {}
+    self._lastToastDismissReason = reason
+end
+
+-- True when a floating notification would compete with the M+ end-state UI.
+-- This check is deliberately read-only: it never changes TrackerState.
+function MitzuMPlus:IsToastQuietWindow()
+    local MT = self.MitzuTracker
+    if MT and MT._summaryUntil and type(GetTime) == "function" and GetTime() < MT._summaryUntil then
+        return true, "SUMMARY_ACTIVE"
+    end
+
+    local TS = self.TrackerState
+    if TS then
+        local status = TS.GetStatus and TS:GetStatus() or nil
+        if status == "COMPLETING" or status == "COMPLETED" then
+            return true, status
+        end
+        if status == "RUNNING" and TS.GetTimeRemaining then
+            local remaining = TS:GetTimeRemaining()
+            if type(remaining) == "number" and remaining <= TOAST_FINAL_QUIET_SECONDS then
+                return true, "FINAL_5_SECONDS"
+            end
+        end
+    end
+    return false, nil
+end
+
+local function NormalizeToastPayload(message)
+    if type(message) == "table" then
+        return tostring(message.title or ""), tostring(message.detail or "")
+    end
+    return tostring(message or ""), ""
+end
+
 function MitzuMPlus:_ShowToastNow(entry)
     entry = entry or {}
-    local message = tostring(entry.message or "")
+    local title, detail = NormalizeToastPayload(entry.message)
     local toastType = entry.toastType or "ok"
-    local duration = tonumber(entry.duration) or 3
+    local duration = tonumber(entry.duration) or TOAST_DEFAULT_DURATION
+
+    if title == "" and detail == "" then return end
 
     if not self._toastFrame then
         local uiParent = UIParent
-        -- Frame plano, sin BackdropTemplate: no hay nada que pintar detrás.
         local tf = CreateFrame("Frame", nil, uiParent)
-        -- Los avisos no deben competir con barras de acción, bolsas o addons
-        -- anclados al borde inferior.  La zona superior central queda visible
-        -- tanto con la ventana de MitzuMPlus abierta como cerrada.
-        tf:SetSize(TOAST_MAX_WIDTH + 20, 54)
+        tf:SetSize(TOAST_MAX_WIDTH + 20, 52)
         tf:SetPoint("TOP", uiParent, "TOP", 0, -105)
         tf:SetFrameStrata("FULLSCREEN_DIALOG")
         tf:SetFrameLevel(200)
         tf:SetClampedToScreen(true)
         tf:EnableMouse(false)
 
-        local t2 = tf:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        local fontFile = (t2.GetFont and t2:GetFont()) or STANDARD_TEXT_FONT
-        if fontFile and t2.SetFont then
-            t2:SetFont(fontFile, TOAST_FONT_SIZE, "OUTLINE")
-        end
-        t2:SetPoint("CENTER")
-        t2:SetWidth(TOAST_MAX_WIDTH)
-        t2:SetJustifyH("CENTER")
-        t2:SetJustifyV("MIDDLE")
-        -- Una línea si cabe; si no, dos. Solo con más de dos líneas recorta
-        -- el propio cliente con "...".
-        t2:SetWordWrap(true)
-        if t2.SetNonSpaceWrap then t2:SetNonSpaceWrap(false) end
-        if t2.SetMaxLines then t2:SetMaxLines(2) end
-        t2:SetShadowColor(0, 0, 0, 0.85)
-        t2:SetShadowOffset(1, -1)
-        tf.text = t2
+        local titleFS = tf:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        titleFS:SetPoint("TOP", tf, "TOP", 0, -2)
+        titleFS:SetWidth(TOAST_MAX_WIDTH)
+        titleFS:SetJustifyH("CENTER")
+        titleFS:SetJustifyV("TOP")
+        titleFS:SetWordWrap(true)
+        if titleFS.SetMaxLines then titleFS:SetMaxLines(2) end
+        titleFS:SetShadowColor(0, 0, 0, 0.80)
+        titleFS:SetShadowOffset(1, -1)
+        tf.title = titleFS
+
+        local detailFS = tf:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        detailFS:SetPoint("TOP", titleFS, "BOTTOM", 0, -2)
+        detailFS:SetWidth(TOAST_MAX_WIDTH)
+        detailFS:SetJustifyH("CENTER")
+        detailFS:SetJustifyV("TOP")
+        detailFS:SetWordWrap(false)
+        detailFS:SetShadowColor(0, 0, 0, 0.75)
+        detailFS:SetShadowOffset(1, -1)
+        tf.detail = detailFS
 
         tf._fadeIn  = NewToastFade(tf, 0, 1, TOAST_FADE_IN)
         tf._fadeOut = NewToastFade(tf, 1, 0, TOAST_FADE_OUT)
-
         tf:Hide()
         self._toastFrame = tf
     end
 
     local tf = self._toastFrame
-    tf.text:SetText(message)
+    tf.title:SetText(title)
+    tf.detail:SetText(detail)
+    if detail == "" then tf.detail:Hide() else tf.detail:Show() end
 
-    local col = TOAST_COLORS[toastType] or TOAST_COLORS.ok
-    tf.text:SetTextColor(col.r, col.g, col.b, 1)
+    local tc = TOAST_TITLE_COLORS[toastType] or TOAST_TITLE_COLORS.ok
+    local dc = TOAST_DETAIL_COLORS[toastType] or TOAST_DETAIL_COLORS.ok
+    tf.title:SetTextColor(tc[1], tc[2], tc[3], 1)
+    tf.detail:SetTextColor(dc[1], dc[2], dc[3], 1)
 
-    -- Alto dinámico según ocupe una o dos líneas.
-    local textHeight = (tf.text.GetStringHeight and tf.text:GetStringHeight()) or 0
-    tf:SetHeight(math.max(textHeight, TOAST_FONT_SIZE) + 10)
+    local titleH = (tf.title.GetStringHeight and tf.title:GetStringHeight()) or 18
+    local detailH = detail ~= "" and ((tf.detail.GetStringHeight and tf.detail:GetStringHeight()) or 12) or 0
+    tf:SetHeight(math.max(26, titleH + detailH + (detail ~= "" and 9 or 6)))
 
+    CancelToastTimer(tf, "_toastTimer")
+    CancelToastTimer(tf, "_fadeTimer")
     if tf._fadeOut and tf._fadeOut:IsPlaying() then tf._fadeOut:Stop() end
     if tf._fadeIn and tf._fadeIn:IsPlaying() then tf._fadeIn:Stop() end
     tf:SetAlpha(1)
@@ -614,18 +678,7 @@ function MitzuMPlus:_ShowToastNow(entry)
     tf:Show()
     if tf._fadeIn then tf._fadeIn:Play() end
 
-    if tf._toastTimer then
-        tf._toastTimer:Cancel()
-        tf._toastTimer = nil
-    end
-    if tf._fadeTimer then
-        tf._fadeTimer:Cancel()
-        tf._fadeTimer = nil
-    end
-
     if C_Timer and C_Timer.NewTimer then
-        -- El fundido de salida ocurre dentro de la duración, así que el
-        -- momento en que se oculta y pasa al siguiente de la cola no cambia.
         if tf._fadeOut and duration > TOAST_FADE_OUT then
             tf._fadeTimer = C_Timer.NewTimer(duration - TOAST_FADE_OUT, function()
                 tf._fadeTimer = nil
@@ -645,31 +698,40 @@ function MitzuMPlus:_ShowToastNow(entry)
     end
 end
 
-function MitzuMPlus:ShowToast(message, toastType, duration, force)
-    -- Normal toasts still respect the legacy master switch. Notifications
-    -- explicitly enabled by the user can pass force=true so a stale hidden
-    -- showToasts=false from an old profile cannot silently disable them.
+function MitzuMPlus:ShowToast(message, toastType, duration, force, opts)
+    opts = type(opts) == "table" and opts or {}
+
     if not force then
         if not self.db or not self.db.profile or not self.db.profile.settings
            or self.db.profile.settings.showToasts == false then
-            return
+            return false, "DISABLED"
+        end
+    end
+
+    -- El resumen final de M+ gana siempre. Solo un error realmente crítico
+    -- puede saltarse esta exclusión mediante opts.critical=true.
+    if not opts.critical then
+        local quiet, reason = self:IsToastQuietWindow()
+        if quiet then
+            self._lastSuppressedToastReason = reason
+            return false, reason
         end
     end
 
     local entry = {
-        message = tostring(message or ""),
+        message = message,
         toastType = toastType or "ok",
-        duration = tonumber(duration) or 3,
+        duration = tonumber(duration) or TOAST_DEFAULT_DURATION,
     }
 
     if self._toastActive then
         self._toastQueue = self._toastQueue or {}
-        -- Avoid an unbounded queue if several PB signals fire from one run.
         if #self._toastQueue < 6 then
             self._toastQueue[#self._toastQueue + 1] = entry
         end
-        return
+        return true, "QUEUED"
     end
 
     self:_ShowToastNow(entry)
+    return true, "SHOWN"
 end

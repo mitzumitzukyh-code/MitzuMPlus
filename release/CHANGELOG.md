@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.1.0
+
+First stable release. MitzuMPlus now works mostly *inside* Blizzard's own
+Mythic+ interface instead of beside it.
+
+### Live run
+- **Native objective tracker:** the key data is rendered inside Blizzard's own
+  Mythic+ block, with a layout that degrades gracefully on narrow bars and stays
+  compatible with Angry Keystones.
+- **Dynamic +3 / +2 / +1 prediction:** the upgrade you are currently on track
+  for, next to Blizzard's timer, with an optional confidence readout.
+- **Stabilized pace:** the prediction is re-measured one loop turn after
+  Blizzard finishes its layout, so it no longer flickers while text metrics
+  settle.
+- **Enemy Forces as `current / total`,** with the remaining count shown as
+  `N remaining` / `faltan N` instead of only a percentage.
+- **End-of-run summary:** one final panel owns the end of the run; completion
+  and personal-best toasts are suppressed while it is on screen and
+  consolidated into a single line.
+
+### Mythic+ panel
+- **Per-character season goal,** opt-in. No addon-imposed default is ever
+  treated as your choice; the panel hides target/current/missing until that
+  character has a goal, and shows *Goal reached* once it is met.
+- **Per-dungeon Mythic+ score** on Blizzard's own dungeon cards.
+- **Dungeon teleports** from the panel, with cooldown state.
+
+### Keystone frame and group
+- **Keystone auto-slot,** idempotent per receptacle opening. It never starts the
+  challenge: activation stays fully manual.
+- **Ready Check** and a **configurable pull timer** (5 / 10 / 20 seconds) on
+  Blizzard's native keystone frame.
+- **LFG utility coverage:** Heroism/Bloodlust, Brez and Soothe shown as three
+  readable tiles above Blizzard's native applicant headers. No Blizzard frame is
+  moved or resized, and there is no automatic invite or decline.
+
+### Correctness and safety
+- **InspectArbiter:** a single owner for proactive inspect traffic. Mitzu yields
+  to Blizzard's own inspect window and never calls `ClearInspectPlayer()`, so the
+  shared inspect cache is left intact.
+- **History and database:** run finalization no longer duplicates entries, and
+  missing Enemy Forces is reported as *No data* / *Sin datos* rather than a
+  fabricated `0.0%`.
+- **Localization:** the whole visible surface follows the client language.
+  English (enUS/enGB and every untranslated client) and Spanish (esES/esMX).
+
 ## 1.0.0-beta.1
 
 First public beta of MitzuMPlus, a Mythic+ companion for World of Warcraft Retail.

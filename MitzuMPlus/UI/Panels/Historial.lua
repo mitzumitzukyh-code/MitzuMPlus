@@ -94,7 +94,7 @@ local function compactMetric(value)
 end
 local function charName(run)
     local name, realm = tostring(run.playerName or ""), tostring(run.playerRealm or "")
-    if name == "" then return "Desconocido" end
+    if name == "" then return L["UNKNOWN_PLAYER"] end
     return realm ~= "" and (name .. "-" .. realm) or name
 end
 local function dateText(timestamp)
@@ -103,17 +103,11 @@ local function dateText(timestamp)
     return ok and value or "-"
 end
 local function resetStart()
-    if not (time and date) then return 0 end
-    local now, day = time(), 86400
-    local h = tonumber(date("%H")) or 0
-    local m = tonumber(date("%M")) or 0
-    local s = tonumber(date("%S")) or 0
-    local weekday = tonumber(date("%w")) or 0
-    local target = (MitzuMPlus.Constants and MitzuMPlus.Constants.WEEK_RESET_WDAY) or 3
-    local hour = (MitzuMPlus.Constants and MitzuMPlus.Constants.WEEK_RESET_HOUR) or 9
-    local back = (weekday - target + 7) % 7
-    if back == 0 and h < hour then back = 7 end
-    return now - (h * 3600 + m * 60 + s) - back * day + hour * 3600
+    if type(MitzuMPlus.GetWeeklyResetWindow) == "function" then
+        local current = MitzuMPlus:GetWeeklyResetWindow()
+        if tonumber(current) and current > 0 then return current end
+    end
+    return 0
 end
 
 -- Codigos de resultado NEUTRALES: son identidad (filtros, orden, comparaciones),
@@ -222,7 +216,7 @@ end
 Panel.ROW_HEIGHT = 28
 Panel.COLUMN_WIDTHS = { 30, 160, 58, 120, 82, 110, 48, 80 }
 Panel.COLUMN_WEIGHTS = { 0, 4, 0, 2, 0, 2, 0, 1 }
-Panel.FILTER_WIDTHS = { 220, 125, 210, 95, 155, 130, 120 }
+Panel.FILTER_WIDTHS = { 220, 125, 210, 95, 155, 130 }
 Panel.FILTER_WEIGHTS = { 1, 0, 0, 0, 0, 0, 0 }
 
 -- Distributes the available width without allowing rounding errors to make
@@ -304,17 +298,26 @@ end
 function Panel.DisplayMeasured(run, key)
     local st = type(run.stats) == "table" and run.stats or {}
     local n = tonumber(st[key])
-    if n == nil or n < 0 then return "-" end
+    local noData = L["NO_DATA"] or "-"
+    if n == nil or n < 0 then return noData end
     local measured
     if key == "enemyForcesFinalPct" then
-        measured = (tonumber(st.enemyForcesTotal) or 0) > 0
+        -- Old sanitizers wrote 0 into missing fields. A positive legacy value is
+        -- evidence by itself; zero is only trusted when a newer run recorded an
+        -- explicit source. Unknown must never be displayed as a real 0.0%.
+        local source = tostring(st.enemyForcesDataSource or "")
+        measured = source ~= "" and source ~= "UNAVAILABLE"
+        if not measured and n > 0 then measured = true end
     elseif key == "deaths" then
         measured = run.completionInfoSource ~= nil
     else
         measured = run.dataSource == "C_DamageMeter"
     end
-    if n == 0 and not measured then return "-" end
-    if key == "enemyForcesFinalPct" then return string.format("%.1f%%", n) end
+    if key == "enemyForcesFinalPct" then
+        if not measured then return noData end
+        return string.format("%.1f%%", n)
+    end
+    if n == 0 and not measured then return noData end
     return tostring(math.floor(n + 0.5))
 end
 
@@ -428,13 +431,6 @@ function Panel:Create(parent)
         local dd = dropdown(self.filterBar, def[3], self.filters[def[1]], changed(def[1]))
         self.filterControls[i], self[def[1].."DD"] = dd, dd
     end
-    self.exportDD = dropdown(self.filterBar, {{text=L["BTN_EXPORT"],value=""},{text="CSV",value="csv"},{text="Code",value="code"}}, "", function(v)
-        if v == "csv" then MitzuMPlus.Export:ExportToCSV(self.filteredRuns)
-        elseif v == "code" then MitzuMPlus.Export:ExportToCode() end
-        self.exportDD:SetSelectedValue("")
-    end)
-    self.filterControls[7] = self.exportDD
-
     self.main = CreateFrame("Frame", nil, container)
     self.list = CreateFrame("Frame", nil, self.main, "BackdropTemplate")
     self.detail = CreateFrame("Frame", nil, self.main, "BackdropTemplate")
@@ -518,7 +514,7 @@ function Panel:CreateDetail()
     end
     self.detailTabs = CreateFrame("Frame",nil,d)
     self.detailButtons={}
-    for i,def in ipairs({{"summary","Resumen"},{"group","Grupo"},{"metrics",L["HIST_METRICS"]},{"notes","Notas"}}) do
+    for i,def in ipairs({{"summary",L["HIST_SUMMARY_TAB"]},{"group",L["HIST_GROUP_TAB"]},{"metrics",L["HIST_METRICS"]},{"notes",L["HIST_NOTES_TAB"]}}) do
         local id=def[1]
         local b=button(self.detailTabs,def[2],function() self.detailTab=id; self:RefreshDetail() end)
         self.detailButtons[id]=b; b.order=i
@@ -552,12 +548,15 @@ function Panel:CreateDetail()
     end)
     self.actions=CreateFrame("Frame",nil,d,"BackdropTemplate")
     backdrop(self.actions,0.035,0.032,0.027,1,0.2)
-    self.favorite=button(self.actions,"Favorita",function()
+    self.favorite=button(self.actions,L["BTN_FAVORITE"],function()
         if self.selectedRun then MitzuMPlus.DataManager:ToggleFavorite(self.selectedRun.runID); self:Refresh() end
     end)
     self.noteAction=button(self.actions,L["HIST_ADD_NOTE"],function() self.detailTab="notes"; self:RefreshDetail(); self.notesBox:SetFocus() end)
-    self.copy=button(self.actions,"Copiar",function()
-        if self.selectedRun then MitzuMPlus.Export:ExportToCSV({self.selectedRun}) end
+    self.copy=button(self.actions,L["BTN_COPY"],function()
+        if self.selectedRun and MitzuMPlus.Export and MitzuMPlus.Export.CopyToClipboard and MitzuMPlus.ExportToDiscord then
+            local text=MitzuMPlus:ExportToDiscord(self.selectedRun)
+            if text and text~="" then MitzuMPlus.Export:CopyToClipboard(text) end
+        end
     end)
     self.delete=button(self.actions,L["HIST_DELETE"],function()
         if self.selectedRun then StaticPopup_Show("MITZUMPLUS_CONFIRM_DELETE",self.selectedRun.runID,nil,self.selectedRun.runID) end
@@ -799,7 +798,7 @@ function Panel:RefreshDetail()
         local group=type(run.group)=="table" and run.group or {}
         lines[1]=#group<5 and L["HIST_PARTIAL"] or L["HIST_GROUP"]
         for _,m in ipairs(group) do
-            lines[#lines+1]=(m.name or "Desconocido")..(m.realm and m.realm~="" and ("-"..m.realm) or "")..
+            lines[#lines+1]=(m.name or L["UNKNOWN_PLAYER"])..(m.realm and m.realm~="" and ("-"..m.realm) or "")..
                 "\n"..tostring(m.class or "-").."  -  "..roleText(m.role)
         end
         if #group==0 then lines[2]=L["HIST_NO_MEMBERS"] end
@@ -827,7 +826,7 @@ function Panel:RefreshDetail()
         end
     end
     self.detailBody:SetHeight(math.max(1,y)); self.detailScroll:SetVerticalScroll(0)
-    self.favorite:SetText(run.isFavorite and L["HIST_FAVORITE_YES"] or "Favorita")
+    self.favorite:SetText(run.isFavorite and L["HIST_FAVORITE_YES"] or L["BTN_FAVORITE"])
 end
 
 function Panel:RefreshTable() self:Refresh() end

@@ -3,7 +3,7 @@
 ## Notes: Mythic+ history, statistics, player analysis and live key prediction.
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzuki Mizt
-## Version: 1.1.0-dev.11
+## Version: 1.1.0
 ## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO
@@ -30,6 +30,8 @@ libs\AceSerializer-3.0\AceSerializer-3.0.xml
 # Localization
 Locales\enUS.lua
 Locales\esES.lua
+Locales\enUS_Experimental.lua
+Locales\esES_Experimental.lua
 
 # Bootstrap / core
 Bootstrap.lua
@@ -63,8 +65,17 @@ modules\DungeonRegistry.lua
 # DungeonContext: donde estoy y en que punto de la llave. Fuente unica.
 # Va antes que Core, que se suscribe a su MITZU_KEY_STARTED.
 modules\DungeonContext.lua
+# InspectArbiter: propietario unico y seguro del canal global NotifyInspect.
+modules\InspectArbiter.lua
 # PartyProfiler: los cinco del grupo. Incluye PartyContext y SpecCache.
 modules\PartyProfiler.lua
+# Native Blizzard UI enhancements
+modules\Experimental\ExperimentalCore.lua
+modules\Experimental\PartyNeeds.lua
+modules\Experimental\TeleportResolver.lua
+modules\Experimental\KeystoneFrameEnhancer.lua
+modules\Experimental\MythicPlusPanelEnhancer.lua
+modules\Experimental\LFGCompositionHint.lua
 # RunSession: identidad persistente de la partida y recuperación tras /reload.
 modules\RunSession.lua
 modules\Validation.lua

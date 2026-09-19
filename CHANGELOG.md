@@ -13,6 +13,48 @@ Durante la preparación hubo dos builds internas sin publicar, etiquetadas
 `1.0.0-beta.1`, que reúne ambas. Las entradas `7.x` quedan como historial.
 El changelog público (CurseForge) está en `release/CHANGELOG.md`.
 
+### 1.1.0 — versión estable pública
+
+**Primera versión estable de la serie 1.1. Reúne todo el trabajo interno
+`1.1.0-dev.1` … `1.1.0-dev.12` y `1.1.0-experimental.1` … `1.1.0-experimental.13`,
+validado en Retail LIVE.**
+
+El cambio de fondo: MitzuMPlus deja de vivir al lado de la interfaz de Blizzard
+y pasa a trabajar dentro de ella.
+
+- **Tracker nativo:** los datos de la llave se pintan dentro del bloque M+ de
+  Blizzard, con degradación de layout en barras estrechas y compatibilidad con
+  Angry Keystones.
+- **Predicción dinámica +3 / +2 / +1** junto al temporizador de Blizzard, con
+  confianza opcional, y **estabilización**: la medida se difiere una vuelta del
+  bucle tras `EndLayout` para que el ritmo no parpadee mientras las métricas de
+  texto convergen.
+- **Fuerzas enemigas como `actual / total`** y **«faltan N»** en lugar de sólo
+  un porcentaje.
+- **Resumen final de la carrera:** un único panel manda al terminar; los avisos
+  de finalización y récord se suprimen mientras está visible y se consolidan en
+  una sola línea.
+- **Objetivo de temporada por personaje**, opcional. El antiguo valor 2000
+  impuesto por el addon se migra a «desactivado» en vez de tratarse como una
+  decisión del jugador.
+- **Panel de temporada** integrado en `ChallengesFrame`, con puntuación por
+  mazmorra sobre las tarjetas de Blizzard y **teleports** con estado de reutilización.
+- **Auto-slot de la piedra angular**, idempotente por apertura del receptáculo y
+  **sin inicio automático del desafío**: activar sigue siendo manual.
+- **Comprobación de grupo** y **temporizador de pull configurable** (5 / 10 / 20 s)
+  sobre el marco nativo de la piedra.
+- **Cobertura de utilidad en LFG:** Heroísmo/Ansia, Brez y Calmar, en tres
+  recuadros legibles sobre las cabeceras nativas. No se mueve ni redimensiona
+  ningún marco de Blizzard, y no hay invitación ni rechazo automáticos.
+- **InspectArbiter:** un único propietario del canal `NotifyInspect`. Mitzu cede
+  ante la ventana de inspección de Blizzard y **nunca** llama a
+  `ClearInspectPlayer()`, así que la caché compartida queda intacta.
+- **Historial y base de datos:** la finalización de carrera ya no duplica
+  entradas, y unas fuerzas enemigas ausentes se muestran como «Sin datos» en vez
+  de un `0.0%` inventado.
+- **Localización completa** por idioma de cliente: inglés (enUS/enGB y todo
+  cliente sin traducir) y español (esES/esMX).
+
 ### 1.1.0-dev.11 — desarrollo interno (Retail dev, sin publicar)
 
 **Pase final de tipografía del tracker integrado. Sin funciones nuevas.**

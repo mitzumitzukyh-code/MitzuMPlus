@@ -106,7 +106,7 @@ MUTANTS: list[Mutant] = [
     ),
     Mutant(
         "dev.9", "RITMO grows into a second main timer", ENHANCER,
-        '    pace            = "GameFontHighlight",',
+        '    pace            = "GameFontHighlightMedium",',
         '    pace            = "GameFontHighlightHuge",',
         specs=[VISUAL], static=True,
     ),
@@ -125,14 +125,14 @@ MUTANTS: list[Mutant] = [
     # -- dev.9: forces alignment ---------------------------------------------
     Mutant(
         "dev.9", "the remaining count is anchored to the wrong end of the bar", ENHANCER,
-        'el.forcesSecondary:SetPoint("BOTTOMRIGHT", el.forcesRoot, "BOTTOMRIGHT", -L.FORCES_INSET, 0)',
-        'el.forcesSecondary:SetPoint("BOTTOMLEFT", el.forcesRoot, "BOTTOMLEFT", L.FORCES_INSET, 0)',
+        'el.forcesSecondary:SetPoint("TOPRIGHT", el.forcesRoot, "TOPRIGHT", -L.FORCES_INSET, 0)',
+        'el.forcesSecondary:SetPoint("TOPLEFT", el.forcesRoot, "TOPLEFT", L.FORCES_INSET, 0)',
         specs=[VISUAL],
     ),
     Mutant(
         "dev.9", "the two forces columns stop sharing one baseline", ENHANCER,
-        'el.forcesPrimary:SetPoint("BOTTOMLEFT", el.forcesRoot, "BOTTOMLEFT", L.FORCES_INSET, 0)',
         'el.forcesPrimary:SetPoint("TOPLEFT", el.forcesRoot, "TOPLEFT", L.FORCES_INSET, 0)',
+        'el.forcesPrimary:SetPoint("BOTTOMLEFT", el.forcesRoot, "BOTTOMLEFT", L.FORCES_INSET, 0)',
         specs=[VISUAL],
     ),
     Mutant(
@@ -327,7 +327,7 @@ MUTANTS: list[Mutant] = [
     ),
     Mutant(
         "dev.11", "the remainder goes back to borrowing the confidence font", ENHANCER,
-        '    forcesSecondary = "GameFontHighlightSmall",',
+        '    forcesSecondary = "GameFontHighlight",',
         '    forcesSecondary = "GameFontDisableSmall",',
         specs=[VISUAL], static=True,
     ),
@@ -339,7 +339,7 @@ MUTANTS: list[Mutant] = [
     ),
     Mutant(
         "dev.11", "the pace outgrows the threshold and breaks the hierarchy", ENHANCER,
-        '    pace            = "GameFontHighlight",',
+        '    pace            = "GameFontHighlightMedium",',
         '    pace            = "GameFontHighlightHuge",',
         specs=[VISUAL], static=True,
     ),

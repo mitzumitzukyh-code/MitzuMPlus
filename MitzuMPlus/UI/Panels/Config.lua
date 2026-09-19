@@ -8,6 +8,7 @@
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 local L = MitzuMPlus.L
+local EL = LibStub("AceLocale-3.0"):GetLocale("MitzuMPlusExperimental", true)
 
 -- Referencias lazy (se resuelven en tiempo de ejecución, no de carga)
 local function TH() return MitzuMPlus.Colors or MitzuMPlus.Theme end
@@ -232,6 +233,66 @@ local function MakeInfoRow(section, labelText, valueText, valueR, valueG, valueB
 end
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- FILA: entrada numérica
+-- ─────────────────────────────────────────────────────────────────────────
+
+local _numN = 0
+local function MakeNumericInputRow(section, labelText, descText, getValue, onChanged)
+    _numN = _numN + 1
+    local row = CreateFrame("Frame", nil, section)
+    row:SetHeight(46)
+    row:SetPoint("TOPLEFT", section, "TOPLEFT", 14, section.innerY)
+    row:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, section.innerY)
+    section.innerY = section.innerY - 50
+
+    local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lbl:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -3)
+    lbl:SetJustifyH("LEFT")
+    lbl:SetWordWrap(false)
+    TH():ApplyFont(lbl, "normal", 13)
+    lbl:SetText(labelText or "")
+    lbl:SetTextColor(0.95, 0.95, 0.95, 1)
+
+    local dsc = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dsc:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -2)
+    dsc:SetJustifyH("LEFT")
+    dsc:SetWordWrap(false)
+    TH():ApplyFont(dsc, "normal", 12)
+    dsc:SetText(descText or "")
+    dsc:SetTextColor(0.72, 0.72, 0.72, 1)
+
+    local edit = CreateFrame("EditBox", "MitzuCfgNum" .. _numN, row, "InputBoxTemplate")
+    edit:SetSize(120, 28)
+    edit:SetPoint("RIGHT", row, "RIGHT", 0, -5)
+    edit:SetAutoFocus(false)
+    edit:SetNumeric(true)
+    edit:SetMaxLetters(5)
+    local initial = math.max(0, math.floor(tonumber(getValue and getValue() or 0) or 0))
+    edit:SetText(initial > 0 and tostring(initial) or "")
+
+    local committing = false
+    local function commit()
+        if committing then return end
+        committing = true
+        local value = math.max(0, math.floor(tonumber(edit:GetText()) or 0))
+        if onChanged then onChanged(value) end
+        local fresh = math.max(0, math.floor(tonumber(getValue and getValue() or value) or 0))
+        edit:SetText(fresh > 0 and tostring(fresh) or "")
+        committing = false
+    end
+    edit:SetScript("OnEnterPressed", function(self) commit(); self:ClearFocus() end)
+    edit:SetScript("OnEscapePressed", function(self)
+        local fresh = math.max(0, math.floor(tonumber(getValue and getValue() or 0) or 0))
+        self:SetText(fresh > 0 and tostring(fresh) or "")
+        self:ClearFocus()
+    end)
+    edit:SetScript("OnEditFocusLost", commit)
+    row.edit = edit
+    row.Commit = commit
+    return row
+end
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- FILA: botón de acción
 -- ─────────────────────────────────────────────────────────────────────────
 
@@ -354,14 +415,57 @@ function PanelConfig:Create(parent)
     end)
     place(secTracker)
 
-    local secUI = MakeSection(content, "INTERFAZ", 310)
+    -- Native Blizzard UI controls. Kept inside the existing configuration window.
+    if MitzuMPlus.ExperimentalNativeUI and EL then
+        local function EC()
+            return MitzuMPlus.ExperimentalNativeUI:GetConfig() or {}
+        end
+        local pullValues = { 5, 10, 20 }
+        local pullLabels = { "5 s", "10 s", "20 s" }
+        local current = tonumber(EC().pullTimerSeconds) or 10
+        local currentIndex = current == 5 and 1 or (current == 20 and 3 or 2)
+        local secNative = MakeSection(content, EL["CFG_NATIVE_UI_SECTION"], 200)
+        local core = MitzuMPlus.ExperimentalNativeUI
+        local function Goal() return core:GetCharacterGoal(false) or { enabled=false, target=0 } end
+        local goalToggle
+        goalToggle = MakeToggleRow(secNative, EL["CFG_SEASON_GOAL"], EL["CFG_SEASON_GOAL_D"],
+            function() return Goal().enabled == true end,
+            function(v)
+                local ok = core:SetCharacterGoalEnabled(v)
+                if v and not ok then
+                    if goalToggle and goalToggle.toggle then goalToggle.toggle:SetChecked(false) end
+                    if MitzuMPlus.Print then MitzuMPlus:Print(EL["CFG_SEASON_GOAL_REQUIRED"]) end
+                end
+                core:RefreshSeasonPanel("CONFIG_GOAL_ENABLE")
+            end)
+        MakeNumericInputRow(secNative, EL["CFG_SEASON_GOAL_TARGET"], EL["CFG_SEASON_GOAL_TARGET_D"],
+            function() return Goal().target or 0 end,
+            function(value)
+                core:SetCharacterGoalTarget(value)
+                local g = Goal()
+                if goalToggle and goalToggle.toggle then goalToggle.toggle:SetChecked(g.enabled == true) end
+                core:RefreshSeasonPanel("CONFIG_GOAL_TARGET")
+            end)
+        MakeDropdownRow(secNative, EL["CFG_PULL_TIMER"], EL["CFG_PULL_TIMER_D"],
+            pullLabels, currentIndex, function(index)
+                local value = pullValues[index] or 10
+                local c = EC()
+                c.pullTimerSeconds = value
+                if MitzuMPlus.KeystoneFrameEnhancer and MitzuMPlus.KeystoneFrameEnhancer.RefreshLabels then
+                    MitzuMPlus.KeystoneFrameEnhancer:RefreshLabels()
+                end
+            end)
+        place(secNative)
+    end
+
+    local secUI = MakeSection(content, L["CFG_UI_SECTION"], 310)
     MakeToggleRow(secUI, L["CFG_LOCK_WINDOW"], L["CFG_LOCK_WINDOW_D"],
         function() return S().windowLocked == true end,
         function(v)
             S().windowLocked = v
             if MitzuMPlus.Window then MitzuMPlus.Window:SetMovable(not v) end
         end)
-    MakeToggleRow(secUI, "Animaciones", L["CFG_ANIMATIONS_D"],
+    MakeToggleRow(secUI, L["CFG_ANIMATIONS_LABEL"], L["CFG_ANIMATIONS_D"],
         function() return S().enableAnimations ~= false end,
         function(v) S().enableAnimations = v end)
     MakeToggleRow(secUI, L["CFG_ESC_CLOSE"], L["CFG_ESC_CLOSE_D"],
@@ -396,7 +500,7 @@ function PanelConfig:Create(parent)
     -- El valor guardado sigue siendo la calidad numérica nativa de WoW
     -- (2/3/4), de modo que LootTracker no necesita una traducción adicional.
     local lootQualityValues = { 2, 3, 4 }
-    local lootQualityLabels = { L["QUALITY_UNCOMMON"], "Raro", L["QUALITY_EPIC"] }
+    local lootQualityLabels = { L["QUALITY_UNCOMMON"], L["QUALITY_RARE"], L["QUALITY_EPIC"] }
     local savedLootQuality = tonumber(S().lootMinQuality) or 2
     local lootQualityIndex = savedLootQuality >= 4 and 3 or (savedLootQuality >= 3 and 2 or 1)
     -- Migrar perfiles antiguos que podían contener 0, 1 o 5 al nuevo selector.

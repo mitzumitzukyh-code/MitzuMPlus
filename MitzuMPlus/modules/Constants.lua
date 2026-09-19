@@ -36,9 +36,10 @@ MitzuMPlus.Constants = {
     -- FIX BUG-3: En Lua, date("%w") devuelve 0=Dom,1=Lun,2=Mar,3=Mié,4=JUE.
     -- El valor anterior era 4 (Jueves). Corregido a 3 (Miércoles).
     -- Además se alinea con Database.RESET_HOUR (9). El 7 anterior era incorrecto
-    -- para la mayoría de realms EU/US (reset a las 09:00 hora de servidor).
+    -- Solo fallback para clientes sin C_DateAndTime.GetWeeklyResetStartTime.
+    -- Retail usa siempre la API regional real; no depender de estos valores.
     WEEK_RESET_HOUR = 9,
-    WEEK_RESET_WDAY = 3,   -- 3 = Miércoles (date("%w"): 0=Dom ... 3=Mié ... 6=Sáb)
+    WEEK_RESET_WDAY = 3,
 
     -- -- Tracking -------------------------------------------------------------
     COMBAT_LOG_THROTTLE = 0.05,

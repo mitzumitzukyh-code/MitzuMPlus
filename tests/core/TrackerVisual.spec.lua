@@ -123,7 +123,7 @@ test("A: running key renders inside the Blizzard block and never as a floating H
             truthy(not text:find("Muertes", 1, true), "no duplicated death count in " .. key)
         end
         truthy(not (EN.elements.forcesPrimary:GetText() or ""):find("%%"), "no % under Blizzard's bar")
-        truthy(shown.paceText and shown.paceText:find("RITMO", 1, true), tostring(shown.paceText))
+        truthy(shown.paceText and shown.paceText:find(MP.TrackerPresenter.TEXT.PACE, 1, true), tostring(shown.paceText))
         equal(shown.forcesBar, true)
         local d = MT:GetDisplayed()
         equal(d.timer, "BLIZZARD"); equal(d.bosses, "BLIZZARD", "Blizzard keeps timer and bosses")
@@ -139,7 +139,8 @@ test("A: running key renders inside the Blizzard block and never as a floating H
             "attachGeneration=1", "attachReason=ATTACHED", "attachmentHealthy=true", "trackerVisible=true",
             "floatingVisible=false", "upgradeTimesDisplayed=true", "forcesCountDisplayed=true",
             "forcesRemainingDisplayed=true", "hooksInstalled=true", "lastRenderError=nil",
-            "thresholdDisplayed=+3", "thresholdTimeDisplayed=", "thresholdMode=NEXT", "paceDisplayed=RITMO",
+            "thresholdDisplayed=+3", "thresholdTimeDisplayed=", "thresholdMode=NEXT",
+            "paceDisplayed=" .. MP.TrackerPresenter.TEXT.PACE,
             "paceMode=", "forcesPrimaryDisplayed=343 / 686", "forcesSecondaryDisplayed=faltan 343",
             "forcesLayoutMode=SPLIT", "availableWidth=", "angryKeystonesLoaded=false" }) do
             truthy(report:find(field, 1, true), field .. "\n" .. report)
@@ -213,7 +214,10 @@ test("C/28: block missing -> nothing floating; attaches as soon as Blizzard's bl
         equal(EN:IsVisible(), false, "block not active yet: nothing of ours shown")
         equal((fields(MP)).attachReason, "CHALLENGE_BLOCK_INACTIVE")
         BT.activate(305, 1800)                             -- Blizzard starts its timer late
-        equal(EN:IsVisible(), true, "the Activate post-hook shows us immediately")
+        -- experimental.11: el post-hook difiere el repintado una vuelta del bucle
+        -- para medir con las metricas de texto ya convergidas.
+        env.WoW.advance(0)
+        equal(EN:IsVisible(), true, "the Activate post-hook shows us on the next turn")
         equal(EN._generation, 1)
         truthy(EN._lastLayoutReason == "BLIZZARD_ACTIVATE" or EN._lastLayoutReason == "BLIZZARD_LAYOUT", tostring(EN._lastLayoutReason))
         equal(#BT.foreign, 0, table.concat(BT.foreign, ","))
@@ -237,13 +241,23 @@ test("D/E/G: detach when the block goes away, reattach to a rebuilt block, no du
         local calls = 0
         local render = EN.Render
         EN.Render = function(...) calls = calls + 1; return render(...) end
-        for _ = 1, 5 do BT.layout() end
+        -- experimental.11: cada layout difiere su repintado una vuelta del bucle.
+        -- Un layout por vuelta = un render por layout: los hooks no se duplican.
+        for _ = 1, 5 do BT.layout(); env.WoW.advance(0) end
         equal(calls, 5, "one render per Blizzard layout (no duplicate hooks)")
-        -- Repeated Activate (Blizzard re-checks timers): its hook body runs once each time.
+        -- Y varios layouts DENTRO de la misma vuelta se coalescan en uno solo:
+        -- Activate provoca ademas un layout interno, y aun asi se pinta una vez.
         for _ = 1, 4 do BT.activate(310, 1800) end
+        env.WoW.advance(0)
         calls = 0
+        local serial = EN._layoutSerial
         BT.activate(311, 1800)
-        equal(calls, 2, "one render for the inner layout + one for Activate, never accumulated")
+        env.WoW.advance(0)
+        equal(calls, 1, "Activate plus its inner layout coalesce into a single render")
+        -- El coalescido esconde los renders de mas, asi que lo que se cuenta es
+        -- el CUERPO del hook: un Activate = su propio hook + el layout interno.
+        -- Un hook instalado dos veces sube este numero; el render, no.
+        equal(EN._layoutSerial - serial, 2, "exactly two hook bodies: no duplicate post-hooks")
         EN.Render = render
         equal(EN._generation, 1)
 
@@ -320,9 +334,10 @@ test("L: single threshold follows the clock, penalty narrows the line, options r
         local EN = MP.BlizzardTrackerEnhancer
         local BT = freshMock(); BT.install()
         runningKey(env, BT)
-        -- Mock font: 6 px per glyph. Block 251, TimeLeft "25:00" = 30 px:
-        -- available = 251 - 47 - 4 - (28 + 30 + 8) = 134.
-        equal(EN._displayed.available, 134)
+        -- experimental.12: la fila ya no se mide contra el reloj nativo. El ancho
+        -- util es la rejilla fija hasta el borde seguro del bloque:
+        -- available = 251 - 47 (DeathCount) - 4 - 28 (LEVEL_X) = 172.
+        equal(EN._displayed.available, 172)
         equal(EN._displayed.threshold, "+3")
         -- +3 at 18:00 (limit 30:00): past it the next relevant one is +2, then +1.
         env.WoW.advance(1090 - 305); BT.tick(1090); env.WoW.advance(1.1)
@@ -360,14 +375,16 @@ test("narrow block: threshold kept before secondary data, never overflows", func
         local EN = MP.BlizzardTrackerEnhancer
         local BT = freshMock(); BT.install({ blockWidth = 190 })
         runningKey(env, BT)
-        -- available = 190 - 47 - 4 - 66 = 73: "+3 20:00" (48) fits, "RITMO --" (48) fits without extras.
-        equal(EN._displayed.available, 73)
-        equal(EN._displayed.thresholdMode, "NEXT")
-        truthy(EN._displayed.paceMode == "COMPACT" or EN._displayed.paceMode == "STANDARD", tostring(EN._displayed.paceMode))
-        local BT2 = freshMock(); BT2.install({ blockWidth = 150 })   -- rebuilt narrower: 33 px
+        -- available = 190 - 47 - 4 - 28 = 111. La columna del reloj reserva
+        -- ELAPSED_COL_W (62) + COLUMN_GAP (8), asi que al umbral le quedan 41 px:
+        -- "+3 12:56" (48) ya no cabe y se retira ANTES de desbordar.
+        equal(EN._displayed.available, 111)
+        equal(EN._displayed.thresholdMode, "TOO_NARROW")
+        equal(EN._displayed.paceMode, "NONE", "no pace where the threshold does not fit")
+        local BT2 = freshMock(); BT2.install({ blockWidth = 150 })   -- rebuilt narrower: 71 px
         BT2.activate(310, 1800); BT2.setForces(true)
         env.WoW.advance(1.1)
-        equal(EN._displayed.available, 33)
+        equal(EN._displayed.available, 71)
         equal(EN._displayed.thresholdMode, "TOO_NARROW"); equal(EN._displayed.upgrade, nil)
         equal(EN._displayed.paceText, nil, "no pace where the threshold does not fit")
         equal(EN.elements.threshold:GetText(), ""); equal(EN.elements.pace:GetText(), "")
@@ -387,8 +404,9 @@ test("Angry Keystones loaded: Mitzu does not repeat its threshold and right-alig
         equal(EN._displayed.angryKeystones, true); equal(EN._displayed.thresholdMode, "DEFERRED")
         equal(EN._displayed.upgrade, nil); equal(EN.elements.threshold:GetText(), "")
         truthy(EN._displayed.paceText, "pace still shown")
-        equal(EN.elements.paceExtra.__points[1][1], "TOPRIGHT", "pace anchored on the right, away from AK's text")
-        equal(EN._displayed.available, 134 - EN.LAYOUT.AK_RESERVE)
+        equal(EN.elements.paceExtra.__points[1][1], "RIGHT", "pace anchored on the right of its own row")
+        equal(EN.LAYOUT.AK_RESERVE, nil, "the pace has its own row: nothing to reserve inside Blizzard's")
+        equal(EN._displayed.available, 172)
         equal(EN._displayed.forces, "343 / 686  faltan 343", "never a second % over AK's precise label")
         local report = MP.BugReport:Build()
         truthy(report:find("angryKeystonesLoaded=true", 1, true)); truthy(report:find("thresholdMode=DEFERRED", 1, true))
@@ -503,7 +521,7 @@ test("kill switch: repeated enhancer failures disable it and leave Blizzard inta
         runningKey(env, BT)
         local build = MP.TrackerPresenter.BuildEmbedded
         MP.TrackerPresenter.BuildEmbedded = function() error("boom") end
-        for _ = 1, 4 do BT.layout() end
+        for _ = 1, 4 do BT.layout(); env.WoW.advance(0) end
         MP.TrackerPresenter.BuildEmbedded = build
         equal(EN._disabled, true); equal(EN:IsVisible(), false); equal(BT.block:IsShown(), true)
         env.WoW.advance(3)
@@ -578,7 +596,7 @@ test("dev.9 A/B/C/H/I/J: the embedded render is snapshotted, updated and never e
         truthy(snap, "A: the embedded render creates the snapshot")
         equal(snap.forcesPrimaryDisplayed, "343 / 686"); equal(snap.forcesSecondaryDisplayed, "faltan 343")
         equal(snap.forcesLayoutMode, "SPLIT"); equal(snap.thresholdDisplayed, "+3"); equal(snap.thresholdMode, "NEXT")
-        truthy(snap.paceDisplayed and snap.paceDisplayed:find("RITMO", 1, true), tostring(snap.paceDisplayed))
+        truthy(snap.paceDisplayed and snap.paceDisplayed:find(MP.TrackerPresenter.TEXT.PACE, 1, true), tostring(snap.paceDisplayed))
         equal(snap.angryKeystonesLoaded, false); equal(snap.attachmentHealthy, true)
         equal(snap.attachGeneration, EN._generation); equal(snap.availableWidth, EN._displayed.available)
         equal(snap.penaltyDisplayed, nil, "no deaths yet: no penalty remembered")
@@ -651,11 +669,11 @@ test("dev.9 D/E/F/G: summary, preview and leaving the dungeon keep the snapshot;
         local afterSummary = MT:GetLastEmbedded()
         truthy(afterSummary, "D: the summary does not replace the snapshot")
         equal(afterSummary.thresholdMode, "NEXT", "D: still the embedded values, not the summary window")
-        truthy(afterSummary.paceDisplayed:find("RITMO", 1, true), "D: the pace of the run, not the result")
+        truthy(afterSummary.paceDisplayed:find(MP.TrackerPresenter.TEXT.PACE, 1, true), "D: the pace of the run, not the result")
         equal(afterSummary.attachmentHealthy, true)
         -- Blizzard frees its bar at 100 %, so the last thing Mitzu painted under
         -- it was nothing: that is exactly what has to be remembered.
-        equal(afterSummary.forcesLayoutMode, "NO_BAR"); equal(afterSummary.forcesPrimaryDisplayed, nil)
+        equal(afterSummary.forcesLayoutMode, "COMPLETE"); equal(afterSummary.forcesPrimaryDisplayed, nil)
         local frozen = S.serialize(afterSummary)
 
         -- The bug report tells CURRENT and LAST apart while the summary is up.
@@ -752,12 +770,12 @@ test("dev.9: RITMO stays readable and the forces columns share the Blizzard bar 
         EN.elements.pace.SetAlpha = setAlpha
         for _, a in ipairs(alphas) do truthy(a >= 1, "the pace line is never faded: " .. tostring(a)) end
         -- dev.11 replaces dev.9's "everything stays Small" with a real ladder.
-        equal(EN.FONT.pace, "GameFontHighlight", "RITMO gains weight without reaching the threshold")
+        equal(EN.FONT.pace, "GameFontHighlightMedium", "the pace gains weight without reaching the threshold")
         equal(EN.FONT.secondary, "GameFontDisableSmall", "the confidence stays secondary")
         equal(EN.FONT.forces, "GameFontHighlight")
         truthy(EN.COLOR.label ~= "a8a8b0", "dev.9 lifts the RITMO label out of near-grey")
         for _, font in pairs(EN.FONT) do truthy(not font:find("Huge"), "no big font competes with the timer") end
-        truthy(EN.elements.pace:GetText():find("RITMO", 1, true), EN.elements.pace:GetText())
+        truthy(EN.elements.pace:GetText():find(MP.TrackerPresenter.TEXT.PACE, 1, true), EN.elements.pace:GetText())
 
         -- Both columns hang from one row anchored to the real ends of the bar.
         local bar = BT.tracker.usedProgressBars[BT.tracker.ObjectivesBlock.forcesLine].Bar
@@ -767,8 +785,8 @@ test("dev.9: RITMO stays readable and the forces columns share the Blizzard bar 
         equal(row.__points[2][1], "TOPRIGHT"); equal(row.__points[2][2], bar); equal(row.__points[2][3], "BOTTOMRIGHT")
         equal(row.__points[1][5], row.__points[2][5], "one single vertical gap under the bar")
         local left, right = EN.elements.forcesPrimary.__points[1], EN.elements.forcesSecondary.__points[1]
-        equal(left[1], "BOTTOMLEFT"); equal(left[2], row); equal(left[3], "BOTTOMLEFT")
-        equal(right[1], "BOTTOMRIGHT"); equal(right[2], row); equal(right[3], "BOTTOMRIGHT")
+        equal(left[1], "TOPLEFT"); equal(left[2], row); equal(left[3], "TOPLEFT")
+        equal(right[1], "TOPRIGHT"); equal(right[2], row); equal(right[3], "TOPRIGHT")
         equal(left[5], right[5], "same baseline for count and remaining")
         equal(left[4], -right[4], "symmetric inset: neither column leaves the bar")
         equal(EN._displayed.forcesLayoutMode, "SPLIT")
@@ -788,14 +806,14 @@ test("dev.9 Angry Keystones: deferred threshold, one pace, one percentage, snaps
         runningKey(env, BT)
         equal(EN._displayed.angryKeystones, true); equal(EN._displayed.thresholdMode, "DEFERRED")
         equal(EN.elements.threshold:GetText(), "", "Angry Keystones owns the threshold next to the clock")
-        truthy(EN.elements.pace:GetText():find("RITMO", 1, true), "the pace is still Mitzu's")
+        truthy(EN.elements.pace:GetText():find(MP.TrackerPresenter.TEXT.PACE, 1, true), "the pace is still Mitzu's")
         truthy(not (EN.elements.forcesPrimary:GetText() or ""):find("%%"), "no second percentage")
         truthy(not (EN.elements.forcesSecondary:GetText() or ""):find("%%"))
         equal(EN._displayed.forcesLayoutMode, "SPLIT", "the forces columns are not duplicated either")
         local snap = MT:GetLastEmbedded()
         equal(snap.angryKeystonesLoaded, true); equal(snap.thresholdMode, "DEFERRED")
         equal(snap.thresholdDisplayed, nil, "nothing to remember: Mitzu painted no threshold")
-        truthy(snap.paceDisplayed:find("RITMO", 1, true))
+        truthy(snap.paceDisplayed:find(MP.TrackerPresenter.TEXT.PACE, 1, true))
         local report = MP.BugReport:Build()
         equal(reportValue(report, "lastEmbedded.angryKeystonesLoaded"), "true")
         equal(reportValue(report, "lastEmbedded.thresholdMode"), "DEFERRED")
@@ -856,7 +874,7 @@ end)
 
 -- Altura real de cada plantilla nativa de Blizzard, en px.
 local FONT_H = {
-    GameFontHighlightLarge = 16, GameFontHighlight = 12,
+    GameFontHighlightLarge = 16, GameFontHighlightMedium = 12, GameFontHighlight = 12,
     GameFontHighlightSmall = 10, GameFontDisableSmall = 10,
 }
 
@@ -923,11 +941,11 @@ test("dev.11: the ladder is applied to the real FontStrings, not just declared",
         local el = EN.elements
         -- El mock guarda la plantilla con la que se creo cada FontString.
         equal(el.threshold.__font, "GameFontHighlightLarge")
-        equal(el.pace.__font, "GameFontHighlight")
+        equal(el.pace.__font, "GameFontHighlightMedium")
         equal(el.paceExtra.__font, "GameFontDisableSmall")
         equal(el.forcesPrimary.__font, "GameFontHighlight")
-        equal(el.forcesSecondary.__font, "GameFontHighlightSmall")
-        equal(el.penalty.__font, "GameFontHighlightSmall")
+        equal(el.forcesSecondary.__font, "GameFontHighlight")
+        equal(el.penalty.__font, "GameFontHighlight")
         -- Y el medidor de cada tipo usa esa misma fuente: se mide lo que se pinta.
         for kind, font in pairs(EN.FONT) do equal(el.measure[kind].__font, font, "measurer for " .. kind) end
         -- Y se mide de verdad con ella: cada texto pasa por el medidor de SU
@@ -1011,11 +1029,21 @@ test("dev.11: forces degrade by real width, in both languages, never shrinking t
     -- Aqui el ingles es mas largo que el espanol, y el layout lo nota SOLO por
     -- medir: no hay ninguna rama por idioma. A 120 px el ingles ya sacrifica los
     -- restantes; el espanol, que ocupa menos, todavia los conserva.
-    local esNarrow, enNarrow = row("esES", 120), row("enUS", 120)
+    local esNarrow, enNarrow = row("esES", 130), row("enUS", 130)
     equal(enNarrow.mode, "PRIMARY", "English drops the remainder first: it is the longer string")
     equal(enNarrow.primary, "449 / 551", "and the count is NOT shrunk to keep it")
     equal(enNarrow.secondary, nil)
     equal(esNarrow.mode, "SPLIT", "Spanish still fits both at the same width")
+
+    -- La franja que de verdad tienta a encoger: el recuento COMPACTO cabria
+    -- junto a los restantes, el completo no. El layout sacrifica los restantes
+    -- y deja el recuento entero; nunca al reves.
+    for _, case in ipairs({ { "esES", 122 }, { "enUS", 140 } }) do
+        local squeeze = row(case[1], case[2])
+        equal(squeeze.mode, "PRIMARY", case[1] .. ": the remainder goes before the count shrinks")
+        equal(squeeze.primary, squeeze.full, case[1] .. ": the count is never compacted to keep the remainder")
+        equal(squeeze.secondary, nil, case[1] .. ": and the remainder is really gone")
+    end
 
     -- Mas estrecho todavia: solo el recuento, y por fin la forma compacta.
     for _, locale in ipairs({ "esES", "enUS" }) do
@@ -1041,8 +1069,8 @@ test("dev.11: Angry Keystones still owns the threshold, and the ladder does not 
         equal(EN._displayed.thresholdMode, "DEFERRED")
         equal(EN.elements.threshold:GetText(), "", "no second threshold next to Angry's")
         -- El ritmo sigue siendo de Mitzu, y ahora con la fuente nueva.
-        truthy(EN.elements.pace:GetText():find("RITMO", 1, true), EN.elements.pace:GetText())
-        equal(EN.elements.pace.__font, "GameFontHighlight")
+        truthy(EN.elements.pace:GetText():find(MP.TrackerPresenter.TEXT.PACE, 1, true), EN.elements.pace:GetText())
+        equal(EN.elements.pace.__font, "GameFontHighlightMedium")
         -- Ni un porcentaje duplicado en la fila de fuerzas.
         truthy(not (EN.elements.forcesPrimary:GetText() or ""):find("%%"), "no duplicated percentage")
         truthy(not (EN.elements.forcesSecondary:GetText() or ""):find("%%"))
