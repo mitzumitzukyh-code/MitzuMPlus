@@ -8,6 +8,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 -- FIX: declarar Theme localmente para este módulo
 local Theme = MitzuMPlus and MitzuMPlus.Theme
@@ -58,19 +59,19 @@ function MitzuMPlus:InitMinimapIcon()
                     total = total + 1
                 end
             end
-            tt:AddLine(string.format("%d runs registradas", total), 1, 1, 1)
+            tt:AddLine(string.format(L["MINIMAP_RUNS"], total), 1, 1, 1)
 
             if _G.MitzuMPlusCurrentRun then
                 local run = _G.MitzuMPlusCurrentRun
                 tt:AddLine(
-                    string.format("Run activa: %s +%d",
+                    string.format(L["MINIMAP_ACTIVE_RUN"],
                         run.dungeonName or "?", run.keyLevel or 0),
                     0.13, 0.87, 0.40)
             end
 
             tt:AddLine(" ")
-            tt:AddLine("Click izquierdo: Historial", 0.7, 0.7, 0.7)
-            tt:AddLine("Click derecho: Menú", 0.7, 0.7, 0.7)
+            tt:AddLine(L["MINIMAP_LEFT_CLICK"], 0.7, 0.7, 0.7)
+            tt:AddLine(L["MINIMAP_RIGHT_CLICK"], 0.7, 0.7, 0.7)
         end,
     })
 
@@ -92,9 +93,9 @@ end
 
 local function GetMenuItems()
     return {
-        { text = "Ver historial",   fn = function() if MitzuMPlus.ToggleWindow then MitzuMPlus:ToggleWindow() end end },
+        { text = L["MINIMAP_HISTORY"],   fn = function() if MitzuMPlus.ToggleWindow then MitzuMPlus:ToggleWindow() end end },
         { sep = true },
-        { text = "Configuración", fn = function()
+        { text = L["MINIMAP_SETTINGS"], fn = function()
             if MitzuMPlus.ShowTab then
                 MitzuMPlus:ShowTab("settings")
             elseif MitzuMPlus.ShowConfig then
@@ -239,7 +240,7 @@ function MitzuMPlus:_ShowMinimapMenuFallback(anchorFrame)
                     if local_fn then
                         local ok, err = pcall(local_fn)
                         if not ok and MitzuMPlus and MitzuMPlus.Print then
-                            MitzuMPlus:Print("Error al ejecutar acción: " .. tostring(err))
+                            MitzuMPlus:Print(L["MINIMAP_ACTION_ERROR"] .. tostring(err))
                         end
                     end
                 end)

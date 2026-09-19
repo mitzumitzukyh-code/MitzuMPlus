@@ -5,6 +5,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local Formatters = {}
 MitzuMPlus.Formatters = Formatters
@@ -134,14 +135,15 @@ function Formatters:FormatRelativeDate(timestamp)
     local days = math.floor(diff / 86400)
     
     if days == 0 then
-        return "Hoy"
+        return L["DATE_TODAY"]
     elseif days == 1 then
-        return "Ayer"
+        return L["DATE_YESTERDAY"]
     elseif days < 7 then
-        return string.format("Hace %d días", days)
+        return string.format(L["DATE_DAYS_AGO"], days)
     elseif days < 30 then
         local weeks = math.floor(days / 7)
-        return string.format("Hace %d %s", weeks, weeks == 1 and "semana" or "semanas")
+        -- Singular y plural son claves distintas: nunca "1 semanas".
+        return weeks == 1 and L["DATE_WEEK_AGO"] or string.format(L["DATE_WEEKS_AGO"], weeks)
     else
         return self:FormatDate(timestamp, "DD/MM/YYYY")
     end

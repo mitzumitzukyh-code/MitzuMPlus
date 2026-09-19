@@ -1,4 +1,5 @@
 local MitzuMPlus = _G.MitzuMPlus
+local L = MitzuMPlus.L
 if not MitzuMPlus then return end
 
 local Theme = MitzuMPlus and MitzuMPlus.Theme
@@ -281,7 +282,7 @@ function MitzuMPlus:OpenSimpleDropdownMenuLegacy(dropdown, items)
                     if selected and selected.func then
                         local ok, err = pcall(selected.func)
                         if not ok and MitzuMPlus and MitzuMPlus.Print then
-                            MitzuMPlus:Print("Error al aplicar filtro: " .. tostring(err))
+                            MitzuMPlus:Print(L["FILTER_ERROR"] .. tostring(err))
                         end
                     end
                 end)

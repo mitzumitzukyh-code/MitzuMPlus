@@ -14,6 +14,7 @@ local ADDON_VERSION_FALLBACK = "5.0.0"
 -- Aquí solo recuperamos la referencia con GetAddon(); llamar NewAddon() de
 -- nuevo causaría un error "addon already registered".
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 -- _G[ADDON_NAME] y _G.MitzuMPlus ya fueron asignados en Bootstrap.lua.
 
 -- ===========================================================================
@@ -25,11 +26,19 @@ function MitzuMPlus:OnInitialize()
     -- (carga antes que Init.lua en el TOC). Si no llegó, AceDB recibiría nil
     -- y la DB no tendría defaults. Lo detectamos y fallamos con un mensaje claro.
     if not MitzuMPlusDB_Defaults then
-        error("[MitzuMPlus] FATAL: MitzuMPlusDB_Defaults no definido. " ..
-              "Verifica que MitzuMPlus_main.lua carga antes que Init.lua en el TOC.")
+        error("[MitzuMPlus] FATAL: MitzuMPlusDB_Defaults is not defined. " ..
+              "Check that MitzuMPlus_main.lua loads before Init.lua in the TOC.")
     end
 
+    -- Leer el esquema crudo ANTES de que AceDB aplique defaults; de otro modo
+    -- una DB antigua sin schemaVersion pareceria estar ya migrada.
+    local rawDB = rawget(_G, "MitzuMPlusDB")
+    local previousSchema = rawDB and rawDB.global and tonumber(rawDB.global.schemaVersion) or 0
+
     self.db = LibStub("AceDB-3.0"):New("MitzuMPlusDB", MitzuMPlusDB_Defaults, true)
+    if type(self.MigrateDatabaseSchema) == "function" then
+        self:MigrateDatabaseSchema(previousSchema)
+    end
 
     -- FIX BUG-12: actualizar global.version al cargar para que refleje la versión
     -- real del addon (leída del .toc por Bootstrap.lua) y no quede hardcodeada.
@@ -64,7 +73,7 @@ function MitzuMPlus:OnInitialize()
         end)
     end
 
-    self:Print("|cFFD4A43CMitzuMPlus|r v" .. (self.VERSION or ADDON_VERSION_FALLBACK) .. " cargado. /MitzuMPlus para abrir.")
+    self:Print(string.format(L["ADDON_LOADED"], self.VERSION or ADDON_VERSION_FALLBACK))
 
     -- FIX BUG-2: instalar el listener de debug-fingerprint ahora que EventBus existe.
     if type(self.InstallFingerprintDebugListener) == "function" then
@@ -78,8 +87,8 @@ function MitzuMPlus:_SafeRegisterCoreEvents()
     if type(self.RegisterCoreEvents) == "function" then
         self:RegisterCoreEvents()
     else
-        self:Print("|cFFee3333[MitzuMPlus] ADVERTENCIA: RegisterCoreEvents() no encontrado. " ..
-                   "Verifica que modules/Core.lua está incluido en el TOC.|r")
+        self:Print("|cFFee3333[MitzuMPlus] WARNING: RegisterCoreEvents() not found. " ..
+                   "Check that modules/Core.lua is listed in the TOC.|r")
     end
 end
 
@@ -94,9 +103,10 @@ function MitzuMPlus:OnEnable()
     if self.InitMinimapIcon then
         self:InitMinimapIcon()
     end
-    -- DataManager: solo remover runs corruptas, sin backups
-    if self.DataManager then
-        self.DataManager:RemoveCorruptRuns()
+    -- Integridad: reparar lo recuperable y poner lo irrecuperable en
+    -- cuarentena con snapshot previo. Nunca destruir historial al cargar.
+    if self.DataManager and self.DataManager.RepairAndQuarantineRuns then
+        self.DataManager:RepairAndQuarantineRuns()
     end
 
 
@@ -166,7 +176,7 @@ function MitzuMPlus:InitializeUI()
     -- Reemplazado por Print + return para no crashear el addon entero.
     if not self or not self.db then
         if self and self.Print then
-            self:Print("|cFFee3333[MitzuMPlus] InitializeUI: DB no inicializada.|r")
+            self:Print("|cFFee3333[MitzuMPlus] InitializeUI: DB not initialized.|r")
         end
         return
     end
@@ -177,7 +187,7 @@ function MitzuMPlus:InitializeUI()
 
     -- BUG-FIX-6b: mismo patrón - error() + return era código muerto.
     if not self.Window then
-        self:Print("|cFFee3333[MitzuMPlus] InitializeUI: No se pudo crear la ventana principal.|r")
+        self:Print("|cFFee3333[MitzuMPlus] InitializeUI: could not create the main window.|r")
         return
     end
 
@@ -275,7 +285,7 @@ function MitzuMPlus:CreateMainWindow()
     if not Theme then
         -- BUG-FIX-6c: error() aquí SÍ es correcto (no hay UI sin Theme).
         -- El return muerto que existía después fue eliminado.
-        error("[MitzuMPlus] Theme no cargó. Verifica el orden en el TOC.")
+        error("[MitzuMPlus] Theme did not load. Check the TOC order.")
     end
 
     if not Theme.LAYOUT then
@@ -368,7 +378,7 @@ function MitzuMPlus:CreateMainWindow()
     subtitleText:SetPoint("RIGHT", titlebar, "RIGHT", -245, 0)
     subtitleText:SetJustifyH("LEFT")
     subtitleText:SetWordWrap(false)
-    subtitleText:SetText("Mythic+ History & Key Prediction")
+    subtitleText:SetText(L["ADDON_SUBTITLE"])
     subtitleText:SetTextColor(Theme.TEXT.secondary.r, Theme.TEXT.secondary.g, Theme.TEXT.secondary.b, Theme.TEXT.secondary.a)
 
     -- Logo centrado en vertical con el bloque titulo+subtitulo (el titulo no
@@ -489,9 +499,9 @@ function MitzuMPlus:HandleSlashCommand(input)
     end
 
     if cmd == "tracker" or cmd == "hud" then
-        local HUD = self.KeyPredictionHUD
+        local HUD = self.MitzuTracker
         if not HUD then
-            self:Print("|cFFff5555Tracker de predicción no disponible.|r")
+            self:Print(L["TRACKER_UNAVAILABLE"])
             return
         end
         local sub, value = args[2], args[3]
@@ -500,12 +510,16 @@ function MitzuMPlus:HandleSlashCommand(input)
         elseif sub == "off" then
             HUD:SetEnabled(false)
         elseif sub == "preview" or sub == "test" then
-            HUD:SetPreview(value ~= "off")
+            local _, why = HUD:SetPreview(value ~= "off")
+            if why == "KEY_IN_PROGRESS" then
+                self:Print(L["TRACKER_PREVIEW_BUSY"])
+                return
+            end
         elseif sub == "lock" or sub == "unlock" then
             HUD:SetOption("locked", sub == "lock")
         elseif sub == "scale" or sub == "alpha" then
             local ok = HUD:SetOption(sub, tonumber(value))
-            if not ok then self:Print("|cFFff9922Valor inválido para " .. sub .. ".|r") end
+            if not ok then self:Print(L["TRACKER_BAD_VALUE"] .. sub .. ".|r") end
         elseif sub == "reset" then
             HUD:ResetPosition()
         elseif sub == "status" then
@@ -513,11 +527,11 @@ function MitzuMPlus:HandleSlashCommand(input)
         elseif sub == nil or sub == "toggle" then
             HUD:SetEnabled(not HUD:IsEnabled())
         else
-            self:Print("|cFFff9922Uso: /emp tracker on|off|preview [off]|lock|unlock|scale N|alpha N|reset|status|r")
+            self:Print(L["TRACKER_USAGE"])
             return
         end
         if sub ~= "status" then
-            self:Print("Tracker M+: " .. (HUD:IsEnabled() and "|cFF21de66activado|r" or "|cFFff5555desactivado|r"))
+            self:Print(L["TRACKER_PREFIX"] .. (HUD:IsEnabled() and L["STATUS_ON"] or L["STATUS_OFF"]))
         end
         return
     end
@@ -530,19 +544,19 @@ function MitzuMPlus:HandleSlashCommand(input)
             chat = self.db and self.db.profile and self.db.profile.chatOutput == true,
         }
         if states.complete and self.ShowToast then
-            self:ShowToast("Prueba: run completada", "ok", 2, true)
+            self:ShowToast({ title = L["TEST_RUN_DONE"], detail = "+14 · +1 · 33:20" }, "ok", 2.5, true)
         end
         if states.record and self.ShowToast then
-            self:ShowToast("Prueba: nuevo record", "record", 2, true)
+            self:ShowToast({ title = L["TEST_NEW_RECORD"], detail = "+15" }, "record", 2.5, true)
         end
         if states.personal and self.ShowToast then
-            self:ShowToast("Prueba: marca personal", "personal", 2, true)
+            self:ShowToast({ title = L["TEST_PERSONAL_BEST"], detail = "+14 · 31:27" }, "personal", 2.5, true)
         end
         if states.chat and self.Print then
-            self:Print("Prueba de resumen en chat: OK")
+            self:Print(L["TEST_CHAT_SUMMARY"])
         end
         self:Print(string.format(
-            "Avisos: completar=%s record=%s personal=%s chat=%s",
+            L["TEST_SUMMARY"],
             states.complete and "ON" or "OFF", states.record and "ON" or "OFF",
             states.personal and "ON" or "OFF", states.chat and "ON" or "OFF"))
         return
@@ -551,19 +565,26 @@ function MitzuMPlus:HandleSlashCommand(input)
     if cmd == "bugreport" then
         local BR = self.BugReport
         if not BR then
-            self:Print("|cFFff5555Bug Report no disponible.|r")
+            self:Print(L["BUGREPORT_NA"])
             return
         end
         if args[2] == "clear" then
             pcall(BR.ClearLogs, BR)
-            self:Print("|cFF21de66Bug Report: logs locales limpiados.|r")
+            self:Print(L["BUGREPORT_CLEARED"])
         elseif args[2] == "status" then
             local ok, lines = pcall(BR.SummaryLines, BR)
-            for _, line in ipairs(ok and lines or { "resumen no disponible" }) do self:Print(line) end
+            for _, line in ipairs(ok and lines or { L["BUGREPORT_NO_SUMMARY"] }) do self:Print(line) end
         else
             local ok = pcall(BR.Show, BR)
-            if not ok then self:Print("|cFFff5555No se pudo abrir el Bug Report.|r") end
+            if not ok then self:Print(L["BUGREPORT_FAILED"]) end
         end
+        return
+    end
+
+    -- [DEV/QA] Herramientas internas del tracker 1.1. Fuera de la ayuda de
+    -- producto a proposito.
+    if cmd == "dev" then
+        self:HandleDevCommand(args)
         return
     end
 
@@ -572,17 +593,102 @@ function MitzuMPlus:HandleSlashCommand(input)
         return
     end
 
-    self:Print("|cFFff9922Comando desconocido.|r Usa |cFFf7d470/emp help|r.")
+    self:Print(L["HELP_UNKNOWN"])
+end
+
+-- [DEV/QA] /emp dev tracker  -> informe completo del TrackerAdapter (copiable)
+--          /emp dev blizzard -> sonda de solo lectura del Objective Tracker nativo
+--          /emp dev state    -> snapshot normalizado de TrackerState
+--          /emp dev caps     -> capacidades de API en el chat
+function MitzuMPlus:ShowDevReport(module, title)
+    local ok, lines = pcall(module.ReportLines, module)
+    if not ok then
+        self:Print("|cFFff5555[DEV] Could not build the report:|r " ..
+            (self.QASafe and self.QASafe.Text(lines, 200) or "?"))
+        return
+    end
+    local text = table.concat(lines, "\n")
+    local EX = self.Export
+    local shown = EX and EX.CopyToClipboard and pcall(EX.CopyToClipboard, EX, text, {
+        title = title,
+        hint = L["BUGREPORT_COPY"],
+        autoClose = false, mono = true,
+    })
+    if not shown then
+        for _, line in ipairs(lines) do self:Print(line) end
+    end
+end
+
+function MitzuMPlus:HandleDevCommand(args)
+    local sub = args[2]
+    -- Native UI owns only its explicit diagnostic subcommands.
+    local EXP = self.ExperimentalNativeUI
+    if EXP and type(EXP.HandleDevCommand) == "function" then
+        local ok, handled = pcall(EXP.HandleDevCommand, EXP, args)
+        if ok and handled == true then return end
+    end
+    if sub == "state" then
+        if not self.TrackerState then
+            self:Print("|cFFff5555[DEV] TrackerState unavailable.|r")
+            return
+        end
+        self.TrackerState:Refresh("DEV_COMMAND")
+        self:ShowDevReport(self.TrackerState, "MITZUMPLUS [DEV] TRACKER STATE")
+        return
+    end
+    if sub == "blizzard" then
+        if not self.BlizzardTrackerProbe then
+            self:Print("|cFFff5555[DEV] BlizzardTrackerProbe unavailable.|r")
+            return
+        end
+        self:ShowDevReport(self.BlizzardTrackerProbe, "MITZUMPLUS [DEV] BLIZZARD TRACKER")
+        return
+    end
+    local TA = self.TrackerAdapter
+    if not TA then
+        self:Print("|cFFff5555[DEV] TrackerAdapter unavailable.|r")
+        return
+    end
+    if sub == "tracker" then
+        self:ShowDevReport(TA, "MITZUMPLUS [DEV] TRACKER ADAPTER")
+    elseif sub == "caps" then
+        local ok, caps = pcall(TA.ProbeCapabilities, TA)
+        if not ok then
+            self:Print("|cFFff5555[DEV] Could not probe capabilities.|r")
+            return
+        end
+        local missing, optional = 0, 0
+        for _, c in ipairs(caps) do
+            if c.status == "OPTIONAL_FALLBACK_MISSING" then
+                optional = optional + 1
+            elseif c.status ~= "AVAILABLE" then
+                missing = missing + 1
+                self:Print(string.format("[DEV] %s %s (%s)", c.status, c.path, c.kind))
+            end
+        end
+        self:Print(string.format("[DEV] APIs probed: %d, unavailable: %d, optional legacy fallbacks missing: %d",
+            #caps, missing, optional))
+    elseif sub == "locale" then
+        -- Solo diagnostico: no cambia nada, el idioma lo decide el cliente.
+        local Loc = self.Localization
+        if not Loc then
+            self:Print("|cFFff5555[DEV] Localization unavailable.|r")
+            return
+        end
+        for _, line in ipairs(Loc:StatusLines()) do self:Print("[DEV] " .. line) end
+    else
+        self:Print("|cFFff9922[DEV] Usage: /emp dev tracker|state|blizzard|caps|locale|nativeui|keystoneui|seasonui|lfgui|teleports|partyneeds|inspect|r")
+    end
 end
 
 function MitzuMPlus:PrintHelp()
-    self:Print("|cFFe8b84aMitzuMPlus|r - Historial y predicción de llave")
-    self:Print("|cFFf7d470/emp|r - abrir o cerrar MitzuMPlus")
-    self:Print("|cFFf7d470/emp historial|r  -  |cFFf7d470stats|r  -  |cFFf7d470jugadores|r  -  |cFFf7d470config|r")
-    self:Print("|cFFf7d470/emp tracker on|off|preview [off]|lock|unlock|scale N|alpha N|reset|status|r")
-    self:Print("|cFFf7d470/emp bugreport [status|clear]|r - diagnóstico sanitizado")
-    self:Print("|cFFf7d470/emp testavisos|r - probar las notificaciones configuradas")
-    self:Print("|cFFf7d470/emp version|r")
+    self:Print(L["HELP_HEADER"])
+    self:Print(L["HELP_OPEN_CMD"])
+    self:Print(L["HELP_TABS_CMD"])
+    self:Print(L["HELP_TRACKER_CMD"])
+    self:Print(L["HELP_BUGREPORT_CMD"])
+    self:Print(L["HELP_TESTNOTIF"])
+    self:Print(L["HELP_VERSION_CMD"])
 end
 
 function MitzuMPlus:ToggleWindow()
@@ -659,7 +765,7 @@ function MitzuMPlus:UnregisterCoreEvents()
     self._eventsRegistered = false
     _G.MitzuMPlusCurrentRun = nil
     if self.Print then
-        self:Print("|cFFee3333Tracking de M+ desactivado.|r")
+        self:Print(L["TRACKING_OFF"])
     end
 end
 

@@ -12,6 +12,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 -- NOTA: MitzuMPlusDB_Defaults está definido en MitzuMPlus_main.lua
 -- para evitar conflictos y tener una sola fuente de verdad.
@@ -41,57 +42,148 @@ function MitzuMPlus:GetRuntimeSeasonDescriptor()
         if ok then expansionLevel = tonumber(value) end
     end
     expansionLevel = expansionLevel or 0
-    local names = self.Constants and self.Constants.EXPANSION_NAMES or {}
-    local expansionName = names[expansionLevel] or ("Expansión " .. expansionLevel)
+    -- Solo identidad: la etiqueta visible la construye RunMetrics:GetSeason en
+     -- el idioma del cliente. Guardar texto traducido haria que un historial
+     -- creado en espanol se leyera en espanol en un cliente ingles.
     return {
         seasonKey = string.format("exp%d_s%d", expansionLevel, seasonID),
-        seasonName = string.format("%s - Temporada %d", expansionName, seasonID),
         seasonNumber = seasonID,
         expansionLevel = expansionLevel,
     }
 end
 
 -- UTILIDAD: Timestamp del último reset semanal de WoW
--- FIX BUG-4: Los valores de reset se leen desde Constants para tener una
--- única fuente de verdad. Ya no se duplican aquí como variables locales.
--- Constants.WEEK_RESET_WDAY = 3 (Miércoles, date("%w"): 0=Dom…6=Sáb)
--- Constants.WEEK_RESET_HOUR = 9 (09:00 hora de servidor)
+-- Retail moderno expone el reset real por region mediante C_DateAndTime.
+-- Nunca asumir miercoles/09:00 salvo como fallback de clientes sin esa API.
 -- ─────────────────────────────────────────────────────────────────────────────
 local function GetWeeklyReset()
+    local secInDay  = 86400
+    local secInWeek = 7 * secInDay
+    local now = time and time() or 0
+
+    -- API preferida (Retail 11.0+): timestamp Unix del ultimo reset real.
+    if C_DateAndTime and type(C_DateAndTime.GetWeeklyResetStartTime) == "function" then
+        local ok, resetStart = pcall(C_DateAndTime.GetWeeklyResetStartTime)
+        resetStart = ok and tonumber(resetStart) or nil
+        if resetStart and resetStart > 0 then
+            return resetStart, resetStart - secInWeek, resetStart
+        end
+    end
+
+    -- Fallback oficial: segundos hasta el proximo reset.
+    if now > 0 and C_DateAndTime and type(C_DateAndTime.GetSecondsUntilWeeklyReset) == "function" then
+        local ok, untilReset = pcall(C_DateAndTime.GetSecondsUntilWeeklyReset)
+        untilReset = ok and tonumber(untilReset) or nil
+        if untilReset and untilReset >= 0 and untilReset <= (secInWeek + secInDay) then
+            local resetStart = now + untilReset - secInWeek
+            return resetStart, resetStart - secInWeek, resetStart
+        end
+    end
+
+    -- Compatibilidad extrema: calculo historico por hora/dia configurados.
     local C = MitzuMPlus.Constants or {}
     local RESET_WEEKDAY = C.WEEK_RESET_WDAY or 3
     local RESET_HOUR    = C.WEEK_RESET_HOUR or 9
+    if now <= 0 or not date then return 0, 0, 0 end
 
-    if not time then return 0, 0 end
-    local now         = time()
-    local secInDay    = 86400
-    local secInWeek   = 7 * secInDay
-
-    -- Hora actual del servidor (WoW date() devuelve hora local de servidor)
-    local curHour   = tonumber(date("%H")) or 0
-    local curMin    = tonumber(date("%M")) or 0
-    local curSec    = tonumber(date("%S")) or 0
-    local curWday   = tonumber(date("%w")) or 0  -- 0=Domingo
-
-    -- Segundos transcurridos desde medianoche del servidor
+    local curHour = tonumber(date("%H")) or 0
+    local curMin  = tonumber(date("%M")) or 0
+    local curSec  = tonumber(date("%S")) or 0
+    local curWday = tonumber(date("%w")) or 0
     local secSinceMidnight = curHour * 3600 + curMin * 60 + curSec
-
-    -- Timestamp de la medianoche de hoy (server time)
     local todayMidnight = now - secSinceMidnight
-
-    -- Días completos hacia atrás hasta el RESET_WEEKDAY
     local daysBack = (curWday - RESET_WEEKDAY + 7) % 7
+    if daysBack == 0 and curHour < RESET_HOUR then daysBack = 7 end
+    local resetStart = todayMidnight - daysBack * secInDay + RESET_HOUR * 3600
+    return resetStart, resetStart - secInWeek, resetStart
+end
 
-    -- Si hoy ES el día de reset pero aún no ha llegado la hora, retroceder 7 días
-    if daysBack == 0 and curHour < RESET_HOUR then
-        daysBack = 7
+function MitzuMPlus:GetWeeklyResetWindow()
+    return GetWeeklyReset()
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ESQUEMA PERSISTENTE Y MIGRACIONES
+-- El esquema de datos no depende del numero de version del addon.
+-- ─────────────────────────────────────────────────────────────────────────────
+MitzuMPlus.DB_SCHEMA_VERSION = 2
+
+local function SnapshotSerializable(value, seen)
+    local t = type(value)
+    if t == "nil" or t == "number" or t == "string" or t == "boolean" then return value end
+    if t ~= "table" then return nil end
+    seen = seen or {}
+    if seen[value] then return nil end
+    seen[value] = true
+    local out = {}
+    for k, v in pairs(value) do
+        local kt = type(k)
+        if kt == "number" or kt == "string" then
+            local copy = SnapshotSerializable(v, seen)
+            if copy ~= nil then out[k] = copy end
+        end
+    end
+    seen[value] = nil
+    return out
+end
+
+function MitzuMPlus:CreateDatabaseBackup(reason)
+    if not self.db or not self.db.global then return false end
+    local g = self.db.global
+    g.backups = type(g.backups) == "table" and g.backups or {}
+
+    -- Dos snapshots completos como maximo: suficiente para rollback sin
+    -- multiplicar indefinidamente el SavedVariables del usuario.
+    while #g.backups >= 2 do table.remove(g.backups, 1) end
+
+    local runCount = 0
+    for _ in pairs(g.runs or {}) do runCount = runCount + 1 end
+    g.backups[#g.backups + 1] = {
+        date = time and time() or 0,
+        version = self.VERSION or "unknown",
+        schemaVersion = tonumber(g.schemaVersion) or 0,
+        reason = tostring(reason or "manual"),
+        runCount = runCount,
+        snapshot = {
+            runs = SnapshotSerializable(g.runs or {}),
+            nextRunID = tonumber(g.nextRunID) or 1,
+            personalBests = SnapshotSerializable(g.personalBests or {}),
+        },
+    }
+    return true
+end
+
+function MitzuMPlus:MigrateDatabaseSchema(previousSchema)
+    if not self.db or not self.db.global then return false end
+    local g = self.db.global
+    local current = tonumber(self.DB_SCHEMA_VERSION) or 1
+    local from = tonumber(previousSchema) or 0
+    if from < 0 then from = 0 end
+
+    if from < current and next(g.runs or {}) then
+        self:CreateDatabaseBackup("pre-schema-" .. tostring(from) .. "-to-" .. tostring(current))
     end
 
-    local thisWeekStart = todayMidnight - daysBack * secInDay + RESET_HOUR * 3600
-    local lastWeekStart = thisWeekStart - secInWeek
-    local lastWeekEnd   = thisWeekStart
+    -- v1: formalizar las colecciones base y reparar nextRunID sin tocar runs.
+    if from < 1 then
+        g.runs = type(g.runs) == "table" and g.runs or {}
+        g.personalBests = type(g.personalBests) == "table" and g.personalBests or {}
+        local maxID = 0
+        for key, run in pairs(g.runs) do
+            local id = tonumber(type(run) == "table" and run.runID or nil) or tonumber(key)
+            if id and id > maxID then maxID = id end
+        end
+        g.nextRunID = math.max(tonumber(g.nextRunID) or 1, maxID + 1)
+    end
 
-    return thisWeekStart, lastWeekStart, lastWeekEnd
+    -- v2: cuarentena no destructiva para registros que no se puedan reparar.
+    if from < 2 then
+        g.quarantineRuns = type(g.quarantineRuns) == "table" and g.quarantineRuns or {}
+        g.backups = type(g.backups) == "table" and g.backups or {}
+    end
+
+    g.schemaVersion = current
+    return true
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -108,7 +200,7 @@ function MitzuMPlus:SaveRun(runData)
     end
     if not runData then
         if self.Print then
-            self:Print("|cFFFF4444[MitzuMPlus] SaveRun: datos inválidos, run descartada.|r")
+            self:Print(L["MSG_SAVE_INVALID"])
         end
         return nil
     end
@@ -117,7 +209,7 @@ function MitzuMPlus:SaveRun(runData)
         if not ok then
             if self.Print then
                 self:Print(string.format(
-                    "|cFFFF4444[MitzuMPlus] SaveRun: validación fallida (%s), run descartada.|r",
+                    L["MSG_SAVE_FAILED"],
                     tostring(reason)))
             end
             return nil

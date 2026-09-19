@@ -3,25 +3,26 @@
 local ADDON_NAME="MitzuMPlus"
 local MitzuMPlus=LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
 local Theme,Widgets=MitzuMPlus.Theme,MitzuMPlus.Widgets
+local L = MitzuMPlus.L
 local wipe=wipe
 local PanelStats={}
 MitzuMPlus.PanelStats=PanelStats
 
 local ROLE_LABEL={TANK="Tank",HEALER="Healer",DAMAGER="DPS",NONE="DPS"}
 local LEVEL_ITEMS={
-    {text="Todos los niveles",value="ALL"},{text="+1 a +6",value="LOW"},
-    {text="+7 a +11",value="MID"},{text="+12 o superior",value="HIGH"},
+    {text=L["STATS_ALL_LEVELS"],value="ALL"},{text=L["STATS_LEVEL_1_6"],value="LOW"},
+    {text=L["STATS_LEVEL_7_11"],value="MID"},{text=L["STATS_LEVEL_12"],value="HIGH"},
 }
 local TREND_COLS={
-    {key="date",text="FECHA",w=.09},{key="dungeon",text="MAZMORRA",w=.25},
-    {key="level",text="NIVEL",w=.08},{key="result",text="RESULTADO",w=.13},
-    {key="margin",text="MARGEN",w=.12},{key="metric",text="DPS/HPS/DTPS",w=.16},
-    {key="deaths",text="MUERTES",w=.08},{key="utility",text="KICKS/DISPELS",w=.09},
+    {key="date",text=L["COL_DATE"],w=.09},{key="dungeon",text=L["COL_DUNGEON"],w=.28},
+    {key="level",text=L["COL_LEVEL"],w=.08},{key="result",text=L["COL_RESULT"],w=.14},
+    {key="margin",text=L["COL_MARGIN"],w=.13},{key="metric",text="DPS/HPS/DTPS",w=.18},
+    {key="deaths",text=L["COL_DEATHS"],w=.10},
 }
 local DUNGEON_COLS={
-    {key="dungeon",text="MAZMORRA",w=.32},{key="runs",text="RUNS",w=.10},
-    {key="success",text="ÉXITO",w=.13},{key="best",text="MEJOR",w=.11},
-    {key="margin",text="MARGEN MED.",w=.17},{key="deaths",text="MUERTES/RUN",w=.17},
+    {key="dungeon",text=L["COL_DUNGEON"],w=.32},{key="runs",text=L["COL_RUNS"],w=.10},
+    {key="success",text=L["COL_SUCCESS"],w=.13},{key="best",text=L["COL_BEST"],w=.11},
+    {key="margin",text=L["STATS_MED_MARGIN"],w=.17},{key="deaths",text=L["STATS_DEATHS_RUN"],w=.17},
 }
 
 local function FNum(v)
@@ -103,7 +104,7 @@ function PanelStats:Create(parent)
     self.panel=c;self.dynamic={};self.filters={character="ALL",season="ALL",role="ALL",dungeon="ALL",level="ALL"}
     local toolbar=CreateFrame("Frame",nil,c,BackdropTemplateMixin and"BackdropTemplate");toolbar:SetPoint("TOPLEFT",10,-10);toolbar:SetPoint("TOPRIGHT",-10,-10);toolbar:SetHeight(52)
     toolbar:SetBackdrop(Theme.BACKDROPS.simple);Theme:SetBackdropColor(toolbar,Theme.BG.panel);self.toolbar=toolbar
-    local defs={{"character","PERSONAJE",220},{"season","TEMPORADA",185},{"role","ROL",145},{"dungeon","MAZMORRA",280},{"level","NIVEL",190}}
+    local defs={{"character",L["COL_CHARACTER"],220},{"season",L["STATS_SEASON_LABEL"],185},{"role",L["COL_ROLE"],145},{"dungeon",L["COL_DUNGEON"],280},{"level",L["COL_LEVEL"],190}}
     local previous
     for _,def in ipairs(defs)do
         local key,label,w=def[1],def[2],def[3]
@@ -113,13 +114,20 @@ function PanelStats:Create(parent)
         self[key.."Dropdown"]=dd;previous=dd
     end
     local cards=CreateFrame("Frame",nil,c);cards:SetPoint("TOPLEFT",10,-72);cards:SetPoint("TOPRIGHT",-10,-72);cards:SetHeight(78);self.cards={}
-    local labels={"RUNS","EN TIEMPO","MEJOR LLAVE","DATOS VÁLIDOS"}
+    local labels={L["COL_RUNS"],L["RUN_IN_TIME"],L["STATS_BEST_KEY_CARD"]}
     for i,label in ipairs(labels)do
-        local card=CreateFrame("Frame",nil,cards,BackdropTemplateMixin and"BackdropTemplate");card:SetPoint("TOPLEFT",cards,"TOPLEFT",(i-1)*((Theme.LAYOUT.windowWidth-44)/4),0);card:SetSize((Theme.LAYOUT.windowWidth-56)/4,72)
+        local card=CreateFrame("Frame",nil,cards,BackdropTemplateMixin and"BackdropTemplate");card:SetHeight(72)
         card:SetBackdrop(Theme.BACKDROPS.simple);Theme:SetBackdropColor(card,Theme.BG.panel);Theme:SetBackdropBorderColor(card,Theme.BORDER.panel)
         local h=NewText(card,"normal",9,Theme.TEXT.dim);h:SetPoint("TOP",0,-9);h:SetText(label)
         local v=NewText(card,"title",20,Theme.GOLD.gold4);v:SetPoint("TOP",h,"BOTTOM",0,-6);card.value=v;self.cards[i]=card
     end
+    local function LayoutCards()
+        local gap=8;local count=#self.cards;local width=math.max(80,((cards:GetWidth() or 0)-gap*(count-1))/count)
+        for i,card in ipairs(self.cards)do
+            card:ClearAllPoints();card:SetPoint("TOPLEFT",cards,"TOPLEFT",(i-1)*(width+gap),0);card:SetWidth(width)
+        end
+    end
+    cards:SetScript("OnSizeChanged",LayoutCards);LayoutCards()
     local scroll=Widgets:CreateScrollFrame(c);scroll:SetPoint("TOPLEFT",10,-158);scroll:SetPoint("BOTTOMRIGHT",-10,10);self.scroll,self.content=scroll,scroll.scrollChild
     self.content:SetHeight(1);self.content:SetWidth(math.max(1,scroll:GetWidth()-8))
     scroll:SetScript("OnSizeChanged",function(f)self.content:SetWidth(math.max(1,f:GetWidth()-8));self:Render()end)
@@ -138,9 +146,9 @@ function PanelStats:RefreshFilterItems(runs)
         local out,keys={{text=allText,value="ALL"}},{};for key in pairs(map)do keys[#keys+1]=key end;table.sort(keys,function(a,b)return tostring(map[a])<tostring(map[b])end)
         for _,key in ipairs(keys)do out[#out+1]={text=map[key],value=key}end;return out,map
     end
-    local configs={{self.characterDropdown,chars,"Todos los personajes","character"},{self.seasonDropdown,seasons,"Todas las temporadas","season"},{self.dungeonDropdown,dungeons,"Todas las mazmorras","dungeon"}}
+    local configs={{self.characterDropdown,chars,L["STATS_ALL_CHARS"],"character"},{self.seasonDropdown,seasons,L["STATS_ALL_SEASONS"],"season"},{self.dungeonDropdown,dungeons,L["STATS_ALL_DUNGEONS"],"dungeon"}}
     for _,cfg in ipairs(configs)do local items,map=Items(cfg[2],cfg[3]);cfg[1]:SetItems(items);if self.filters[cfg[4]]~="ALL"and not map[self.filters[cfg[4]]]then self.filters[cfg[4]]="ALL"end;cfg[1]:SetSelectedValue(self.filters[cfg[4]])end
-    self.roleDropdown:SetItems({{text="Todos los roles",value="ALL"},{text="Tank",value="TANK"},{text="Healer",value="HEALER"},{text="DPS",value="DAMAGER"}});self.roleDropdown:SetSelectedValue(self.filters.role)
+    self.roleDropdown:SetItems({{text=L["STATS_ALL_ROLES"],value="ALL"},{text="Tank",value="TANK"},{text="Healer",value="HEALER"},{text="DPS",value="DAMAGER"}});self.roleDropdown:SetSelectedValue(self.filters.role)
     self.levelDropdown:SetItems(LEVEL_ITEMS);self.levelDropdown:SetSelectedValue(self.filters.level)
 end
 function PanelStats:FilteredSamples()
@@ -158,21 +166,21 @@ end
 
 function PanelStats:Render()
     if not self.content then return end
-    Destroy(self.dynamic);local samples=self:FilteredSamples();local total=#samples;local timed,best,valid=0,0,0
-    for _,s in ipairs(samples)do if s.run.inTime then timed=timed+1 end;best=math.max(best,tonumber(s.run.keyLevel) or 0);if s.metricValid then valid=valid+1 end end
-    self.cards[1].value:SetText(total);self.cards[2].value:SetText(total>0 and string.format("%.0f%%",timed/total*100)or"-");self.cards[3].value:SetText(best>0 and("+"..best)or"-");self.cards[4].value:SetText(string.format("%d/%d",valid,total))
-    local y=-4;local title,line=SectionTitle(self.content,"TENDENCIA RECIENTE",y);self.dynamic[#self.dynamic+1]=title;self.dynamic[#self.dynamic+1]=line;y=y-27
+    Destroy(self.dynamic);local samples=self:FilteredSamples();local total=#samples;local timed,best=0,0
+    for _,s in ipairs(samples)do if s.run.inTime then timed=timed+1 end;best=math.max(best,tonumber(s.run.keyLevel) or 0) end
+    self.cards[1].value:SetText(total);self.cards[2].value:SetText(total>0 and string.format("%.0f%%",timed/total*100)or"-");self.cards[3].value:SetText(best>0 and("+"..best)or"-")
+    local y=-4;local title,line=SectionTitle(self.content,L["STATS_TREND"],y);self.dynamic[#self.dynamic+1]=title;self.dynamic[#self.dynamic+1]=line;y=y-27
     local h=TableHeader(self.content,TREND_COLS,y);self.dynamic[#self.dynamic+1]=h;y=y-28
     for i=1,math.min(12,total)do
-        local s=samples[i];local run=s.run;local result=run.inTime and"EN TIEMPO"or((s.duration>0)and"FUERA"or"INCOMPLETA")
+        local s=samples[i];local run=s.run;local result=run.inTime and L["RUN_IN_TIME"] or ((s.duration>0) and L["RESULT_OUT"] or L["RESULT_INCOMPLETE"])
         local values={date={text=DateText(run.startTime)},dungeon={text=run.dungeonName or "?",color=Theme.TEXT.primary},level={text="+"..tostring(run.keyLevel or 0),color=Theme.GOLD.gold4},
             result={text=result,color=run.inTime and Theme.STATUS.ok or Theme.STATUS.bad},margin={text=s.margin and FTime(s.margin,true)or"-",color=s.margin and(s.margin>=0 and Theme.STATUS.ok or Theme.STATUS.bad)or Theme.TEXT.dim},
             metric={text=s.metricValid and(FNum(s.metric).." "..s.metricLabel)or"-",color=s.metricValid and Theme.STATUS.info or Theme.TEXT.dim},
-            deaths={text=s.ownDeaths~=nil and tostring(s.ownDeaths)or"-"},utility={text=(s.ownKicks~=nil or s.ownDispels~=nil)and string.format("%dK %dD",s.ownKicks or 0,s.ownDispels or 0)or"-"}}
+            deaths={text=s.ownDeaths~=nil and tostring(s.ownDeaths)or"-"}}
         local row=TableRow(self.content,TREND_COLS,values,y,i);self.dynamic[#self.dynamic+1]=row;y=y-28
     end
-    if total==0 then local empty=NewText(self.content,"normal",12,Theme.TEXT.dim);empty:SetPoint("TOPLEFT",10,y-10);empty:SetText("No hay runs que coincidan con estos filtros.");self.dynamic[#self.dynamic+1]=empty;y=y-42 end
-    y=y-18;title,line=SectionTitle(self.content,"RESULTADOS POR MAZMORRA",y);self.dynamic[#self.dynamic+1]=title;self.dynamic[#self.dynamic+1]=line;y=y-27
+    if total==0 then local empty=NewText(self.content,"normal",12,Theme.TEXT.dim);empty:SetPoint("TOPLEFT",10,y-10);empty:SetText(L["STATS_NO_MATCH"]);self.dynamic[#self.dynamic+1]=empty;y=y-42 end
+    y=y-18;title,line=SectionTitle(self.content,L["STATS_BY_DUNGEON"],y);self.dynamic[#self.dynamic+1]=title;self.dynamic[#self.dynamic+1]=line;y=y-27
     local dh=TableHeader(self.content,DUNGEON_COLS,y);self.dynamic[#self.dynamic+1]=dh;y=y-28
     local map={}
     for _,s in ipairs(samples)do local name=s.run.dungeonName or "?";local d=map[name]or{name=name,runs=0,timed=0,best=0,margins={},deaths=0};map[name]=d;d.runs=d.runs+1;if s.run.inTime then d.timed=d.timed+1 end;d.best=math.max(d.best,tonumber(s.run.keyLevel) or 0);if s.margin then d.margins[#d.margins+1]=s.margin end;d.deaths=d.deaths+s.groupDeaths end
@@ -182,26 +190,24 @@ function PanelStats:Render()
         local values={dungeon={text=d.name,color=Theme.TEXT.primary},runs={text=tostring(d.runs)},success={text=string.format("%.0f%%",d.success),color=d.success>=60 and Theme.STATUS.ok or Theme.STATUS.warn},best={text="+"..d.best,color=Theme.GOLD.gold4},margin={text=d.median and FTime(d.median,true)or"-",color=d.median and(d.median>=0 and Theme.STATUS.ok or Theme.STATUS.bad)or Theme.TEXT.dim},deaths={text=string.format("%.1f",d.deaths/d.runs)}}
         local row=TableRow(self.content,DUNGEON_COLS,values,y,i);self.dynamic[#self.dynamic+1]=row;y=y-28
     end
-    y=y-18;title,line=SectionTitle(self.content,"MÉTRICAS POR ROL Y CALIDAD DE DATOS",y);self.dynamic[#self.dynamic+1]=title;self.dynamic[#self.dynamic+1]=line;y=y-29
+    y=y-18;title,line=SectionTitle(self.content,L["STATS_BY_ROLE"],y);self.dynamic[#self.dynamic+1]=title;self.dynamic[#self.dynamic+1]=line;y=y-29
     -- DPS, HPS y DTPS no son unidades comparables. Nunca calculamos una
     -- mediana comun al mostrar varios roles: cada rol conserva su serie.
-    local metrics={TANK={},HEALER={},DAMAGER={}};local margins={};local ownDeaths,deathN,kicks,kickTime,dispels,dispN,sourceN=0,0,0,0,0,0,0
-    for _,s in ipairs(samples)do if s.metricValid then metrics[s.role][#metrics[s.role]+1]=s.metric end;if s.margin then margins[#margins+1]=s.margin end;if s.ownDeaths~=nil then ownDeaths=ownDeaths+s.ownDeaths;deathN=deathN+1 end;if s.ownKicks~=nil and s.duration>0 then kicks=kicks+s.ownKicks;kickTime=kickTime+s.duration end;if s.ownDispels~=nil then dispels=dispels+s.ownDispels;dispN=dispN+1 end;if s.dataSource then sourceN=sourceN+1 end end
+    local metrics={TANK={},HEALER={},DAMAGER={}};local margins={};local ownDeaths,deathN=0,0
+    for _,s in ipairs(samples)do if s.metricValid then metrics[s.role][#metrics[s.role]+1]=s.metric end;if s.margin then margins[#margins+1]=s.margin end;if s.ownDeaths~=nil then ownDeaths=ownDeaths+s.ownDeaths;deathN=deathN+1 end end
     local performance
     if self.filters.role~="ALL"then
-        local role=self.filters.role;performance=string.format("Rendimiento mediano (%s): %s %s",ROLE_LABEL[role]or role,Median(metrics[role])and FNum(Median(metrics[role]))or"sin datos",role=="HEALER"and"HPS"or(role=="TANK"and"DTPS"or"DPS"))
+        local role=self.filters.role;performance=string.format(L["STATS_MEDIAN_PERF"],ROLE_LABEL[role]or role,Median(metrics[role])and FNum(Median(metrics[role]))or L["STATS_NO_DATA"],role=="HEALER"and"HPS"or(role=="TANK"and"DTPS"or"DPS"))
     else
         local parts={}
         for _,role in ipairs({"TANK","HEALER","DAMAGER"})do local value=Median(metrics[role]);if value then parts[#parts+1]=string.format("%s %s %s",ROLE_LABEL[role],FNum(value),role=="HEALER"and"HPS"or(role=="TANK"and"DTPS"or"DPS"))end end
-        performance="Medianas separadas por rol: "..(#parts>0 and table.concat(parts,"   ·   ")or"sin datos")
+        performance=L["STATS_ROLE_MEDIANS"]..(#parts>0 and table.concat(parts,"   ·   ")or L["STATS_NO_DATA"])
     end
     local lines={
         performance,
-        string.format("Muertes propias: %s   ·   Margen mediano: %s",deathN>0 and string.format("%.2f/run",ownDeaths/deathN)or"sin datos",Median(margins)and FTime(Median(margins),true)or"sin datos"),
-        string.format("Kicks: %s   ·   Dispels: %s",kickTime>0 and string.format("%.2f/min",kicks/(kickTime/60))or"sin datos",dispN>0 and string.format("%.2f/run",dispels/dispN)or"sin datos"),
-        string.format("Cobertura: métrica de rol %d/%d   ·   fuente identificada %d/%d",valid,total,sourceN,total),
+        string.format(L["STATS_OWN_DEATHS"],deathN>0 and string.format("%.2f/run",ownDeaths/deathN)or L["STATS_NO_DATA"],Median(margins)and FTime(Median(margins),true)or L["STATS_NO_DATA"]),
     }
-    for i,text in ipairs(lines)do local fs=NewText(self.content,"normal",11,i==4 and Theme.TEXT.dim or Theme.TEXT.secondary);fs:SetPoint("TOPLEFT",10,y);fs:SetText(text);self.dynamic[#self.dynamic+1]=fs;y=y-22 end
+    for _,text in ipairs(lines)do local fs=NewText(self.content,"normal",11,Theme.TEXT.secondary);fs:SetPoint("TOPLEFT",10,y);fs:SetText(text);self.dynamic[#self.dynamic+1]=fs;y=y-22 end
     self.content:SetHeight(math.max(80,math.abs(y)+18));self.scroll:UpdateScrollRange()
 end
 function PanelStats:Refresh()

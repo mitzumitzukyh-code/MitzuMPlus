@@ -17,6 +17,10 @@ function S.boot(opts)
     local WoW = dofile("tests/harness/wow_mock.lua")
     local Loader = dofile("tests/harness/addon_loader.lua")
 
+    -- Idioma del cliente ANTES de cargar: AceLocale lee GetLocale() al cargarse
+    -- y decide ahi que fichero de Locales registra.
+    if opts.locale then WoW.locale = opts.locale end
+
     -- /reload: el reloj, el estado del cliente y las SavedVariables siguen.
     if opts.clock then
         WoW.now, WoW.epoch = opts.clock.now, opts.clock.epoch

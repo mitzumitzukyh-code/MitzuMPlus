@@ -1,9 +1,9 @@
-## Interface: 120100
+## Interface: 120100, 120105
 ## Title: MitzuMPlus
 ## Notes: Mythic+ history, statistics, player analysis and live key prediction.
 ## Notes-esES: Historial, estadísticas, análisis de jugadores y predicción de llave M+.
 ## Author: Mutzuki Mizt
-## Version: 1.0.0-beta.1
+## Version: 1.1.0
 ## IconTexture: Interface\AddOns\MitzuMPlus\Media\Icons\mitzu_logo_small_32
 ## SavedVariables: MitzuMPlusDB
 ## OptionalDeps: LibSharedMedia-3.0, RaiderIO
@@ -30,6 +30,8 @@ libs\AceSerializer-3.0\AceSerializer-3.0.xml
 # Localization
 Locales\enUS.lua
 Locales\esES.lua
+Locales\enUS_Experimental.lua
+Locales\esES_Experimental.lua
 
 # Bootstrap / core
 Bootstrap.lua
@@ -42,10 +44,19 @@ modules\EventBus.lua
 # QA: saneado de valores y caja negra. Antes que DungeonContext, para oir
 # desde la primera transicion.
 modules\QA\SafeValue.lua
+# Localizacion: observabilidad del idioma (AceLocale ya eligio en Bootstrap).
+modules\QA\Localization.lua
 modules\QA\FlightRecorder.lua
 # RuntimeCapabilities: que se puede leer de verdad en este cliente.
 # Sin dependencias; se sondea bajo demanda, no al cargar.
 modules\RuntimeCapabilities.lua
+# TrackerAdapter (1.1): la unica capa del tracker que lee APIs de Blizzard.
+# Sin dependencias duras; solo escucha el bus interno para la caja negra.
+modules\Tracker\TrackerAdapter.lua
+# BlizzardTrackerProbe (1.1): sonda de solo lectura del Objective Tracker nativo.
+modules\Tracker\BlizzardTrackerProbe.lua
+# TrackerState (1.1): snapshot normalizado de la llave; solo lee TrackerAdapter.
+modules\Tracker\TrackerState.lua
 # ChallengeClock: tiempo de llave del servidor para predicción y RunSession.
 modules\ChallengeClock.lua
 # DungeonRegistry: converge instanceID / uiMapID / challengeMapID en una
@@ -54,8 +65,17 @@ modules\DungeonRegistry.lua
 # DungeonContext: donde estoy y en que punto de la llave. Fuente unica.
 # Va antes que Core, que se suscribe a su MITZU_KEY_STARTED.
 modules\DungeonContext.lua
+# InspectArbiter: propietario unico y seguro del canal global NotifyInspect.
+modules\InspectArbiter.lua
 # PartyProfiler: los cinco del grupo. Incluye PartyContext y SpecCache.
 modules\PartyProfiler.lua
+# Native Blizzard UI enhancements
+modules\Experimental\ExperimentalCore.lua
+modules\Experimental\PartyNeeds.lua
+modules\Experimental\TeleportResolver.lua
+modules\Experimental\KeystoneFrameEnhancer.lua
+modules\Experimental\MythicPlusPanelEnhancer.lua
+modules\Experimental\LFGCompositionHint.lua
 # RunSession: identidad persistente de la partida y recuperación tras /reload.
 modules\RunSession.lua
 modules\Validation.lua
@@ -92,9 +112,14 @@ UI\Panels\Historial.lua
 UI\Panels\Stats.lua
 UI\Panels\Players.lua
 UI\Panels\Config.lua
-# Key Prediction HUD: el UNICO HUD en vivo durante la llave. Solo predice
-# +3/+2/+1/OVERTIME (lee autoridades, no escribe, no sabe de pulls ni rutas).
-modules\KeyPredictionHUD.lua
+# Mitzu Tracker: TrackerState + PredictionEngine -> Presenter (modelo puro).
+# Llave real -> BlizzardTrackerEnhancer (integrado en el tracker de Blizzard).
+# Vista previa / resumen -> TrackerView (ventana flotante).
+modules\Tracker\TrackerPresenter.lua
+modules\Tracker\TrackerView.lua
+# BlizzardTrackerEnhancer (1.1.0-dev.7): datos de Mitzu dentro del bloque M+ de Blizzard.
+modules\Tracker\BlizzardTrackerEnhancer.lua
+modules\Tracker\MitzuTracker.lua
 # Bug Report V2: invariantes e informe de QA.
 modules\QA\Invariants.lua
 modules\QA\BugReport.lua

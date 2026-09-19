@@ -12,6 +12,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- VALIDAR DATOS DE RUN
@@ -23,15 +24,15 @@ function MitzuMPlus:ValidateRunData(run)
     end
 
     if not run.dungeonID or run.dungeonID == 0 then
-        return false, "dungeonID inválido"
+        return false, L["VALID_DUNGEON_ID"]
     end
 
     if not run.keyLevel or run.keyLevel < 2 then
-        return false, "keyLevel inválido"
+        return false, L["VALID_KEY_LEVEL"]
     end
 
     if not run.startTime or run.startTime == 0 then
-        return false, "startTime inválido"
+        return false, L["VALID_START_TIME"]
     end
 
     if not run.dungeonName or run.dungeonName == "" then
@@ -40,10 +41,10 @@ function MitzuMPlus:ValidateRunData(run)
             if name then
                 run.dungeonName = name
             else
-                return false, "dungeonName vacío y no se pudo recuperar"
+                return false, L["VALID_NAME_LOST"]
             end
         else
-            return false, "dungeonName vacío"
+            return false, L["VALID_NAME_EMPTY"]
         end
     end
 
@@ -128,6 +129,7 @@ function MitzuMPlus:SanitizeRunData(run)
     stats.enemyForcesFinalPct    = tonumber(stats.enemyForcesFinalPct)    or 0
     stats.enemyForcesFinalCount  = tonumber(stats.enemyForcesFinalCount)  or 0
     stats.enemyForcesTotal       = tonumber(stats.enemyForcesTotal)       or 0
+    stats.enemyForcesDataSource  = tostring(stats.enemyForcesDataSource or "")
     stats.deathTimeLostSec       = tonumber(stats.deathTimeLostSec)       or 0
 
     if type(run.timeline) ~= "table" then run.timeline = {} end

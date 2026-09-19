@@ -326,18 +326,18 @@ end
 -- por tanto no explicaba nada. Aqui se distingue el caso de verdad.
 function Theme:LSMDiagnosis()
     if not LibStub then
-        return "LibStub no esta cargado. Es un fallo del propio addon, avisa."
+        return "LibStub is not loaded. That is an addon bug, please report it."
     end
     local lib = LibStub("LibSharedMedia-3.0", true)
     if not lib then
-        return "LibStub esta, pero ningun addon ha registrado LibSharedMedia-3.0."
+        return "LibStub is present, but no addon has registered LibSharedMedia-3.0."
     end
     local ok, list = pcall(lib.List, lib, "font")
     if not ok then
-        return "LibSharedMedia esta cargada pero fallo al pedirle la lista."
+        return "LibSharedMedia is loaded but the font list request failed."
     end
     if type(list) ~= "table" or #list == 0 then
-        return "LibSharedMedia esta cargada y no tiene ninguna fuente registrada."
+        return "LibSharedMedia is loaded and has no registered fonts."
     end
     return nil
 end
@@ -357,9 +357,12 @@ end
 -- traia), se devuelve el fallback sin ruido.
 function Theme:ResolveFontPath(fallback)
     fallback = fallback or "Fonts\\FRIZQT__.TTF"
-    -- Spanish labels require the client font's Latin glyph coverage. Old
-    -- arbitrary LSM font choices are not a reliable fallback for this UI.
-    if GetLocale and (GetLocale() == "esMX" or GetLocale() == "esES") then
+    -- Los idiomas con acentos necesitan la cobertura de glifos de la fuente del
+    -- cliente; una fuente cualquiera de LSM no es un reemplazo fiable. Quien
+    -- sabe en que idioma quedo el addon es la capa de localizacion, no la UI:
+    -- aqui ya no se vuelve a preguntar al cliente por su idioma.
+    local Loc = MitzuMPlus.Localization
+    if Loc and Loc:NeedsExtendedLatin() then
         return "Fonts\\FRIZQT__.TTF"
     end
     local st = MitzuMPlus.db and MitzuMPlus.db.profile and MitzuMPlus.db.profile.settings

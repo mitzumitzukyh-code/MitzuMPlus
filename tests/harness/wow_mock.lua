@@ -77,7 +77,16 @@ function GetTime() return WoW.now end
 function time() return WoW.epoch + math.floor(WoW.now - 1000) end
 function date(fmt, t) return os.date(fmt or "%Y-%m-%d %H:%M:%S", t or time()) end
 function GetServerTime() return time() end
-function GetLocale() return "esES" end
+-- El locale del cliente es un dato del escenario: S.boot({ locale = "enUS" }).
+WoW.locale = WoW.locale or "esES"
+function GetLocale() return WoW.locale end
+-- Nombres de clase localizados por Blizzard (el addon nunca los traduce).
+LOCALIZED_CLASS_NAMES_MALE = setmetatable({}, { __index = function(_, token)
+    if type(token) ~= "string" then return nil end
+    if WoW.locale == "esES" or WoW.locale == "esMX" then return "clase:" .. token end
+    return token:sub(1, 1) .. token:sub(2):lower()
+end })
+LOCALIZED_CLASS_NAMES_FEMALE = LOCALIZED_CLASS_NAMES_MALE
 function GetGameTime() return 12, 30, 0 end
 function GetFramerate() return 60 end
 function UIFrameFadeIn(f) if f and f.Show then f:Show() end end
@@ -349,7 +358,31 @@ function metodos:GetHeight() return self.__h end
 function metodos:GetSize() return self.__w, self.__h end
 function metodos:SetText(t) self.__text = t end
 function metodos:GetText() return self.__text end
-function metodos:GetStringWidth() return #(tostring(self.__text or "")) * 6 end
+-- Tamano real de los objetos de fuente de Blizzard (px de altura). Sin esto el
+-- mock mide igual una fuente Large que una Small y ninguna prueba de jerarquia
+-- tipografica significaria nada.
+WoW.FONT_HEIGHT = {
+    GameFontNormalSmall = 10, GameFontHighlightSmall = 10, GameFontDisableSmall = 10,
+    GameFontNormal      = 12, GameFontHighlight      = 12, GameFontDisable      = 12,
+    GameFontHighlightMedium = 12, GameFontNormalMed1 = 12, GameFontNormalMed2 = 14,
+    GameFontNormalLarge = 16, GameFontHighlightLarge = 16, GameFontDisableLarge = 16,
+    GameFontNormalHuge  = 20, GameFontHighlightHuge  = 20,
+}
+WoW.FONT_DEFAULT_HEIGHT = 12
+
+function metodos:SetFontObject(template) self.__font = template end
+function metodos:GetFontObject() return self.__font end
+function metodos:GetStringHeight()
+    return WoW.FONT_HEIGHT[self.__font or ""] or WoW.FONT_DEFAULT_HEIGHT
+end
+
+-- Medio pixel de ancho por pixel de alto: 6 px por glifo en la fuente de 12,
+-- que es lo que este mock media antes para todo. No por byte: "·" o "ñ"
+-- ocupan un glifo.
+function metodos:GetStringWidth()
+    local glyphs = tostring(self.__text or ""):gsub("[\128-\191]", "")
+    return #glyphs * (self:GetStringHeight() / 2)
+end
 function metodos:GetParent() return self.__parent end
 function metodos:SetParent(p) self.__parent = p end
 function metodos:GetName() return self.__name end
@@ -367,7 +400,9 @@ function metodos:GetNumPoints() return #self.__points end
 function metodos:SetPoint(...) self.__points[#self.__points + 1] = { ... } end
 function metodos:ClearAllPoints() self.__points = {} end
 function metodos:GetPoint(i) local p = self.__points[i or 1]; if p then return table.unpack(p) end end
-function metodos:CreateFontString() local r = nuevoRegion("FontString"); r.__parent = self; return r end
+function metodos:CreateFontString(_, _, template)
+    local r = nuevoRegion("FontString"); r.__parent = self; r.__font = template; return r
+end
 function metodos:CreateTexture() local r = nuevoRegion("Texture"); r.__parent = self; return r end
 function metodos:CreateMaskTexture() local r = nuevoRegion("MaskTexture"); r.__parent = self; return r end
 function metodos:CreateAnimationGroup() local r = nuevoRegion("AnimationGroup"); r.__parent = self; return r end
@@ -432,10 +467,11 @@ function print(...)
     for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
     WoW.printed[#WoW.printed + 1] = table.concat(parts, " ")
 end
-GameFontNormal, GameFontNormalSmall, GameFontHighlight, GameFontHighlightSmall,
-GameFontDisable, GameFontDisableSmall, GameFontNormalLarge =
-    nuevoRegion("Font"), nuevoRegion("Font"), nuevoRegion("Font"), nuevoRegion("Font"),
-    nuevoRegion("Font"), nuevoRegion("Font"), nuevoRegion("Font")
+for name in pairs(WoW.FONT_HEIGHT) do
+    local f = nuevoRegion("Font")
+    f.__font = name
+    _G[name] = f
+end
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 BackdropTemplateMixin = {}
 SlashCmdList = {}
@@ -453,6 +489,9 @@ Enum = setmetatable({}, { __index = function(t, k)
     rawset(t, k, v)
     return v
 end })
+-- Valores reales (Blizzard_APIDocumentationGenerated, 12.1.0 y 12.1.5): el
+-- tracker de Blizzard filtra el cronometro de la llave con este Enum.
+Enum.WorldElapsedTimerTypes = { None = 0, ChallengeMode = 1, ProvingGround = 2 }
 Settings = nil
 SOUNDKIT = setmetatable({}, { __index = function() return 0 end })
 

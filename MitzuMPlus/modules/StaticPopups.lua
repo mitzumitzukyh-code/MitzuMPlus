@@ -5,6 +5,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local StaticPopupDialogs = _G.StaticPopupDialogs
 if not StaticPopupDialogs then
@@ -13,9 +14,9 @@ if not StaticPopupDialogs then
 end
 
 StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE"] = {
-    text = "¿Eliminar run #%d? Esta acción no se puede deshacer.",
-    button1 = "Eliminar",
-    button2 = "Cancelar",
+    text = L["POPUP_DELETE_RUN"],
+    button1 = L["POPUP_BTN_DELETE"],
+    button2 = L["POPUP_BTN_CANCEL"],
     OnAccept = function(self, runID)
         if MitzuMPlus and MitzuMPlus.DeleteRun then
             MitzuMPlus:DeleteRun(runID)
@@ -34,9 +35,9 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE"] = {
 }
 
 StaticPopupDialogs["MITZUMPLUS_CONFIRM_CLEAR_ALL"] = {
-    text = "¿Borrar TODAS las runs del historial? Esto es IRREVERSIBLE.",
-    button1 = "|cFFFF4444Borrar todo|r",
-    button2 = "Cancelar",
+    text = L["POPUP_CLEAR_ALL"],
+    button1 = L["POPUP_BTN_CLEAR_ALL"],
+    button2 = L["POPUP_BTN_CANCEL"],
     OnAccept = function()
         if MitzuMPlus and MitzuMPlus.db and MitzuMPlus.db.global then
             wipe(MitzuMPlus.db.global.runs)
@@ -53,7 +54,7 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_CLEAR_ALL"] = {
             MitzuMPlus.Footer:UpdateStats()
         end
         if MitzuMPlus and MitzuMPlus.ShowToast then
-            MitzuMPlus:ShowToast("Historial borrado.", "ok")
+            MitzuMPlus:ShowToast(L["POPUP_HISTORY_CLEARED"], "ok")
         end
     end,
     timeout = 0,
@@ -63,9 +64,9 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_CLEAR_ALL"] = {
 }
 
 StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
-    text = "¿Restablecer TODA la configuración a valores por defecto? Tus runs NO se borrarán.",
-    button1 = "Restablecer",
-    button2 = "Cancelar",
+    text = L["POPUP_RESET_CONFIG"],
+    button1 = L["POPUP_BTN_RESET"],
+    button2 = L["POPUP_BTN_CANCEL"],
     OnAccept = function()
         if MitzuMPlus and MitzuMPlus.db then
             MitzuMPlus.db:ResetProfile()
@@ -81,8 +82,8 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
             if fontTheme and fontTheme.RefreshFonts then
                 fontTheme:RefreshFonts()
             end
-            if MitzuMPlus.KeyPredictionHUD and MitzuMPlus.KeyPredictionHUD.ApplySettings then
-                MitzuMPlus.KeyPredictionHUD:ApplySettings()
+            if MitzuMPlus.MitzuTracker and MitzuMPlus.MitzuTracker.ApplySettings then
+                MitzuMPlus.MitzuTracker:ApplySettings()
             end
 
             local lib = LibStub and LibStub("LibDBIcon-1.0", true)
@@ -96,7 +97,7 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
             end
         end
         if MitzuMPlus and MitzuMPlus.ShowToast then
-            MitzuMPlus:ShowToast("Configuración restablecida. Reabre Configuración para refrescar los controles.", "ok", 4, true)
+            MitzuMPlus:ShowToast(L["POPUP_CONFIG_RESET"], "ok", 4, true)
         end
     end,
     timeout = 0,
@@ -106,9 +107,9 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_RESET_CONFIG"] = {
 }
 
 StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE_SELECTION"] = {
-    text = "¿Eliminar %d runs seleccionadas? Esta acción no se puede deshacer.",
-    button1 = "Eliminar",
-    button2 = "Cancelar",
+    text = L["POPUP_DELETE_SELECTION"],
+    button1 = L["POPUP_BTN_DELETE"],
+    button2 = L["POPUP_BTN_CANCEL"],
     OnAccept = function(self, selectedRuns)
         if not selectedRuns or not MitzuMPlus then return end
         
@@ -135,7 +136,7 @@ StaticPopupDialogs["MITZUMPLUS_CONFIRM_DELETE_SELECTION"] = {
         end
         
         if MitzuMPlus.ShowToast then
-            MitzuMPlus:ShowToast(string.format("%d runs eliminadas", count), "ok")
+            MitzuMPlus:ShowToast(string.format(L["POPUP_RUNS_DELETED"], count), "ok")
         end
     end,
     timeout = 0,

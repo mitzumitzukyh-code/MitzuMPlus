@@ -1,6 +1,7 @@
 -- MitzuMPlus History V2: compact filters, run list and contextual detail.
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon("MitzuMPlus")
 local Theme = MitzuMPlus.Theme
+local L = MitzuMPlus.L
 local Panel = {}
 MitzuMPlus.PanelHistorial = Panel
 
@@ -12,13 +13,13 @@ Panel.detailTab = "summary"
 Panel.ROWS = 50
 Panel.COLUMNS = {
     { key = "index", title = "#", min = 28, weight = 0 },
-    { key = "dungeon", title = "MAZMORRA", min = 142, weight = 3 },
-    { key = "level", title = "NIVEL", min = 48, weight = 0 },
-    { key = "result", title = "RESULTADO", min = 112, weight = 2 },
-    { key = "duration", title = "DURACIÓN", min = 76, weight = 1 },
-    { key = "character", title = "PERSONAJE", min = 100, weight = 2 },
-    { key = "role", title = "ROL", min = 50, weight = 0 },
-    { key = "date", title = "FECHA", min = 82, weight = 1 },
+    { key = "dungeon", title = L["COL_DUNGEON"], min = 142, weight = 3 },
+    { key = "level", title = L["COL_LEVEL"], min = 48, weight = 0 },
+    { key = "result", title = L["COL_RESULT"], min = 112, weight = 2 },
+    { key = "duration", title = L["HIST_COL_DURATION"], min = 76, weight = 1 },
+    { key = "character", title = L["COL_CHARACTER"], min = 100, weight = 2 },
+    { key = "role", title = L["COL_ROLE"], min = 50, weight = 0 },
+    { key = "date", title = L["COL_DATE"], min = 82, weight = 1 },
 }
 
 local function backdrop(frame, r, g, b, a, border)
@@ -93,7 +94,7 @@ local function compactMetric(value)
 end
 local function charName(run)
     local name, realm = tostring(run.playerName or ""), tostring(run.playerRealm or "")
-    if name == "" then return "Desconocido" end
+    if name == "" then return L["UNKNOWN_PLAYER"] end
     return realm ~= "" and (name .. "-" .. realm) or name
 end
 local function dateText(timestamp)
@@ -102,34 +103,40 @@ local function dateText(timestamp)
     return ok and value or "-"
 end
 local function resetStart()
-    if not (time and date) then return 0 end
-    local now, day = time(), 86400
-    local h = tonumber(date("%H")) or 0
-    local m = tonumber(date("%M")) or 0
-    local s = tonumber(date("%S")) or 0
-    local weekday = tonumber(date("%w")) or 0
-    local target = (MitzuMPlus.Constants and MitzuMPlus.Constants.WEEK_RESET_WDAY) or 3
-    local hour = (MitzuMPlus.Constants and MitzuMPlus.Constants.WEEK_RESET_HOUR) or 9
-    local back = (weekday - target + 7) % 7
-    if back == 0 and h < hour then back = 7 end
-    return now - (h * 3600 + m * 60 + s) - back * day + hour * 3600
+    if type(MitzuMPlus.GetWeeklyResetWindow) == "function" then
+        local current = MitzuMPlus:GetWeeklyResetWindow()
+        if tonumber(current) and current > 0 then return current end
+    end
+    return 0
+end
+
+-- Codigos de resultado NEUTRALES: son identidad (filtros, orden, comparaciones),
+-- no texto. Lo que ve el jugador sale de Panel.ResultLabel, ya traducido.
+Panel.RESULT_CODES = { "+3", "+2", "+1", "OUT", "INCOMPLETE" }
+
+function Panel.ResultLabel(code)
+    if code == "OUT" then return L["RESULT_OUT"] end
+    if code == "INCOMPLETE" then return L["RESULT_INCOMPLETE"] end
+    return code
 end
 
 function Panel.FormatResult(run)
     run = type(run) == "table" and run or {}
     local limit, actual = tonumber(run.timeLimit), tonumber(run.completionTime)
     if not actual or actual <= 0 then
-        return "Incompleta", nil, "|cFF999999Incompleta|r"
+        return "INCOMPLETE", nil, "|cFF999999" .. Panel.ResultLabel("INCOMPLETE") .. "|r"
     end
     local levels = tonumber(run.keystoneUpgradeLevels) or 0
-    local code = run.inTime and (levels >= 3 and "+3" or (levels == 2 and "+2" or "+1")) or "Fuera"
+    local code = run.inTime and (levels >= 3 and "+3" or (levels == 2 and "+2" or "+1")) or "OUT"
     local threshold
     if limit and limit > 0 then
         threshold = code == "+3" and limit * 0.6 or (code == "+2" and limit * 0.8 or limit)
     end
     local margin = threshold and (threshold - actual) or nil
     local prefix = run.inTime and "|cFF55DD88" or "|cFFFF6666"
-    return code, margin, prefix .. code .. (margin and (" (" .. (margin >= 0 and "+" or "") .. fmtTime(margin) .. ")") or "") .. "|r"
+    local label = Panel.ResultLabel(code)
+    return code, margin, prefix .. label
+        .. (margin and (" (" .. (margin >= 0 and "+" or "") .. fmtTime(margin) .. ")") or "") .. "|r"
 end
 
 local function contains(haystack, needle)
@@ -173,7 +180,7 @@ function Panel.FilterRuns(runs, filters, nowEpoch)
         local av, bv
         if sortBy == "level" then av, bv = tonumber(a.keyLevel) or 0, tonumber(b.keyLevel) or 0
         elseif sortBy == "result" then
-            local rank = { ["+3"] = 5, ["+2"] = 4, ["+1"] = 3, Fuera = 2, Incompleta = 1 }
+            local rank = { ["+3"] = 5, ["+2"] = 4, ["+1"] = 3, OUT = 2, INCOMPLETE = 1 }
             av, bv = rank[Panel.FormatResult(a)] or 0, rank[Panel.FormatResult(b)] or 0
         elseif sortBy == "dungeon" then av, bv = tostring(a.dungeonName or ""), tostring(b.dungeonName or "")
         else av, bv = tonumber(a.startTime) or 0, tonumber(b.startTime) or 0 end
@@ -209,7 +216,7 @@ end
 Panel.ROW_HEIGHT = 28
 Panel.COLUMN_WIDTHS = { 30, 160, 58, 120, 82, 110, 48, 80 }
 Panel.COLUMN_WEIGHTS = { 0, 4, 0, 2, 0, 2, 0, 1 }
-Panel.FILTER_WIDTHS = { 220, 125, 210, 95, 155, 130, 120 }
+Panel.FILTER_WIDTHS = { 220, 125, 210, 95, 155, 130 }
 Panel.FILTER_WEIGHTS = { 1, 0, 0, 0, 0, 0, 0 }
 
 -- Distributes the available width without allowing rounding errors to make
@@ -291,17 +298,26 @@ end
 function Panel.DisplayMeasured(run, key)
     local st = type(run.stats) == "table" and run.stats or {}
     local n = tonumber(st[key])
-    if n == nil or n < 0 then return "-" end
+    local noData = L["NO_DATA"] or "-"
+    if n == nil or n < 0 then return noData end
     local measured
     if key == "enemyForcesFinalPct" then
-        measured = (tonumber(st.enemyForcesTotal) or 0) > 0
+        -- Old sanitizers wrote 0 into missing fields. A positive legacy value is
+        -- evidence by itself; zero is only trusted when a newer run recorded an
+        -- explicit source. Unknown must never be displayed as a real 0.0%.
+        local source = tostring(st.enemyForcesDataSource or "")
+        measured = source ~= "" and source ~= "UNAVAILABLE"
+        if not measured and n > 0 then measured = true end
     elseif key == "deaths" then
         measured = run.completionInfoSource ~= nil
     else
         measured = run.dataSource == "C_DamageMeter"
     end
-    if n == 0 and not measured then return "-" end
-    if key == "enemyForcesFinalPct" then return string.format("%.1f%%", n) end
+    if key == "enemyForcesFinalPct" then
+        if not measured then return noData end
+        return string.format("%.1f%%", n)
+    end
+    if n == 0 and not measured then return noData end
     return tostring(math.floor(n + 0.5))
 end
 
@@ -379,7 +395,7 @@ function Panel:Create(parent)
         self.search:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
     end
     self.search:SetAutoFocus(false); self.search:SetTextInsets(10, 10, 0, 0)
-    self.searchHint = label(self.search, "Buscar run, mazmorra o jugador...", 14, {0.55,0.55,0.57})
+    self.searchHint = label(self.search, L["HIST_SEARCH"], 14, {0.55,0.55,0.57})
     self.searchHint:SetPoint("LEFT", self.search, "LEFT", 10, 0)
     self.search:SetText(self.filters.search)
     self.search:SetScript("OnTextChanged", function(box, userInput)
@@ -393,8 +409,8 @@ function Panel:Create(parent)
     self.searchHint:SetShown((self.search:GetText() or "") == "")
     self.search:SetScript("OnEnterPressed", function(box) box:ClearFocus(); self:ApplyFilters() end)
     self.search:SetScript("OnEscapePressed", function(box) box:ClearFocus() end)
-    self.seasonCaption = label(self.searchBar, "Temporada:", 12)
-    self.seasonDD = dropdown(self.searchBar, {{text="Todas",value=""}}, "", function(v)
+    self.seasonCaption = label(self.searchBar, L["HIST_SEASON"], 12)
+    self.seasonDD = dropdown(self.searchBar, {{text=L["FILTER_ALL_F"],value=""}}, "", function(v)
         self.filters.season, self.filters.page = v, 1; self:Refresh()
     end)
 
@@ -402,12 +418,12 @@ function Panel:Create(parent)
         return function(v) self.filters[key], self.filters.page = v, 1; self:Refresh() end
     end
     local configs = {
-        {"dungeon","Mazmorra",{{text="Todas",value=""}}},
-        {"result","Resultado",{{text="Todos",value=""},{text="+3",value="+3"},{text="+2",value="+2"},{text="+1",value="+1"},{text="Fuera",value="Fuera"},{text="Incompleta",value="Incompleta"}}},
-        {"character","Personaje",{{text="Todos",value=""}}},
-        {"role","Rol",{{text="Todos",value=""},{text="Tank",value="TANK"},{text="Healer",value="HEALER"},{text="DPS",value="DAMAGER"}}},
-        {"week","Semana",{{text="Todas",value=""},{text="Esta semana",value="this"},{text="Semana pasada",value="last"}}},
-        {"extra","Más filtros",{{text="Sin filtro",value=""},{text="Favoritas",value="favorite"},{text="Con notas",value="notes"}}},
+        {"dungeon",L["FILTER_DUNGEON"],{{text=L["FILTER_ALL_F"],value=""}}},
+        {"result",L["FILTER_RESULT"],{{text=L["FILTER_ALL_M"],value=""},{text="+3",value="+3"},{text="+2",value="+2"},{text="+1",value="+1"},{text=L["RESULT_OUT"],value="OUT"},{text=L["RESULT_INCOMPLETE"],value="INCOMPLETE"}}},
+        {"character",L["FILTER_CHARACTER"],{{text=L["FILTER_ALL_M"],value=""}}},
+        {"role",L["FILTER_ROLE"],{{text=L["FILTER_ALL_M"],value=""},{text="Tank",value="TANK"},{text="Healer",value="HEALER"},{text="DPS",value="DAMAGER"}}},
+        {"week",L["FILTER_WEEK"],{{text=L["FILTER_ALL_F"],value=""},{text=L["HIST_THIS_WEEK"],value="this"},{text=L["HIST_LAST_WEEK"],value="last"}}},
+        {"extra",L["HIST_MORE_FILTERS"],{{text=L["HIST_NO_FILTER"],value=""},{text=L["FILTER_FAVORITES"],value="favorite"},{text=L["HIST_WITH_NOTES"],value="notes"}}},
     }
     self.filterControls, self.filterCaptions = {}, {}
     for i, def in ipairs(configs) do
@@ -415,23 +431,16 @@ function Panel:Create(parent)
         local dd = dropdown(self.filterBar, def[3], self.filters[def[1]], changed(def[1]))
         self.filterControls[i], self[def[1].."DD"] = dd, dd
     end
-    self.exportDD = dropdown(self.filterBar, {{text="Exportar",value=""},{text="CSV",value="csv"},{text="Code",value="code"}}, "", function(v)
-        if v == "csv" then MitzuMPlus.Export:ExportToCSV(self.filteredRuns)
-        elseif v == "code" then MitzuMPlus.Export:ExportToCode() end
-        self.exportDD:SetSelectedValue("")
-    end)
-    self.filterControls[7] = self.exportDD
-
     self.main = CreateFrame("Frame", nil, container)
     self.list = CreateFrame("Frame", nil, self.main, "BackdropTemplate")
     self.detail = CreateFrame("Frame", nil, self.main, "BackdropTemplate")
     backdrop(self.list, 0.025, 0.025, 0.03, 1, 0.22)
     backdrop(self.detail, 0.04, 0.038, 0.032, 1, 0.30)
     self.countText = label(self.list, "", 13)
-    self.sortCaption = label(self.list, "Ordenar por:", 12, {0.65,0.65,0.67})
+    self.sortCaption = label(self.list, L["HIST_SORT_BY"], 12, {0.65,0.65,0.67})
     self.sortDD = dropdown(self.list, {
-        {text="Fecha (más reciente)",value="date"}, {text="Nivel",value="level"},
-        {text="Resultado",value="result"},{text="Mazmorra",value="dungeon"}
+        {text=L["HIST_SORT_NEWEST"],value="date"}, {text=L["COL_LEVEL"],value="level"},
+        {text=L["FILTER_RESULT"],value="result"},{text=L["FILTER_DUNGEON"],value="dungeon"}
     }, self.filters.sortBy, changed("sortBy"))
     self.header = CreateFrame("Frame", nil, self.list, "BackdropTemplate")
     backdrop(self.header, 0.09, 0.077, 0.045, 1, 0.25)
@@ -468,7 +477,7 @@ function Panel:Create(parent)
         self.pageButtons[i]=b
     end
     self.pageText = label(self.pager, "", 12)
-    self.perCaption = label(self.pager, "Por página:", 12)
+    self.perCaption = label(self.pager, L["HIST_PER_PAGE"], 12)
     self.pageSizeDD = dropdown(self.pager, {{text="10",value=10},{text="20",value=20},{text="50",value=50}}, self.filters.pageSize, function(v)
         self.filters.pageSize, self.filters.page = tonumber(v) or 20, 1
         self:Refresh()
@@ -484,7 +493,7 @@ end
 function Panel:CreateDetail()
     local d = self.detail
     self.dungeonIcon = d:CreateTexture(nil,"ARTWORK")
-    self.detailTitle = label(d, "Detalle de run", 17, {0.91,0.79,0.49})
+    self.detailTitle = label(d, L["HIST_RUN_DETAIL"], 17, {0.91,0.79,0.49})
     self.detailTitle:SetWordWrap(true)
     self.detailLevel = label(d, "", 13)
     self.detailResult = label(d, "-", 27, {0.36,0.86,0.5})
@@ -492,7 +501,7 @@ function Panel:CreateDetail()
     self.detailMargin = label(d, "", 14)
     self.detailMargin:SetJustifyH("CENTER")
     self.cards = {}
-    for i,name in ipairs({"Duración","Resultado","Fuerzas","Muertes"}) do
+    for i,name in ipairs({L["HIST_DURATION"],L["CARD_RESULT"],L["CARD_FORCES"],L["CARD_DEATHS"]}) do
         local card=CreateFrame("Frame",nil,d,"BackdropTemplate")
         backdrop(card,0.025,0.025,0.029,1,0.19)
         card.caption=label(card,name,12,{0.6,0.6,0.62})
@@ -505,7 +514,7 @@ function Panel:CreateDetail()
     end
     self.detailTabs = CreateFrame("Frame",nil,d)
     self.detailButtons={}
-    for i,def in ipairs({{"summary","Resumen"},{"group","Grupo"},{"metrics","Métricas"},{"notes","Notas"}}) do
+    for i,def in ipairs({{"summary",L["HIST_SUMMARY_TAB"]},{"group",L["HIST_GROUP_TAB"]},{"metrics",L["HIST_METRICS"]},{"notes",L["HIST_NOTES_TAB"]}}) do
         local id=def[1]
         local b=button(self.detailTabs,def[2],function() self.detailTab=id; self:RefreshDetail() end)
         self.detailButtons[id]=b; b.order=i
@@ -530,7 +539,7 @@ function Panel:CreateDetail()
     self.notesBox:SetTextInsets(4,4,4,4)
     self.notesBox:SetScript("OnEscapePressed",function(box) box:ClearFocus() end)
     self.noteScroll:SetScrollChild(self.notesBox)
-    self.saveNote=button(d,"Guardar nota",function()
+    self.saveNote=button(d,L["HIST_SAVE_NOTE"],function()
         if self.selectedRun then
             local saved = MitzuMPlus.DataManager:SetRunNotes(self.selectedRun.runID,self.notesBox:GetText() or "")
             self.notesBox:ClearFocus()
@@ -539,14 +548,17 @@ function Panel:CreateDetail()
     end)
     self.actions=CreateFrame("Frame",nil,d,"BackdropTemplate")
     backdrop(self.actions,0.035,0.032,0.027,1,0.2)
-    self.favorite=button(self.actions,"Favorita",function()
+    self.favorite=button(self.actions,L["BTN_FAVORITE"],function()
         if self.selectedRun then MitzuMPlus.DataManager:ToggleFavorite(self.selectedRun.runID); self:Refresh() end
     end)
-    self.noteAction=button(self.actions,"Añadir nota",function() self.detailTab="notes"; self:RefreshDetail(); self.notesBox:SetFocus() end)
-    self.copy=button(self.actions,"Copiar",function()
-        if self.selectedRun then MitzuMPlus.Export:ExportToCSV({self.selectedRun}) end
+    self.noteAction=button(self.actions,L["HIST_ADD_NOTE"],function() self.detailTab="notes"; self:RefreshDetail(); self.notesBox:SetFocus() end)
+    self.copy=button(self.actions,L["BTN_COPY"],function()
+        if self.selectedRun and MitzuMPlus.Export and MitzuMPlus.Export.CopyToClipboard and MitzuMPlus.ExportToDiscord then
+            local text=MitzuMPlus:ExportToDiscord(self.selectedRun)
+            if text and text~="" then MitzuMPlus.Export:CopyToClipboard(text) end
+        end
     end)
-    self.delete=button(self.actions,"Eliminar",function()
+    self.delete=button(self.actions,L["HIST_DELETE"],function()
         if self.selectedRun then StaticPopup_Show("MITZUMPLUS_CONFIRM_DELETE",self.selectedRun.runID,nil,self.selectedRun.runID) end
     end,true)
 end
@@ -667,9 +679,9 @@ end
 function Panel:Refresh()
     if not self.container then return end
     local runs=MitzuMPlus.GetAllRuns and MitzuMPlus:GetAllRuns() or {}
-    local dungeonItems=uniqueItems(runs,function(r)return r.dungeonName end,"Todas")
-    local characterItems=uniqueItems(runs,charName,"Todos")
-    local seasons={{text="Todas las temporadas",value=""}}; local seen={}
+    local dungeonItems=uniqueItems(runs,function(r)return r.dungeonName end,L["FILTER_ALL_F"])
+    local characterItems=uniqueItems(runs,charName,L["FILTER_ALL_M"])
+    local seasons={{text=L["HIST_ALL_SEASONS"],value=""}}; local seen={}
     for _,run in ipairs(runs) do
         local key=run.seasonKey
         if key and key~="" and not seen[key] then
@@ -700,7 +712,7 @@ function Panel:Refresh()
     self.filteredRuns=self.FilterRuns(runs,self.filters)
     local pageRuns,page,pages=self.Paginate(self.filteredRuns,self.filters.page,self.filters.pageSize)
     self.filters.page=page
-    self.countText:SetText(string.format("%d runs encontradas",#self.filteredRuns))
+    self.countText:SetText(string.format(L["HIST_FOUND"],#self.filteredRuns))
     self.pageText:SetText(string.format("%d / %d",page,pages))
     self.prev:SetEnabled(page>1); self.next:SetEnabled(page<pages)
     local first=math.max(1,math.min(page-2,pages-4))
@@ -727,7 +739,7 @@ function Panel:Refresh()
     end
     self.rowChild:SetHeight(math.max(1,#pageRuns*self.ROW_HEIGHT))
     self.rowScroll:SetVerticalScroll(0)
-    self.empty:SetText(#runs==0 and "Aún no hay runs registradas." or "No hay runs que coincidan con estos filtros.")
+    self.empty:SetText(#runs==0 and L["HIST_EMPTY"] or L["HIST_NO_MATCH"])
     self.empty:SetShown(#pageRuns==0)
     -- Selection must correspond to a row on this page.
     local selected
@@ -751,22 +763,22 @@ function Panel:RefreshDetail()
     end
     for _,b in ipairs({self.favorite,self.noteAction,self.copy,self.delete}) do b:SetEnabled(run~=nil) end
     if not run then
-        self.detailTitle:SetText("Detalle de run"); self.detailLevel:SetText("Selecciona una run")
+        self.detailTitle:SetText(L["HIST_RUN_DETAIL"]); self.detailLevel:SetText(L["HIST_SELECT_RUN"])
         self.detailResult:SetText("-"); self.detailMargin:SetText("")
         self.dungeonIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         for _,card in ipairs(self.cards) do card.value:SetText("-") end
         return
     end
     local code,margin=self.FormatResult(run)
-    self.detailTitle:SetText(run.dungeonName or "Mazmorra desconocida")
-    self.detailLevel:SetText("Nivel de llave "..((tonumber(run.keyLevel) or 0)>0 and ("+"..run.keyLevel) or "-"))
+    self.detailTitle:SetText(run.dungeonName or L["HIST_UNKNOWN_DUNGEON"])
+    self.detailLevel:SetText(L["HIST_KEY_LEVEL"]..((tonumber(run.keyLevel) or 0)>0 and ("+"..run.keyLevel) or "-"))
     self.detailResult:SetText(code)
-    if code=="Incompleta" then
+    if code=="INCOMPLETE" then
         self.detailResult:SetTextColor(0.62,0.62,0.62,1)
     else
         self.detailResult:SetTextColor(run.inTime and 0.35 or 0.95,run.inTime and 0.84 or 0.35,0.4,1)
     end
-    self.detailMargin:SetText(margin and ("("..(margin>=0 and "+" or "")..fmtTime(margin)..")") or "Margen no registrado")
+    self.detailMargin:SetText(margin and ("("..(margin>=0 and "+" or "")..fmtTime(margin)..")") or L["HIST_NO_MARGIN"])
     local icon=run.dungeonIcon
     if not icon and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo and run.dungeonID then
         local ok,_,_,_,texture=pcall(C_ChallengeMode.GetMapUIInfo,run.dungeonID)
@@ -778,21 +790,21 @@ function Panel:RefreshDetail()
     for i,v in ipairs(cards) do self.cards[i].value:SetText(v) end
     local lines={}
     if self.detailTab=="summary" then
-        lines={"Temporada: "..tostring(run.seasonName or run.seasonKey or "-"),
-            "Fecha: "..dateText(run.startTime),"Personaje: "..charName(run),"Rol: "..roleText(run.playerRole),
-            "Nota: "..(run.notes and run.notes~="" and run.notes or "-"),
-            "Etiquetas: "..(type(run.tags)=="table" and #run.tags>0 and table.concat(run.tags,", ") or "-")}
+        lines={L["HIST_SEASON_PREFIX"]..tostring(run.seasonName or run.seasonKey or "-"),
+            L["HIST_DATE_PREFIX"]..dateText(run.startTime),L["HIST_CHAR_PREFIX"]..charName(run),L["HIST_ROLE_PREFIX"]..roleText(run.playerRole),
+            L["HIST_NOTE_PREFIX"]..(run.notes and run.notes~="" and run.notes or "-"),
+            L["HIST_TAGS_PREFIX"]..(type(run.tags)=="table" and #run.tags>0 and table.concat(run.tags,", ") or "-")}
     elseif self.detailTab=="group" then
         local group=type(run.group)=="table" and run.group or {}
-        lines[1]=#group<5 and "Datos parciales" or "Grupo registrado"
+        lines[1]=#group<5 and L["HIST_PARTIAL"] or L["HIST_GROUP"]
         for _,m in ipairs(group) do
-            lines[#lines+1]=(m.name or "Desconocido")..(m.realm and m.realm~="" and ("-"..m.realm) or "")..
+            lines[#lines+1]=(m.name or L["UNKNOWN_PLAYER"])..(m.realm and m.realm~="" and ("-"..m.realm) or "")..
                 "\n"..tostring(m.class or "-").."  -  "..roleText(m.role)
         end
-        if #group==0 then lines[2]="No hay miembros registrados." end
+        if #group==0 then lines[2]=L["HIST_NO_MEMBERS"] end
     elseif self.detailTab=="metrics" then
-        for _,entry in ipairs({{"Daño total","damageTotal",true},{"Sanación total","healingTotal",true},{"Daño recibido","damageTaken",true},
-            {"Interrupciones","kicks",false},{"Disipaciones","dispels",false},{"Muertes del grupo","deaths",false}}) do
+        for _,entry in ipairs({{L["HIST_TOTAL_DAMAGE"],"damageTotal",true},{L["HIST_TOTAL_HEALING"],"healingTotal",true},{L["HIST_DAMAGE_TAKEN"],"damageTaken",true},
+            {"Interrupciones","kicks",false},{"Disipaciones","dispels",false},{L["HIST_GROUP_DEATHS"],"deaths",false}}) do
             local raw = self.DisplayMeasured(run,entry[2])
             if entry[3] and raw ~= "-" then raw = compactMetric(raw) end
             lines[#lines+1]=entry[1]..": "..raw
@@ -814,7 +826,7 @@ function Panel:RefreshDetail()
         end
     end
     self.detailBody:SetHeight(math.max(1,y)); self.detailScroll:SetVerticalScroll(0)
-    self.favorite:SetText(run.isFavorite and "Favorita: Sí" or "Favorita")
+    self.favorite:SetText(run.isFavorite and L["HIST_FAVORITE_YES"] or L["BTN_FAVORITE"])
 end
 
 function Panel:RefreshTable() self:Refresh() end

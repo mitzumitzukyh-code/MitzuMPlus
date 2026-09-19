@@ -3,7 +3,8 @@ local tests, assertions, failures = 0, 0, {}
 local function equal(a,b,label) assertions=assertions+1;if a~=b then error((label or "equal")..": "..tostring(a).." ~= "..tostring(b),2) end end
 local function test(name,fn) tests=tests+1;local ok,e=pcall(fn);if not ok then failures[#failures+1]=name..": "..tostring(e) end end
 
-_G.MitzuMPlus={Theme={}}
+local newLocale = dofile("tests/harness/locale_stub.lua")
+_G.MitzuMPlus={Theme={},L=newLocale("enUS")}
 _G.LibStub=function() return {GetAddon=function() return _G.MitzuMPlus end} end
 _G.time=function() return 2000000 end
 _G.date=os.date
@@ -21,7 +22,7 @@ test("result enum and margins",function()
     local c,m=H.FormatResult(run(1,{keystoneUpgradeLevels=3,completionTime=900}));equal(c,"+3");equal(math.floor(m),180)
     c,m=H.FormatResult(run(2,{keystoneUpgradeLevels=2,completionTime=1300}));equal(c,"+2");equal(math.floor(m),140)
     c,m=H.FormatResult(run(3,{keystoneUpgradeLevels=1,completionTime=1700}));equal(c,"+1");equal(math.floor(m),100)
-    c,m=H.FormatResult(run(4,{inTime=false,completionTime=1880}));equal(c,"Fuera");equal(math.floor(m),-80)
+    c,m=H.FormatResult(run(4,{inTime=false,completionTime=1880}));equal(c,"OUT");equal(math.floor(m),-80)
 end)
 
 test("empty and single run pagination",function()
@@ -48,7 +49,7 @@ test("all primary filters combine",function()
     local target=run(9,{dungeonName="Arena",playerName="Mina",playerRole="TANK",inTime=false,
         seasonKey="S2",isFavorite=true,notes="nota"})
     local other=run(10,{dungeonName="Otra",playerName="Mina",playerRole="TANK",inTime=false})
-    local f={search="mina",dungeon="Arena",result="Fuera",character="Mina-Realm",role="TANK",season="S2",extra="favorite"}
+    local f={search="mina",dungeon="Arena",result="OUT",character="Mina-Realm",role="TANK",season="S2",extra="favorite"}
     local out=H.FilterRuns({other,target},f);equal(#out,1);equal(out[1],target)
     f.extra="notes";equal(#H.FilterRuns({target},f),1)
 end)
@@ -63,12 +64,16 @@ test("sorting date level result and dungeon",function()
 end)
 
 test("partial data stays readable",function()
-    -- Sin completionTime la run no termino: es "Incompleta", no "Fuera" de tiempo.
+    -- Sin completionTime la run no termino: el codigo es "INCOMPLETE" (neutral,
+    -- lo usan filtros y orden) y lo pintado es su etiqueta ya traducida.
     local partial={runID=88,inTime=false}
-    local code,margin,display=H.FormatResult(partial);equal(code,"Incompleta");equal(margin,nil)
-    equal(type(display),"string");equal(display:find("Incompleta",1,true)~=nil,true)
+    local code,margin,display=H.FormatResult(partial);equal(code,"INCOMPLETE");equal(margin,nil)
+    equal(type(display),"string")
+    equal(display:find(H.ResultLabel("INCOMPLETE"),1,true)~=nil,true,display)
+    equal(H.ResultLabel("INCOMPLETE"),"Incomplete","enUS label")
+    equal(H.ResultLabel("OUT"),"Out"); equal(H.ResultLabel("+3"),"+3","codes stay neutral")
     equal(#H.FilterRuns({partial},{}),1)
-    equal(#H.FilterRuns({partial},{result="Incompleta"}),1);equal(#H.FilterRuns({partial},{result="Fuera"}),0)
+    equal(#H.FilterRuns({partial},{result="INCOMPLETE"}),1);equal(#H.FilterRuns({partial},{result="OUT"}),0)
 end)
 
 test("similar legitimate runs are both visible",function()

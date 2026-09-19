@@ -1,10 +1,11 @@
 -- MitzuMPlus sanitized diagnostic report.
 local MitzuMPlus = _G.MitzuMPlus
 if not MitzuMPlus then return end
+local L = MitzuMPlus.L
 
 local BR = {}
 MitzuMPlus.BugReport = BR
-BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 3, 80, 10
+BR.REPORT_VERSION, BR.RECENT_EVENTS, BR.MAX_ERRORS = 6, 80, 10
 
 local function safe()
     return MitzuMPlus.QASafe or {
@@ -82,12 +83,38 @@ SECTIONS[#SECTIONS + 1] = { "PARTY", function(add)
                             "rosterRefreshCount", "lastRefreshReason", "inspectPending", "inspectActive" }) do
         add(key, diag[key])
     end
+    -- PartyProfiler guarda classFile / effectiveRole / assignedRole. Hasta
+    -- 1.1.0-dev.5 aqui se leian `class` y `role`, que no existen: el informe
+    -- decia class=nil role=nil con los datos presentes.
     for _, member in ipairs(list) do
         local token = tostring(member.unitToken or "unit?"):match("^%a+%d*$") or "unit?"
-        add(token, string.format("class=%s role=%s spec=%s state=%s",
-            safe().Text(member.class), safe().Text(member.role),
-            safe().Text(member.specID), safe().Text(member.specState)))
+        add(token, string.format("class=%s role=%s spec=%s state=%s assigned=%s specRole=%s",
+            safe().Text(member.classFile), safe().Text(member.effectiveRole),
+            safe().Text(member.specID), safe().Text(member.specState),
+            safe().Text(member.assignedRole), safe().Text(member.specRole)))
     end
+end }
+
+SECTIONS[#SECTIONS + 1] = { "INSPECT SAFETY", function(add)
+    local A = MitzuMPlus.InspectArbiter
+    local st = call(A, "Status")
+    if type(st) ~= "table" then
+        add("status", A and "UNAVAILABLE" or "MISSING")
+        return
+    end
+    add("owner", st.owner or "none")
+    add("guid", st.guid or "none")
+    add("nativeInspectActive", st.nativeInspectActive == true)
+    add("nativeInspectVisible", st.nativeInspectVisible == true)
+    add("nativeInspectUnit", st.nativeInspectUnit or "none")
+    add("externalGrace", st.externalGrace)
+    add("nativeGrace", st.nativeGrace)
+    add("lastReason", st.lastReason)
+    add("requests", st.requests)
+    add("blockedNative", st.blockedNative)
+    add("blockedThrottle", st.blockedThrottle)
+    add("blockedMitzu", st.blockedMitzu)
+    add("clearInspectCalls", 0)
 end }
 
 SECTIONS[#SECTIONS + 1] = { "RUN", function(add)
@@ -134,10 +161,68 @@ SECTIONS[#SECTIONS + 1] = { "HISTORY", function(add)
     add("nextRunID", MitzuMPlus.db and MitzuMPlus.db.global and MitzuMPlus.db.global.nextRunID)
 end }
 
-SECTIONS[#SECTIONS + 1] = { "TRACKER", function(add)
-    local HUD = MitzuMPlus.KeyPredictionHUD
-    local fields = call(HUD, "DiagnosticFields")
-    if type(fields) ~= "table" then add("module", HUD and "AVAILABLE" or "UNAVAILABLE") return end
+-- 1.1.0-dev.10: en que idioma esta viendo el addon este jugador. El idioma lo
+-- decide el cliente (AceLocale); aqui solo se comprueba que no falte nada.
+SECTIONS[#SECTIONS + 1] = { "LOCALIZATION", function(add)
+    local Loc = MitzuMPlus.Localization
+    local fields = call(Loc, "DiagnosticFields")
+    if type(fields) ~= "table" then add("status", Loc and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
+-- 1.1.0-dev.6: el tracker visual (Mitzu Tracker). Lo que se PINTO, para
+-- contrastarlo con [TRACKER STATE] y [PREDICTION] sin pedir mas comandos.
+SECTIONS[#SECTIONS + 1] = { "TRACKER VISUAL", function(add)
+    local MT = MitzuMPlus.MitzuTracker
+    local fields = call(MT, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", MT and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
+-- 1.1.0-dev.9: lo ULTIMO que Mitzu pinto DE VERDAD dentro del bloque M+ de
+-- Blizzard durante la llave. La seccion anterior es el estado ACTUAL, que al
+-- terminar la llave es nil porque Blizzard retira el ChallengeModeBlock; esta
+-- conserva la evidencia de la run para poder pedirla despues del resumen.
+-- Nunca se mezclan: las claves de aqui llevan el prefijo `lastEmbedded.`.
+SECTIONS[#SECTIONS + 1] = { "LAST EMBEDDED RENDER", function(add)
+    local MT = MitzuMPlus.MitzuTracker
+    local fields = call(MT, "LastEmbeddedFields")
+    if type(fields) ~= "table" then add("lastEmbedded.available", MT and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
+-- 1.1: lectura directa de Blizzard a traves del adaptador, para contrastarla
+-- con la seccion TRACKER (que sigue saliendo de los modulos 1.0).
+SECTIONS[#SECTIONS + 1] = { "TRACKER ADAPTER", function(add)
+    local TA = MitzuMPlus.TrackerAdapter
+    local fields = call(TA, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", TA and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
+-- 1.1: snapshot normalizado que consumiran pace, prediccion y el enhancer.
+SECTIONS[#SECTIONS + 1] = { "TRACKER STATE", function(add)
+    local TS = MitzuMPlus.TrackerState
+    local fields = call(TS, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", TS and "ERROR" or "UNAVAILABLE") return end
+    for _, pair in ipairs(fields) do
+        if type(pair) == "table" then add(pair[1], pair[2]) end
+    end
+end }
+
+-- 1.1: estructura y taint del Objective Tracker nativo que se va a decorar.
+SECTIONS[#SECTIONS + 1] = { "BLIZZARD TRACKER", function(add)
+    local BTP = MitzuMPlus.BlizzardTrackerProbe
+    local fields = call(BTP, "DiagnosticFields")
+    if type(fields) ~= "table" then add("module", BTP and "ERROR" or "UNAVAILABLE") return end
     for _, pair in ipairs(fields) do
         if type(pair) == "table" then add(pair[1], pair[2]) end
     end
@@ -232,7 +317,7 @@ function BR:SummaryLines()
     return {
         string.format("v%s · lifecycle=%s · tracker=%s", safe().Text(MitzuMPlus.VERSION),
             safe().Text(call(MitzuMPlus.DungeonContext, "GetState")),
-            safe().Text(call(MitzuMPlus.KeyPredictionHUD, "GetMode"))),
+            safe().Text(call(MitzuMPlus.MitzuTracker, "GetMode"))),
         string.format("invariants PASS=%s WARN=%s FAIL=%s · errors=%s · events=%s",
             safe().Text(totals.PASS or 0), safe().Text(totals.WARN or 0), safe().Text(totals.FAIL or 0),
             safe().Text(call(MitzuMPlus.ErrorLogger, "Count")),
@@ -245,10 +330,10 @@ function BR:Show()
     local EX = MitzuMPlus.Export
     local shown = EX and EX.CopyToClipboard
         and pcall(EX.CopyToClipboard, EX, text, {
-            title = "MITZUMPLUS · BUG REPORT",
-            hint = "Ctrl+A y Ctrl+C para copiar todo.",
+            title = L["BUGREPORT_TITLE"],
+            hint = L["BUGREPORT_COPY"],
             autoClose = false, mono = true,
-            clearLabel = "LIMPIAR LOGS",
+            clearLabel = L["BUGREPORT_CLEAR_BTN"],
             onClear = function() BR:ClearLogs() end,
         })
     return shown == true, text

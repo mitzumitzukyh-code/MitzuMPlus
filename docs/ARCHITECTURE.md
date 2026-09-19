@@ -8,7 +8,7 @@ MitzuMPlus is split by product responsibility rather than by experiments.
 | Stable identity | `RunSession` persists one active identity, restores reloads and rejects duplicate finalization |
 | History | `Database`, `DataManager`, `RunMetrics`, `PersonalBest`, `Export` |
 | Party and loot | `PartyProfiler`, `InspectQueue`, `LootTracker` |
-| Prediction | `KeystoneTracker`, `PredictionEngine`, `KeyPredictionHUD` |
+| Prediction | `KeystoneTracker`, `PredictionEngine`, `TrackerPresenter` + `TrackerView` + `MitzuTracker` (Mitzu Tracker) |
 | UI | History, Statistics, Players and Configuration panels |
 | QA | `SafeValue`, `FlightRecorder`, `Invariants`, `BugReport` |
 

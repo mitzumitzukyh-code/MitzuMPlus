@@ -10,6 +10,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 local Widgets = {}
 MitzuMPlus.Widgets = Widgets
@@ -656,7 +657,7 @@ function Widgets:CreateEmptyState(parent, iconPath, titleText, descText, ctaText
     ico:SetVertexColor(0.8,0.7,0.3,0.9)
     local title = f:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
     ApplyReadableFont(title,"title",16)
-    title:SetPoint("TOP",ico,"BOTTOM",0,-10) ; title:SetText(titleText or "Sin datos") ; title:SetTextColor(1,0.82,0,1)
+    title:SetPoint("TOP",ico,"BOTTOM",0,-10) ; title:SetText(titleText or L["WIDGET_NO_DATA"]) ; title:SetTextColor(1,0.82,0,1)
     local desc = f:CreateFontString(nil,"OVERLAY","GameFontNormal")
     ApplyReadableFont(desc,"normal",13)
     desc:SetPoint("TOP",title,"BOTTOM",0,-8) ; desc:SetWidth(300) ; desc:SetWordWrap(true)

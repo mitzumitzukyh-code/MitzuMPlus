@@ -10,6 +10,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus    = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 MitzuMPlus.Constants = {
 
@@ -25,13 +26,20 @@ MitzuMPlus.Constants = {
     MAX_RUNS_STORED = 1000,
     DEFAULT_PAGE_SIZE = 20,
 
+    -- -- Mejora de piedra -------------------------------------------------------
+    -- Fraccion del limite de tiempo que da +2 / +3. Unica definicion: la usan
+    -- KeystoneTracker (umbrales del motor de prediccion) y TrackerPresenter.
+    KEY_UPGRADE_PLUS2_RATIO = 0.8,
+    KEY_UPGRADE_PLUS3_RATIO = 0.6,
+
     -- -- Tiempos del sistema ---------------------------------------------------
     -- FIX BUG-3: En Lua, date("%w") devuelve 0=Dom,1=Lun,2=Mar,3=Mié,4=JUE.
     -- El valor anterior era 4 (Jueves). Corregido a 3 (Miércoles).
     -- Además se alinea con Database.RESET_HOUR (9). El 7 anterior era incorrecto
-    -- para la mayoría de realms EU/US (reset a las 09:00 hora de servidor).
+    -- Solo fallback para clientes sin C_DateAndTime.GetWeeklyResetStartTime.
+    -- Retail usa siempre la API regional real; no depender de estos valores.
     WEEK_RESET_HOUR = 9,
-    WEEK_RESET_WDAY = 3,   -- 3 = Miércoles (date("%w"): 0=Dom ... 3=Mié ... 6=Sáb)
+    WEEK_RESET_WDAY = 3,
 
     -- -- Tracking -------------------------------------------------------------
     COMBAT_LOG_THROTTLE = 0.05,
@@ -125,16 +133,14 @@ MitzuMPlus.Constants = {
         -- Ara-Kara, City of Threads, Mists of Tirna Scithe, The Necrotic Wake
         -- Siege of Boralus, Grim Batol, The Dawnbreaker, The Stonevault
         ["507_1001_1002_1003_1004_1005_1006_1007"] = {
-            name = "The War Within - Temporada 1",
             key  = "tww_s1",
         },
 
         -- The War Within - Temporada 2 (actualizar cuando se anuncie)
-        -- ["XXX_XXX_XXX..."] = { name = "The War Within - Temporada 2", key = "tww_s2" },
+        -- ["XXX_XXX_XXX..."] = { key = "tww_s2" },
 
         -- Dragonflight - Temporada 4 (referencia)
         ["12092_12095_12096_12097_12098_12099_12100_12101"] = {
-            name = "Dragonflight - Temporada 4",
             key  = "df_s4",
         },
 
@@ -223,13 +229,13 @@ function MitzuMPlus:InstallFingerprintDebugListener()
         if MitzuMPlus.SEASON_FINGERPRINTS[fp] then return end
 
         local seasonNum = scanData.seasonNumber or scanData.seasonNum or "?"
-        local expName   = scanData.expansionName or "Expansión desconocida"
+        local expName   = scanData.expansionName or L["SEASON_UNKNOWN_EXP"]
 
         MitzuMPlus:Print(string.format(
-            "|cFFe8b84a[Debug] Fingerprint nueva temporada detectado:|r\n" ..
-            "  Expansión: %s  |  Temporada: %s\n" ..
-            "  Copia esto en Constants.lua -> SEASON_FINGERPRINTS:\n" ..
-            '  ["%s"] = { name = "%s - Temporada %s", key = "exp%s_s%s" },',
+            "|cFFe8b84a[Debug] New season fingerprint detected:|r\n" ..
+            "  Expansion: %s  |  Season: %s\n" ..
+            "  Copy this into Constants.lua -> SEASON_FINGERPRINTS:\n" ..
+            '  ["%s"] = { key = "exp%s_s%s" },  -- %s / season %s',
             expName, tostring(seasonNum),
             fp,
             expName, tostring(seasonNum),

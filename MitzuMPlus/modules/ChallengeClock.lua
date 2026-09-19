@@ -213,7 +213,7 @@ function ChallengeClock:StatusLines()
         end
         L[#L + 1] = "localElapsed=" .. fmt(localElapsed)
         L[#L + 1] = "driftVsLocal=" .. fmt(e - localElapsed) ..
-                    "  |cFF999999(si no es ~0, el reloj local va desincronizado)|r"
+                    "  |cFF999999(if this is not ~0, the local clock is out of sync)|r"
     else
         L[#L + 1] = "driftVsLocal=-"
     end

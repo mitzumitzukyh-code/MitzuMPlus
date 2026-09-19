@@ -16,6 +16,7 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
 
 -- -----------------------------------------------------------------------------
 -- CONFIGURACIÓN
@@ -128,7 +129,7 @@ function ErrorLogger:Install()
     -- seterrorhandler no existe en todos los clientes/versiones.
     if not seterrorhandler then
         if MitzuMPlus.Print then
-            MitzuMPlus:Print("|cFF888888[ErrorLogger] seterrorhandler no disponible en este cliente.|r")
+            MitzuMPlus:Print("|cFF888888[ErrorLogger] seterrorhandler unavailable on this client.|r")
         end
         return
     end
@@ -147,8 +148,8 @@ function ErrorLogger:Install()
                               MitzuMPlus.db.profile.settings.debugMode
             if debugMode and MitzuMPlus.Print then
                 MitzuMPlus:Print(string.format(
-                    "|cFFee3333[ErrorLogger]|r Error guardado. " ..
-                    "Usa |cFFf7d470/emp bugreport|r para copiarlo."
+                    L["ERRORLOG_SAVED"] ..
+                    L["ERRORLOG_HINT"]
                 ))
             end
         end
@@ -168,12 +169,12 @@ end
 
 function ErrorLogger:GetReport()
     if not (MitzuMPlus.db and MitzuMPlus.db.global) then
-        return "[MitzuMPlus ErrorLogger] DB no disponible."
+        return "[MitzuMPlus ErrorLogger] DB unavailable."
     end
 
     local log = MitzuMPlus.db.global.errorLog
     if not log or #log == 0 then
-        return "[MitzuMPlus ErrorLogger] No hay errores registrados. ¡Todo en orden!"
+        return "[MitzuMPlus ErrorLogger] No errors recorded."
     end
 
     local lines = {}
@@ -181,8 +182,8 @@ function ErrorLogger:GetReport()
         "=== MitzuMPlus M+ Historial v%s - Bug Report ===",
         MitzuMPlus.VERSION or "?"
     ))
-    table.insert(lines, string.format("Generado: %s", date and date("%Y-%m-%d %H:%M:%S") or "?"))
-    table.insert(lines, string.format("Errores registrados: %d", #log))
+    table.insert(lines, string.format("Generated: %s", date and date("%Y-%m-%d %H:%M:%S") or "?"))
+    table.insert(lines, string.format("Errors recorded: %d", #log))
     table.insert(lines, "")
 
     for i, entry in ipairs(log) do
@@ -190,13 +191,13 @@ function ErrorLogger:GetReport()
                    and (date and date("%Y-%m-%d %H:%M:%S", entry.time) or tostring(entry.time))
                    or  "?"
         local countStr = (entry.count and entry.count > 1)
-                         and string.format(" [x%d, último: %s]",
+                         and string.format(" [x%d, last: %s]",
                              entry.count,
                              (entry.lastSeen and date and date("%H:%M:%S", entry.lastSeen)) or "?")
                          or ""
-        table.insert(lines, string.format("[%d] %s  |  v%s  |  Zona: %s%s",
+        table.insert(lines, string.format("[%d] %s  |  v%s  |  Zone: %s%s",
             i, ts, entry.version or "?", entry.zone or "?", countStr))
-        table.insert(lines, entry.msg or "(sin mensaje)")
+        table.insert(lines, entry.msg or "(no message)")
         table.insert(lines, "")
     end
 
@@ -212,7 +213,7 @@ function ErrorLogger:Clear()
         MitzuMPlus.db.global.errorLog = {}
     end
     if MitzuMPlus.Print then
-        MitzuMPlus:Print("|cFF21de66[ErrorLogger] Log de errores limpiado.|r")
+        MitzuMPlus:Print(L["ERRORLOG_CLEARED"])
     end
 end
 
@@ -295,12 +296,12 @@ end
 -- Generate a diagnostic report (like GetReport but for debug events)
 function ErrorLogger:GetDebugReport()
     if not (MitzuMPlus.db and MitzuMPlus.db.global) then
-        return "[MitzuMPlus DebugLog] DB no disponible."
+        return "[MitzuMPlus DebugLog] DB unavailable."
     end
 
     local log = MitzuMPlus.db.global.debugLog
     if not log or #log == 0 then
-        return "[MitzuMPlus DebugLog] No hay eventos de diagnóstico registrados."
+        return "[MitzuMPlus DebugLog] No diagnostic events recorded."
     end
 
     local lines = {}
@@ -308,8 +309,8 @@ function ErrorLogger:GetDebugReport()
         "=== MitzuMPlus M+ Historial v%s - Debug Log ===",
         MitzuMPlus.VERSION or "?"
     ))
-    table.insert(lines, string.format("Generado: %s", date and date("%Y-%m-%d %H:%M:%S") or "?"))
-    table.insert(lines, string.format("Eventos: %d", #log))
+    table.insert(lines, string.format("Generated: %s", date and date("%Y-%m-%d %H:%M:%S") or "?"))
+    table.insert(lines, string.format("Events: %d", #log))
     table.insert(lines, "")
 
     for i, entry in ipairs(log) do
@@ -341,7 +342,7 @@ function ErrorLogger:ClearDebugLog()
         MitzuMPlus.db.global.debugLog = {}
     end
     if MitzuMPlus.Print then
-        MitzuMPlus:Print("|cFF21de66[ErrorLogger] Debug log limpiado.|r")
+        MitzuMPlus:Print("|cFF21de66[ErrorLogger] Debug log cleared.|r")
     end
 end
 

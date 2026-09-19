@@ -185,7 +185,7 @@ function MitzuMPlus:CaptureCombatBaseline(run)
 
     self._meterBaseline = baseline
     if self.ErrorLogger and self.ErrorLogger.LogEvent then
-        self.ErrorLogger:LogEvent("METER_BASELINE", "Linea base C_DamageMeter capturada", {
+        self.ErrorLogger:LogEvent("METER_BASELINE", "C_DamageMeter baseline captured", {
             duration = baseline.duration,
             sources  = baseline.readable,
         })

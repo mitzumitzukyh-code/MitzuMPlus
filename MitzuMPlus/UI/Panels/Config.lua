@@ -7,6 +7,8 @@
 
 local ADDON_NAME = "MitzuMPlus"
 local MitzuMPlus = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME)
+local L = MitzuMPlus.L
+local EL = LibStub("AceLocale-3.0"):GetLocale("MitzuMPlusExperimental", true)
 
 -- Referencias lazy (se resuelven en tiempo de ejecución, no de carga)
 local function TH() return MitzuMPlus.Colors or MitzuMPlus.Theme end
@@ -231,6 +233,66 @@ local function MakeInfoRow(section, labelText, valueText, valueR, valueG, valueB
 end
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- FILA: entrada numérica
+-- ─────────────────────────────────────────────────────────────────────────
+
+local _numN = 0
+local function MakeNumericInputRow(section, labelText, descText, getValue, onChanged)
+    _numN = _numN + 1
+    local row = CreateFrame("Frame", nil, section)
+    row:SetHeight(46)
+    row:SetPoint("TOPLEFT", section, "TOPLEFT", 14, section.innerY)
+    row:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, section.innerY)
+    section.innerY = section.innerY - 50
+
+    local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lbl:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -3)
+    lbl:SetJustifyH("LEFT")
+    lbl:SetWordWrap(false)
+    TH():ApplyFont(lbl, "normal", 13)
+    lbl:SetText(labelText or "")
+    lbl:SetTextColor(0.95, 0.95, 0.95, 1)
+
+    local dsc = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dsc:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -2)
+    dsc:SetJustifyH("LEFT")
+    dsc:SetWordWrap(false)
+    TH():ApplyFont(dsc, "normal", 12)
+    dsc:SetText(descText or "")
+    dsc:SetTextColor(0.72, 0.72, 0.72, 1)
+
+    local edit = CreateFrame("EditBox", "MitzuCfgNum" .. _numN, row, "InputBoxTemplate")
+    edit:SetSize(120, 28)
+    edit:SetPoint("RIGHT", row, "RIGHT", 0, -5)
+    edit:SetAutoFocus(false)
+    edit:SetNumeric(true)
+    edit:SetMaxLetters(5)
+    local initial = math.max(0, math.floor(tonumber(getValue and getValue() or 0) or 0))
+    edit:SetText(initial > 0 and tostring(initial) or "")
+
+    local committing = false
+    local function commit()
+        if committing then return end
+        committing = true
+        local value = math.max(0, math.floor(tonumber(edit:GetText()) or 0))
+        if onChanged then onChanged(value) end
+        local fresh = math.max(0, math.floor(tonumber(getValue and getValue() or value) or 0))
+        edit:SetText(fresh > 0 and tostring(fresh) or "")
+        committing = false
+    end
+    edit:SetScript("OnEnterPressed", function(self) commit(); self:ClearFocus() end)
+    edit:SetScript("OnEscapePressed", function(self)
+        local fresh = math.max(0, math.floor(tonumber(getValue and getValue() or 0) or 0))
+        self:SetText(fresh > 0 and tostring(fresh) or "")
+        self:ClearFocus()
+    end)
+    edit:SetScript("OnEditFocusLost", commit)
+    row.edit = edit
+    row.Commit = commit
+    return row
+end
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- FILA: botón de acción
 -- ─────────────────────────────────────────────────────────────────────────
 
@@ -286,8 +348,8 @@ function PanelConfig:Create(parent)
     end
 
     local secGeneral = MakeSection(content, "GENERAL", 100)
-    MakeToggleRow(secGeneral, "Mostrar botón del minimapa",
-        "Acceso rápido a MitzuMPlus desde el minimapa",
+    MakeToggleRow(secGeneral, L["CFG_MINIMAP"],
+        L["CFG_MINIMAP_D"],
         function()
             local icon = S().minimapIcon
             return type(icon) ~= "table" or icon.hide ~= true
@@ -300,62 +362,125 @@ function PanelConfig:Create(parent)
         end)
     place(secGeneral)
 
-    local function HUD() return MitzuMPlus.KeyPredictionHUD end
+    local function HUD() return MitzuMPlus.MitzuTracker end
     local function HS() local h = HUD(); return h and h:Settings() or {} end
-    local secTracker = MakeSection(content, "TRACKER M+", 430)
-    MakeToggleRow(secTracker, "Activado",
-        "Muestra únicamente la proyección +3, +2, +1 u OVERTIME durante la llave",
+    local secTracker = MakeSection(content, L["CFG_TRACKER_SECTION"], 430)
+    MakeToggleRow(secTracker, L["CFG_TRACKER_ENABLED"],
+        L["CFG_TRACKER_D"],
         function() return HS().enabled ~= false end,
         function(v) if HUD() then HUD():SetEnabled(v) end end)
-    MakeToggleRow(secTracker, "Bloquear posición",
-        "Bloqueado no se arrastra ni intercepta clics",
+    MakeToggleRow(secTracker, L["CFG_SHOW_PACE"],
+        L["CFG_PREDICTION_D"],
+        function() return HS().showPrediction ~= false end,
+        function(v) if HUD() then HUD():SetOption("showPrediction", v) end end)
+    MakeToggleRow(secTracker, L["CFG_UPGRADE_TIMES"],
+        L["CFG_UPGRADE_TIMES_D"],
+        function() return HS().showUpgradeTimes ~= false end,
+        function(v) if HUD() then HUD():SetOption("showUpgradeTimes", v) end end)
+    MakeToggleRow(secTracker, L["CFG_FORCES_COUNT"],
+        L["CFG_FORCES_COUNT_D"],
+        function() return HS().showForcesCount ~= false end,
+        function(v) if HUD() then HUD():SetOption("showForcesCount", v) end end)
+    MakeToggleRow(secTracker, L["CFG_FORCES_REMAINING"],
+        L["CFG_FORCES_REMAINING_D"],
+        function() return HS().showForcesRemaining ~= false end,
+        function(v) if HUD() then HUD():SetOption("showForcesRemaining", v) end end)
+    MakeToggleRow(secTracker, L["CFG_DEATHS"],
+        L["CFG_DEATHS_D"],
+        function() return HS().showDeaths ~= false end,
+        function(v) if HUD() then HUD():SetOption("showDeaths", v) end end)
+    MakeToggleRow(secTracker, L["CFG_LOCK_PREVIEW"],
+        L["CFG_LOCK_PREVIEW_D"],
         function() return HS().locked == true end,
         function(v) if HUD() then HUD():SetOption("locked", v) end end)
-    MakeToggleRow(secTracker, "Mostrar confianza",
-        "Muestra el porcentaje de confianza cuando el motor dispone de base",
+    MakeToggleRow(secTracker, L["CFG_CONFIDENCE"],
+        L["CFG_CONFIDENCE_D"],
         function() return HS().showConfidence ~= false end,
         function(v) if HUD() then HUD():SetOption("showConfidence", v) end end)
-    MakeToggleRow(secTracker, "Mostrar ETA",
-        "Muestra la hora estimada de finalización cuando es fiable",
+    MakeToggleRow(secTracker, L["CFG_ETA"],
+        L["CFG_ETA_D"],
         function() return HS().showETA ~= false end,
         function(v) if HUD() then HUD():SetOption("showETA", v) end end)
-    MakeSliderRow(secTracker, "Escala  (%)", 60, 200,
+    MakeSliderRow(secTracker, L["CFG_SCALE"], 60, 200,
         function() return math.floor(((tonumber(HS().scale) or 1) * 100) + 0.5) end,
         function(v) if HUD() then HUD():SetOption("scale", v / 100) end end)
-    MakeSliderRow(secTracker, "Opacidad  (%)", 20, 100,
+    MakeSliderRow(secTracker, L["CFG_OPACITY"], 20, 100,
         function() return math.floor(((tonumber(HS().alpha) or 1) * 100) + 0.5) end,
         function(v) if HUD() then HUD():SetOption("alpha", v / 100) end end)
-    MakeButtonRow(secTracker, "Vista previa: activar / desactivar", function()
+    MakeButtonRow(secTracker, L["CFG_PREVIEW_TOGGLE"], function()
         if HUD() then HUD():SetPreview(not HUD():IsPreview()) end
     end, "primary")
-    MakeButtonRow(secTracker, "Restablecer posición", function()
+    MakeButtonRow(secTracker, L["CFG_RESET_POSITION"], function()
         if HUD() then HUD():ResetPosition() end
     end)
     place(secTracker)
 
-    local secUI = MakeSection(content, "INTERFAZ", 310)
-    MakeToggleRow(secUI, "Bloquear ventana", "Evita mover la ventana accidentalmente",
+    -- Native Blizzard UI controls. Kept inside the existing configuration window.
+    if MitzuMPlus.ExperimentalNativeUI and EL then
+        local function EC()
+            return MitzuMPlus.ExperimentalNativeUI:GetConfig() or {}
+        end
+        local pullValues = { 5, 10, 20 }
+        local pullLabels = { "5 s", "10 s", "20 s" }
+        local current = tonumber(EC().pullTimerSeconds) or 10
+        local currentIndex = current == 5 and 1 or (current == 20 and 3 or 2)
+        local secNative = MakeSection(content, EL["CFG_NATIVE_UI_SECTION"], 200)
+        local core = MitzuMPlus.ExperimentalNativeUI
+        local function Goal() return core:GetCharacterGoal(false) or { enabled=false, target=0 } end
+        local goalToggle
+        goalToggle = MakeToggleRow(secNative, EL["CFG_SEASON_GOAL"], EL["CFG_SEASON_GOAL_D"],
+            function() return Goal().enabled == true end,
+            function(v)
+                local ok = core:SetCharacterGoalEnabled(v)
+                if v and not ok then
+                    if goalToggle and goalToggle.toggle then goalToggle.toggle:SetChecked(false) end
+                    if MitzuMPlus.Print then MitzuMPlus:Print(EL["CFG_SEASON_GOAL_REQUIRED"]) end
+                end
+                core:RefreshSeasonPanel("CONFIG_GOAL_ENABLE")
+            end)
+        MakeNumericInputRow(secNative, EL["CFG_SEASON_GOAL_TARGET"], EL["CFG_SEASON_GOAL_TARGET_D"],
+            function() return Goal().target or 0 end,
+            function(value)
+                core:SetCharacterGoalTarget(value)
+                local g = Goal()
+                if goalToggle and goalToggle.toggle then goalToggle.toggle:SetChecked(g.enabled == true) end
+                core:RefreshSeasonPanel("CONFIG_GOAL_TARGET")
+            end)
+        MakeDropdownRow(secNative, EL["CFG_PULL_TIMER"], EL["CFG_PULL_TIMER_D"],
+            pullLabels, currentIndex, function(index)
+                local value = pullValues[index] or 10
+                local c = EC()
+                c.pullTimerSeconds = value
+                if MitzuMPlus.KeystoneFrameEnhancer and MitzuMPlus.KeystoneFrameEnhancer.RefreshLabels then
+                    MitzuMPlus.KeystoneFrameEnhancer:RefreshLabels()
+                end
+            end)
+        place(secNative)
+    end
+
+    local secUI = MakeSection(content, L["CFG_UI_SECTION"], 310)
+    MakeToggleRow(secUI, L["CFG_LOCK_WINDOW"], L["CFG_LOCK_WINDOW_D"],
         function() return S().windowLocked == true end,
         function(v)
             S().windowLocked = v
             if MitzuMPlus.Window then MitzuMPlus.Window:SetMovable(not v) end
         end)
-    MakeToggleRow(secUI, "Animaciones", "Transición breve al cambiar de vista",
+    MakeToggleRow(secUI, L["CFG_ANIMATIONS_LABEL"], L["CFG_ANIMATIONS_D"],
         function() return S().enableAnimations ~= false end,
         function(v) S().enableAnimations = v end)
-    MakeToggleRow(secUI, "Cerrar con Escape", "Cierra MitzuMPlus con la tecla Escape",
+    MakeToggleRow(secUI, L["CFG_ESC_CLOSE"], L["CFG_ESC_CLOSE_D"],
         function() return S().closeWithEscape ~= false end,
         function(v)
             S().closeWithEscape = v
             if MitzuMPlus.UpdateEscapeHandling then MitzuMPlus:UpdateEscapeHandling() end
         end)
-    MakeSliderRow(secUI, "Tamaño del texto  (%)", 90, 140,
+    MakeSliderRow(secUI, L["CFG_TEXT_SIZE"], 90, 140,
         function() return math.floor(((S().textScale or 1.15) * 100) + 0.5) end,
         function(v)
             S().textScale = v / 100
             if TH() and TH().RefreshFonts then TH():RefreshFonts() end
         end)
-    MakeSliderRow(secUI, "Opacidad de ventana  (%)", 20, 100,
+    MakeSliderRow(secUI, L["CFG_WINDOW_OPACITY"], 20, 100,
         function() return math.floor(((S().windowOpacity or 1) * 100) + 0.5) end,
         function(v)
             S().windowOpacity = v / 100
@@ -363,9 +488,9 @@ function PanelConfig:Create(parent)
         end)
     place(secUI)
 
-    local secData = MakeSection(content, "HISTORIAL / DATOS", 390)
-    MakeToggleRow(secData, "Registrar botín del grupo",
-        "Conserva el botín para el detalle visible de cada jugador",
+    local secData = MakeSection(content, L["CFG_DATA_SECTION"], 390)
+    MakeToggleRow(secData, L["CFG_LOOT"],
+        L["CFG_LOOT_D"],
         function() return S().lootTracking ~= false end,
         function(v)
             S().lootTracking = v
@@ -375,7 +500,7 @@ function PanelConfig:Create(parent)
     -- El valor guardado sigue siendo la calidad numérica nativa de WoW
     -- (2/3/4), de modo que LootTracker no necesita una traducción adicional.
     local lootQualityValues = { 2, 3, 4 }
-    local lootQualityLabels = { "Poco común", "Raro", "Épico" }
+    local lootQualityLabels = { L["QUALITY_UNCOMMON"], L["QUALITY_RARE"], L["QUALITY_EPIC"] }
     local savedLootQuality = tonumber(S().lootMinQuality) or 2
     local lootQualityIndex = savedLootQuality >= 4 and 3 or (savedLootQuality >= 3 and 2 or 1)
     -- Migrar perfiles antiguos que podían contener 0, 1 o 5 al nuevo selector.
@@ -383,68 +508,68 @@ function PanelConfig:Create(parent)
     if MitzuMPlus.LootTracker then
         MitzuMPlus.LootTracker.minQuality = S().lootMinQuality
     end
-    MakeDropdownRow(secData, "Calidad mínima del botín",
-        "Guarda objetos de esta calidad o superior",
+    MakeDropdownRow(secData, L["CFG_LOOT_QUALITY"],
+        L["CFG_LOOT_QUALITY_D"],
         lootQualityLabels, lootQualityIndex,
         function(index)
             local quality = lootQualityValues[index] or 2
             S().lootMinQuality = quality
             if MitzuMPlus.LootTracker then MitzuMPlus.LootTracker.minQuality = quality end
         end)
-    MakeSliderRow(secData, "Nivel de objeto mínimo", 0, 700,
+    MakeSliderRow(secData, L["CFG_LOOT_ILVL"], 0, 700,
         function() return S().lootMinIlvl or 0 end,
         function(v)
             S().lootMinIlvl = v
             if MitzuMPlus.LootTracker then MitzuMPlus.LootTracker.minIlvl = v end
         end)
-    MakeButtonRow(secData, "Validar integridad del historial", function()
+    MakeButtonRow(secData, L["CFG_VALIDATE"], function()
         if MitzuMPlus.DataManager then
             local valid, invalid = MitzuMPlus.DataManager:ValidateAllRuns()
-            MitzuMPlus:Print(string.format("%d válidas · %d con problemas", valid, invalid))
+            MitzuMPlus:Print(string.format(L["CFG_DATA_QUALITY"], valid, invalid))
         end
     end)
     place(secData)
 
     local secNotify = MakeSection(content, "NOTIFICACIONES", 230)
-    MakeToggleRow(secNotify, "Al completar run", "Aviso en pantalla al terminar la llave",
+    MakeToggleRow(secNotify, L["CFG_NOTIF_RUN"], L["CFG_NOTIF_RUN_D"],
         function() return P().notifyOnComplete ~= false end,
         function(v) P().notifyOnComplete = v end)
-    MakeToggleRow(secNotify, "Nuevo récord", "Aviso en pantalla y chat al superar la mejor llave",
+    MakeToggleRow(secNotify, L["CFG_NOTIF_RECORD"], L["CFG_NOTIF_RECORD_D"],
         function() return P().notifyNewRecord ~= false end,
         function(v) P().notifyNewRecord = v end)
-    MakeToggleRow(secNotify, "Marca personal", "Aviso en pantalla y chat al mejorar tiempo o rendimiento",
+    MakeToggleRow(secNotify, L["CFG_NOTIF_PB"], L["CFG_NOTIF_PB_D"],
         function() return P().notifyPersonalBest ~= false end,
         function(v) P().notifyPersonalBest = v end)
-    MakeToggleRow(secNotify, "Resumen en chat", "Escribe un resumen al finalizar",
+    MakeToggleRow(secNotify, L["CFG_NOTIF_CHAT"], L["CFG_NOTIF_CHAT_D"],
         function() return P().chatOutput == true end,
         function(v) P().chatOutput = v end)
-    MakeButtonRow(secNotify, "Probar notificaciones", function()
+    MakeButtonRow(secNotify, L["CFG_TEST_NOTIF"], function()
         if MitzuMPlus.HandleSlashCommand then
             MitzuMPlus:HandleSlashCommand("testavisos")
         end
     end, "primary")
     place(secNotify)
 
-    local secQA = MakeSection(content, "AVANZADO / QA", 190)
-    MakeButtonRow(secQA, "Abrir Bug Report", function()
+    local secQA = MakeSection(content, L["CFG_QA_SECTION"], 190)
+    MakeButtonRow(secQA, L["CFG_OPEN_BUGREPORT"], function()
         if MitzuMPlus.BugReport then MitzuMPlus.BugReport:Show() end
     end, "primary")
-    MakeButtonRow(secQA, "Restablecer configuración", function()
+    MakeButtonRow(secQA, L["CFG_RESET_SETTINGS"], function()
         if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_RESET_CONFIG") end
     end, "bad")
-    MakeButtonRow(secQA, "Borrar todo el historial", function()
+    MakeButtonRow(secQA, L["CFG_DELETE_HISTORY"], function()
         if StaticPopup_Show then StaticPopup_Show("MITZUMPLUS_CONFIRM_CLEAR_ALL") end
     end, "bad")
     place(secQA)
 
-    local secAbout = MakeSection(content, "ACERCA DE", 120)
+    local secAbout = MakeSection(content, L["CFG_ABOUT_SECTION"], 120)
     local title = secAbout:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", secAbout, "TOPLEFT", 14, secAbout.innerY)
     title:SetText("|cffFFD700MitzuMPlus|r")
     secAbout.innerY = secAbout.innerY - 24
     local info = secAbout:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     info:SetPoint("TOPLEFT", secAbout, "TOPLEFT", 14, secAbout.innerY)
-    info:SetText("Mythic+ History & Key Prediction  ·  v" .. tostring(MitzuMPlus.VERSION or "?"))
+    info:SetText(L["CFG_TAGLINE"] .. tostring(MitzuMPlus.VERSION or "?"))
     info:SetTextColor(0.65, 0.65, 0.65, 1)
     place(secAbout)
 

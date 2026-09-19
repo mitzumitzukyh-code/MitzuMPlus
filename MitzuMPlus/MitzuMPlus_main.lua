@@ -14,6 +14,11 @@ MitzuMPlusDB_Defaults = {
         -- FIX BUG-12: la versión se actualiza en OnInitialize leyendo MitzuMPlus.VERSION
         -- para que siempre refleje la versión instalada real.
         version    = "UNSET",
+        -- Esquema persistente independiente de la version del addon.
+        -- Las migraciones viven en modules/Database.lua.
+        schemaVersion = 2,
+        backups = {},
+        quarantineRuns = {},
 
         -- ── Log de errores del addon (gestionado por modules/ErrorLogger.lua)
         -- Máximo MAX_ERRORS entradas; las más antiguas se rotan automáticamente.
@@ -53,8 +58,9 @@ MitzuMPlusDB_Defaults = {
             textScale        = 1.15,
             debugMode        = false,
 
-            -- ── v7.14.0: Key Prediction HUD (modules/KeyPredictionHUD.lua) ─
-            -- El único HUD en vivo: solo predice +3/+2/+1/OVERTIME.
+            -- ── Tracker en vivo (modules/Tracker/MitzuTracker.lua) ───────
+            -- Nacio en v7.14.0 como Key Prediction HUD; desde 1.1.0-dev.6 lo
+            -- usa Mitzu Tracker con las mismas claves (sin migracion).
             -- Los ajustes históricos retirados no se leen ni se borran.
             hud = {
                 enabled        = true,
@@ -63,6 +69,12 @@ MitzuMPlusDB_Defaults = {
                 alpha          = 1.0,
                 showConfidence = true,
                 showETA        = true,
+                -- dev.7: lineas integradas en el tracker M+ de Blizzard.
+                showPrediction      = true,
+                showUpgradeTimes    = true,
+                showForcesCount     = true,
+                showForcesRemaining = true,
+                showDeaths          = true,
             },
 
         },
