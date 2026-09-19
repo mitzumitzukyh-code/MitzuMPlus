@@ -1,0 +1,11 @@
+## Interface: 11509
+## Title: MitzuForeverLegacy
+## Notes: Experimental Legacy progression and alt-planning companion for World of Warcraft: Forever.
+## Author: Mutzuki Mizt
+## Version: 0.1.0-dev
+## SavedVariables: MitzuForeverLegacyDB
+## X-Status: EXPERIMENTAL_PRE_BETA
+
+Core.lua
+Data.lua
+UI.lua
